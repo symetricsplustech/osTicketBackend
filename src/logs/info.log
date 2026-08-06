@@ -1,0 +1,232 @@
+[2026-08-05T06:43:05.889Z] [INFO] MongoDB connected: 127.0.0.1
+[2026-08-05T06:43:06.139Z] [INFO] osTicket MERN API running on http://localhost:5000 (development)
+[2026-08-05T06:47:12.746Z] [INFO] MongoDB connected: 127.0.0.1
+[2026-08-05T06:47:12.833Z] [INFO] osTicket MERN API running on http://localhost:5000 (development)
+[2026-08-05T06:49:22.135Z] [INFO] [EMAIL new_ticket_confirmation] To: customer@osticket.local | Subject: Support Ticket Request Acknowledgment
+[2026-08-05T06:49:22.136Z] [INFO] [EMAIL BODY]
+Dear Customer One,
+
+Your support request has been received and a ticket has been created.
+
+A Support Representative will be reviewing your request and will respond to you shortly.
+
+Thank you for your patience.
+
+Name: Customer One
+Subject: Cannot log in to my account
+Department: Support
+Topic: 
+Priority: Normal
+Status: assigned
+Created: Wed Aug 05 2026 12:19:22 GMT+0530 (India Standard Time)
+
+To view the status of the ticket, please visit:
+http://localhost:5173/ticket/MSFQ888L12A7
+
+Alternatively, you can simply reply to this email to post a message on the ticket.
+
+Regards,
+osTicket Support <support@osticket.local>
+[2026-08-05T06:49:22.143Z] [INFO] [EMAIL new_ticket_alert] To: agent@osticket.local | Subject: [#MSFQ888L12A7] New Ticket: Cannot log in to my account
+[2026-08-05T06:49:22.144Z] [INFO] [EMAIL BODY]
+Hi John Agent,
+
+A new ticket has been created.
+
+Name: Customer One
+Email: customer@osticket.local
+Subject: Cannot log in to my account
+Priority: Normal
+Department: Support
+
+To view or respond to the ticket, please visit:
+http://localhost:5174/tickets/MSFQ888L12A7
+
+Thank you.
+[2026-08-05T06:49:22.288Z] [INFO] [EMAIL ticket_response] To: customer@osticket.local | Subject: Re: Cannot log in to my account
+[2026-08-05T06:49:22.289Z] [INFO] [EMAIL BODY]
+Dear Customer One,
+
+John Agent has responded to your ticket #MSFQ888L12A7.
+
+Subject: Cannot log in to my account
+Status: assigned
+
+To view the full thread and post a follow-up, please visit:
+http://localhost:5173/ticket/MSFQ888L12A7
+
+Regards,
+osTicket Support <support@osticket.local>
+[2026-08-05T06:49:58.198Z] [INFO] MongoDB connected: 127.0.0.1
+[2026-08-05T06:49:58.295Z] [INFO] osTicket MERN API running on http://localhost:5000 (development)
+[2026-08-05T06:52:56.802Z] [INFO] MongoDB connected: 127.0.0.1
+[2026-08-05T06:52:56.944Z] [INFO] osTicket MERN API running on http://localhost:5000 (development)
+[2026-08-05T07:05:07.145Z] [INFO] [EMAIL new_ticket_confirmation] To: customer@osticket.local | Subject: Support Ticket Request Acknowledgment
+[2026-08-05T07:05:07.147Z] [INFO] [EMAIL BODY]
+Dear Customer One,
+
+Your support request has been received and a ticket has been created.
+
+A Support Representative will be reviewing your request and will respond to you shortly.
+
+Thank you for your patience.
+
+Name: Customer One
+Subject: sign up issue
+Department: Technical
+Topic: Software Issue
+Priority: High
+Status: assigned
+Created: Wed Aug 05 2026 12:35:07 GMT+0530 (India Standard Time)
+
+To view the status of the ticket, please visit:
+http://localhost:5173/ticket/MSFQSHEKCBD8
+
+Alternatively, you can simply reply to this email to post a message on the ticket.
+
+Regards,
+osTicket Support <support@osticket.local>
+[2026-08-05T07:05:07.157Z] [INFO] [EMAIL new_ticket_alert] To: jane@osticket.local | Subject: [#MSFQSHEKCBD8] New Ticket: sign up issue
+[2026-08-05T07:05:07.158Z] [INFO] [EMAIL BODY]
+Hi Jane Smith,
+
+A new ticket has been created.
+
+Name: Customer One
+Email: customer@osticket.local
+Subject: sign up issue
+Priority: High
+Department: Technical
+
+To view or respond to the ticket, please visit:
+http://localhost:5174/tickets/MSFQSHEKCBD8
+
+Thank you.
+[2026-08-05T07:07:14.048Z] [INFO] MongoDB connected: 127.0.0.1
+[2026-08-05T07:10:13.366Z] [INFO] [EMAIL new_ticket_confirmation] To: rathorenaankush01@gmail.com | Subject: Support Ticket Request Acknowledgment
+[2026-08-05T07:10:13.368Z] [INFO] [EMAIL BODY]
+Dear Ankush Rathore,
+
+Your support request has been received and a ticket has been created.
+
+A Support Representative will be reviewing your request and will respond to you shortly.
+
+Thank you for your patience.
+
+Name: Ankush Rathore
+Subject: i am not able to see my invoices
+Department: Billing
+Topic: Billing Question
+Priority: Normal
+Status: assigned
+Created: Wed Aug 05 2026 12:40:13 GMT+0530 (India Standard Time)
+
+To view the status of the ticket, please visit:
+http://localhost:5173/ticket/MSFQZ1OZ7C27
+
+Alternatively, you can simply reply to this email to post a message on the ticket.
+
+Regards,
+osTicket Support <support@osticket.local>
+[2026-08-05T07:10:13.377Z] [INFO] [EMAIL new_ticket_alert] To: admin@osticket.local | Subject: [#MSFQZ1OZ7C27] New Ticket: i am not able to see my invoices
+[2026-08-05T07:10:13.379Z] [INFO] [EMAIL BODY]
+Hi System Administrator,
+
+A new ticket has been created.
+
+Name: Ankush Rathore
+Email: rathorenaankush01@gmail.com
+Subject: i am not able to see my invoices
+Priority: Normal
+Department: Billing
+
+To view or respond to the ticket, please visit:
+http://localhost:5174/tickets/MSFQZ1OZ7C27
+
+Thank you.
+[2026-08-05T07:10:13.387Z] [INFO] [EMAIL new_ticket_alert] To: billing@osticket.local | Subject: [#MSFQZ1OZ7C27] New Ticket: i am not able to see my invoices
+[2026-08-05T07:10:13.388Z] [INFO] [EMAIL BODY]
+Hi Billing Officer,
+
+A new ticket has been created.
+
+Name: Ankush Rathore
+Email: rathorenaankush01@gmail.com
+Subject: i am not able to see my invoices
+Priority: Normal
+Department: Billing
+
+To view or respond to the ticket, please visit:
+http://localhost:5174/tickets/MSFQZ1OZ7C27
+
+Thank you.
+[2026-08-05T07:13:49.650Z] [INFO] MongoDB connected: 127.0.0.1
+[2026-08-05T07:13:49.800Z] [INFO] osTicket MERN API running on http://localhost:5001 (development)
+[2026-08-05T07:14:31.521Z] [INFO] [EMAIL welcome] To: lalitpatidar1524@gmail.com | Subject: Welcome to the Support Center
+[2026-08-05T07:14:31.523Z] [INFO] [EMAIL BODY]
+Dear Lalit Patidar,
+
+Welcome to the %{company.name} Support Center. Your account has been created successfully.
+
+You can now open new tickets, check ticket status and browse our knowledgebase.
+
+Visit: http://localhost:5173
+
+Regards,
+%{company.name}
+[2026-08-05T07:14:31.872Z] [INFO] [EMAIL password_reset] To: lalitpatidar1524@gmail.com | Subject: Password Reset Request
+[2026-08-05T07:14:31.873Z] [INFO] [EMAIL BODY]
+Dear Lalit Patidar,
+
+We received a request to reset your password.
+
+To reset your password, please click the link below:
+http://localhost:5173/reset-password?token=97cfe7dde47f28d0b567a7fc3421a87a263381c2dd4f13ab
+
+This link will expire in 30 minutes. If you did not request this, please ignore this email.
+
+Regards,
+%{company.name}
+[2026-08-05T07:14:37.586Z] [INFO] SIGINT received, shutting down gracefully...
+[2026-08-05T07:15:26.102Z] [INFO] MongoDB connected: 127.0.0.1
+[2026-08-05T07:15:26.216Z] [INFO] osTicket MERN API running on http://localhost:5001 (development)
+[2026-08-05T07:20:41.134Z] [INFO] MongoDB connected: 127.0.0.1
+[2026-08-05T07:20:41.274Z] [INFO] osTicket MERN API running on http://localhost:5000 (development)
+[2026-08-05T07:27:37.806Z] [INFO] MongoDB connected: 127.0.0.1
+[2026-08-05T07:27:37.925Z] [INFO] osTicket MERN API running on http://localhost:5000 (development)
+[2026-08-05T08:26:27.938Z] [INFO] MongoDB connected: 127.0.0.1
+[2026-08-05T08:26:28.195Z] [INFO] osTicket MERN API running on http://localhost:5000 (development)
+[2026-08-05T08:55:24.133Z] [INFO] MongoDB connected: 127.0.0.1
+[2026-08-05T08:55:24.320Z] [INFO] osTicket MERN API running on http://localhost:5000 (development)
+[2026-08-05T08:57:22.821Z] [INFO] MongoDB connected: 127.0.0.1
+[2026-08-05T08:57:22.989Z] [INFO] osTicket MERN API running on http://localhost:5000 (development)
+[2026-08-05T09:05:14.171Z] [INFO] MongoDB connected: 127.0.0.1
+[2026-08-05T09:05:14.496Z] [INFO] osTicket MERN API running on http://localhost:5000 (development)
+[2026-08-05T09:05:49.787Z] [INFO] MongoDB connected: 127.0.0.1
+[2026-08-05T09:07:48.426Z] [INFO] MongoDB connected: 127.0.0.1
+[2026-08-05T09:07:48.617Z] [INFO] osTicket MERN API running on http://localhost:5000 (development)
+[2026-08-05T09:11:35.748Z] [INFO] MongoDB connected: 127.0.0.1
+[2026-08-05T09:11:35.951Z] [INFO] osTicket MERN API running on http://localhost:5000 (development)
+[2026-08-05T09:11:46.843Z] [INFO] MongoDB connected: 127.0.0.1
+[2026-08-05T09:11:47.211Z] [INFO] osTicket MERN API running on http://localhost:5000 (development)
+[2026-08-05T09:12:08.124Z] [INFO] MongoDB connected: 127.0.0.1
+[2026-08-05T09:12:08.371Z] [INFO] osTicket MERN API running on http://localhost:5000 (development)
+[2026-08-05T09:12:24.676Z] [INFO] MongoDB connected: 127.0.0.1
+[2026-08-05T09:12:24.845Z] [INFO] osTicket MERN API running on http://localhost:5000 (development)
+[2026-08-05T09:13:32.808Z] [INFO] SIGINT received, shutting down gracefully...
+[2026-08-05T09:13:47.250Z] [INFO] MongoDB connected: 127.0.0.1
+[2026-08-05T09:13:47.382Z] [INFO] osTicket MERN API running on http://localhost:5000 (development)
+[2026-08-05T09:13:53.485Z] [INFO] MongoDB connected: 127.0.0.1
+[2026-08-05T09:16:53.713Z] [INFO] MongoDB connected: 127.0.0.1
+[2026-08-05T09:16:53.892Z] [INFO] osTicket MERN API running on http://localhost:5000 (development)
+[2026-08-05T09:20:56.551Z] [INFO] MongoDB connected: 127.0.0.1
+[2026-08-05T09:20:56.831Z] [INFO] osTicket MERN API running on http://localhost:5000 (development)
+[2026-08-05T09:21:00.370Z] [INFO] MongoDB connected: 127.0.0.1
+[2026-08-05T09:21:00.530Z] [INFO] osTicket MERN API running on http://localhost:5000 (development)
+[2026-08-05T09:21:05.173Z] [INFO] MongoDB connected: 127.0.0.1
+[2026-08-05T09:22:43.323Z] [INFO] MongoDB connected: 127.0.0.1
+[2026-08-05T09:22:43.538Z] [INFO] osTicket MERN API running on http://localhost:5000 (development)
+[2026-08-05T09:23:52.747Z] [INFO] MongoDB connected: 127.0.0.1
+[2026-08-06T11:10:27.122Z] [INFO] MongoDB connected: 127.0.0.1
+[2026-08-06T11:10:27.370Z] [INFO] osTicket MERN API running on http://localhost:5000 (development)
+[2026-08-06T11:52:09.961Z] [INFO] SIGINT received, shutting down gracefully...
