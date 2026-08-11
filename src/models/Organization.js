@@ -2,7 +2,8 @@ const mongoose = require('mongoose');
 
 const organizationSchema = new mongoose.Schema(
   {
-    name: { type: String, required: true, unique: true, trim: true },
+    name: { type: String, required: true, trim: true },
+    company: { type: mongoose.Schema.Types.ObjectId, ref: 'Company', default: null, index: true },
     address: { type: String, default: '' },
     phone: { type: String, default: '' },
     website: { type: String, default: '' },
@@ -13,5 +14,7 @@ const organizationSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+
+organizationSchema.index({ company: 1, name: 1 }, { unique: true });
 
 module.exports = mongoose.model('Organization', organizationSchema);

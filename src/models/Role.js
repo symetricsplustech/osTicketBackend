@@ -20,13 +20,16 @@ const PERMISSIONS = [
 
 const roleSchema = new mongoose.Schema(
   {
-    name: { type: String, required: true, unique: true, trim: true },
+    name: { type: String, required: true, trim: true },
+    company: { type: mongoose.Schema.Types.ObjectId, ref: 'Company', default: null, index: true },
     permissions: { type: [String], enum: PERMISSIONS, default: [] },
     isAdmin: { type: Boolean, default: false },
     notes: { type: String, default: '' },
   },
   { timestamps: true }
 );
+
+roleSchema.index({ company: 1, name: 1 }, { unique: true });
 
 roleSchema.statics.PERMISSIONS = PERMISSIONS;
 

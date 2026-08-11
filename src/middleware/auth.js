@@ -3,6 +3,7 @@ const config = require('../config/config');
 const ApiError = require('../utils/ApiError');
 const User = require('../models/User');
 const Agent = require('../models/Agent');
+const SuperAdmin = require('../models/SuperAdmin');
 const asyncHandler = require('../utils/asyncHandler');
 
 const signToken = (payload) =>
@@ -32,6 +33,7 @@ const protectUser = asyncHandler(async (req, res, next) => {
   const user = await User.findById(decoded.id);
   if (!user || user.status !== 'active') throw new ApiError(401, 'Account not found or disabled');
   req.user = user;
+  req.companyId = user.company || null;
   next();
 });
 
@@ -42,7 +44,10 @@ const optionalUser = asyncHandler(async (req, res, next) => {
       const decoded = verifyToken(token);
       if (decoded.type === 'user') {
         const user = await User.findById(decoded.id);
-        if (user && user.status === 'active') req.user = user;
+        if (user && user.status === 'active') {
+          req.user = user;
+          req.companyId = user.company || null;
+        }
       }
     } catch (err) {
       // ignore invalid optional token
@@ -64,6 +69,7 @@ const protectAgent = asyncHandler(async (req, res, next) => {
   const agent = await Agent.findById(decoded.id).populate('role');
   if (!agent || !agent.isActive) throw new ApiError(401, 'Account not found or disabled');
   req.agent = agent;
+  req.companyId = agent.company || null;
   next();
 });
 
@@ -83,6 +89,33 @@ const protectAdmin = asyncHandler(async (req, res, next) => {
     throw new ApiError(403, 'Admin access required');
   }
   req.agent = agent;
+  req.companyId = agent.company || null;
+  next();
+});
+
+const protectSuperAdmin = asyncHandler(async (req, res, next) => {
+  const token = extractToken(req);
+  if (!token) throw new ApiError(401, 'Not authorized, please login');
+  let decoded;
+  try {
+    decoded = verifyToken(token);
+  } catch (err) {
+    throw new ApiError(401, 'Session expired, please login again');
+  }
+  if (decoded.type !== 'superadmin') throw new ApiError(403, 'Super admin access only');
+  const superAdmin = await SuperAdmin.findById(decoded.id);
+  if (!superAdmin || !superAdmin.isActive) {
+    throw new ApiError(401, 'Account not found or disabled');
+  }
+  if (superAdmin.allowedIps && superAdmin.allowedIps.length) {
+    const ip = req.ip || req.connection?.remoteAddress || '';
+    if (!superAdmin.allowedIps.includes(ip)) {
+      throw new ApiError(403, 'Access denied for this IP address');
+    }
+  }
+  superAdmin.lastLogin = new Date();
+  await superAdmin.save();
+  req.superAdmin = superAdmin;
   next();
 });
 
@@ -96,4 +129,4 @@ const requirePermission = (perm) =>
     next();
   });
 
-module.exports = { signToken, verifyToken, protectUser, protectAgent, protectAdmin, optionalUser, requirePermission };
+module.exports = { signToken, verifyToken, protectUser, protectAgent, protectAdmin, protectSuperAdmin, optionalUser, requirePermission };

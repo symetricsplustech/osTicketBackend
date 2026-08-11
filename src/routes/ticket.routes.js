@@ -13,5 +13,6 @@ router.get('/:number', protectUser, ctrl.viewTicket);
 router.post('/:number/reply', protectUser, upload.array('files', 5), ctrl.reply);
 router.post('/:number/close', protectUser, ctrl.closeTicket);
 router.post('/:number/reopen', protectUser, ctrl.reopenTicket);
+router.delete('/:number', protectUser, ctrl.deleteTicket);
 
 module.exports = router;

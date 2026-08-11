@@ -25,10 +25,17 @@ const config = {
     client: process.env.CLIENT_URL || 'http://localhost:5173',
     agent: process.env.AGENT_URL || 'http://localhost:5174',
     admin: process.env.ADMIN_URL || 'http://localhost:5175',
+    superadmin: process.env.SUPERADMIN_URL || 'http://localhost:5176',
   },
-  corsOrigins: (process.env.CORS_ORIGINS || 'http://localhost:5173,http://localhost:5174,http://localhost:5175')
+  corsOrigins: (process.env.CORS_ORIGINS || 'http://localhost:5173,http://localhost:5174,http://localhost:5175,http://localhost:5176')
     .split(',')
     .map((s) => s.trim()),
+  razorpay: {
+    keyId: process.env.RAZORPAY_KEY_ID || '',
+    keySecret: process.env.RAZORPAY_KEY_SECRET || '',
+    webhookSecret: process.env.RAZORPAY_WEBHOOK_SECRET || '',
+    enabled: !!(process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_SECRET),
+  },
   maxFileSize: parseInt(process.env.MAX_FILE_SIZE, 10) || 5 * 1024 * 1024,
   rateLimit: {
     window: parseInt(process.env.RATE_LIMIT_WINDOW, 10) || 15,

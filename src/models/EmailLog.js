@@ -7,6 +7,7 @@ const emailLogSchema = new mongoose.Schema(
     subject: { type: String, default: '' },
     body: { type: String, default: '' },
     event: { type: String, default: 'general' },
+    company: { type: mongoose.Schema.Types.ObjectId, ref: 'Company', default: null, index: true },
     ticket: { type: mongoose.Schema.Types.ObjectId, ref: 'Ticket', default: null },
     user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
     status: { type: String, enum: ['sent', 'queued', 'failed'], default: 'queued' },

@@ -18,12 +18,23 @@ const Faq = require('../models/Faq');
 const Announcement = require('../models/Announcement');
 const EmailTemplate = require('../models/EmailTemplate');
 const TicketFilter = require('../models/TicketFilter');
+const Notification = require('../models/Notification');
 const SystemSetting = require('../models/SystemSetting');
+const SuperAdmin = require('../models/SuperAdmin');
+const Plan = require('../models/Plan');
+const Company = require('../models/Company');
+const Invoice = require('../models/Invoice');
+const AuditLog = require('../models/AuditLog');
 const { emailTemplates } = require('./seedData');
 const { generateTicketNumber } = require('../utils/generators');
 const { computeDueDate } = require('../services/sla.service');
 
 const MODELS = [
+  AuditLog,
+  Invoice,
+  Company,
+  Plan,
+  SuperAdmin,
   EmailTemplate,
   SystemSetting,
   TicketFilter,
@@ -67,6 +78,51 @@ const run = async () => {
     await EmailTemplate.findOneAndUpdate({ key: t.key }, t, { upsert: true });
   }
   console.log('Email templates seeded.');
+
+  // ----- Super admin -----
+  let superAdmin = await SuperAdmin.findOne({ email: 'superadmin@osticket.local' });
+  if (!superAdmin) {
+    superAdmin = await SuperAdmin.create({
+      name: 'Platform Super Admin',
+      email: 'superadmin@osticket.local',
+      password: 'SuperAdmin@123',
+      role: 'super_admin',
+      isActive: true,
+    });
+  }
+  console.log(`Super admin seeded: ${superAdmin.email} / SuperAdmin@123`);
+
+  // ----- Plans -----
+  const freePlan = await Plan.create({ name: 'Free', code: 'free', description: 'For small teams getting started', priceMonthly: 0, priceYearly: 0, maxAgents: 3, maxUsers: 50, features: ['tickets', 'kb', 'basic_reports'], isActive: true, isDefault: true, trialDays: 0 });
+  const proPlan = await Plan.create({ name: 'Pro', code: 'pro', description: 'For growing support teams', priceMonthly: 1999, priceYearly: 19990, maxAgents: 10, maxUsers: 500, features: ['tickets', 'kb', 'reports', 'sla', 'multi_dept', 'canned_responses'], isActive: true, trialDays: 14 });
+  await Plan.create({ name: 'Business', code: 'business', description: 'For larger organizations', priceMonthly: 4999, priceYearly: 49990, maxAgents: 50, maxUsers: 5000, features: ['tickets', 'kb', 'reports', 'sla', 'multi_dept', 'canned_responses', 'api_access', 'priority_support'], isActive: true, apiAccess: true, prioritySupport: true, trialDays: 14 });
+  console.log('Plans seeded.');
+
+  // ----- Demo company -----
+  const demoCompany = await Company.create({
+    name: 'My Support Center',
+    email: 'support@osticket.local',
+    domain: 'osticket.local',
+    plan: proPlan._id,
+    status: 'active',
+    billingCycle: 'monthly',
+    planStartedAt: new Date(),
+    planExpiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+    createdBy: superAdmin._id,
+  });
+  await Invoice.create({
+    invoiceNumber: 'INV-DEMO-0001',
+    company: demoCompany._id,
+    plan: proPlan._id,
+    description: 'Pro plan (monthly) for My Support Center',
+    amount: 1999,
+    status: 'paid',
+    periodStart: new Date(),
+    periodEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+    paidAt: new Date(),
+    createdBy: superAdmin._id,
+  });
+  console.log('Demo company seeded.');
 
   // ----- Roles -----
   const [adminRole, supportRole, techRole] = await Promise.all([
@@ -325,14 +381,22 @@ const run = async () => {
   await SystemSetting.setSetting('tickets.notifyNewTicketToDept', true);
   console.log('Settings seeded.');
 
+  // ----- Assign all seeded data to the demo company -----
+  const companyScoped = [Agent, User, Ticket, TicketThread, Task, Organization, Department, HelpTopic, SlaPlan, Team, Role, CannedResponse, FaqCategory, Faq, Announcement, TicketFilter, Notification];
+  for (const M of companyScoped) {
+    await M.updateMany({ company: null }, { company: demoCompany._id });
+  }
+  console.log('Seeded data assigned to demo company.');
+
   console.log('');
   console.log('==============================================');
   console.log('Seed completed successfully!');
   console.log('----------------------------------------------');
   console.log('Demo logins:');
-  console.log('  Customer Portal  customer@osticket.local / Customer@123');
-  console.log('  Agent Panel      agent@osticket.local / Agent@123');
-  console.log('  Admin Panel      admin@osticket.local / Admin@123');
+  console.log('  Super Admin Panel  superadmin@osticket.local / SuperAdmin@123');
+  console.log('  Customer Portal     customer@osticket.local / Customer@123');
+  console.log('  Agent Panel         agent@osticket.local / Agent@123');
+  console.log('  Admin Panel         admin@osticket.local / Admin@123');
   console.log('==============================================');
 
   await mongoose.disconnect();

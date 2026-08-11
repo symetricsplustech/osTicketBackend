@@ -1,6 +1,7 @@
 const express = require('express');
 const { protectAdmin } = require('../middleware/auth');
 const ctrl = require('../controllers/admin.controller');
+const { upload } = require('../config/multer');
 
 const router = express.Router();
 
@@ -65,6 +66,9 @@ router.put('/email-templates/:id', ctrl.updateEmailTemplate);
 // Settings
 router.get('/settings', ctrl.getSettings);
 router.put('/settings', ctrl.updateSettings);
+router.get('/company', ctrl.getCompanySettings);
+router.put('/company', ctrl.updateCompanySettings);
+router.post('/company/logo', upload.single('logo'), ctrl.uploadCompanyLogo);
 
 // Users
 router.get('/users', ctrl.listUsers);

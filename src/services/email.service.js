@@ -16,7 +16,7 @@ if (config.email.enabled) {
   });
 }
 
-const logEmail = async ({ to, subject, body, event, ticket, user, status, error, meta }) => {
+const logEmail = async ({ to, subject, body, event, ticket, user, status, error, meta, company }) => {
   try {
     await EmailLog.create({
       to,
@@ -24,6 +24,7 @@ const logEmail = async ({ to, subject, body, event, ticket, user, status, error,
       subject,
       body,
       event,
+      company: company || null,
       ticket,
       user,
       status,
@@ -35,12 +36,12 @@ const logEmail = async ({ to, subject, body, event, ticket, user, status, error,
   }
 };
 
-const sendMail = async ({ to, subject, body, html, event = 'general', ticket, user, meta }) => {
+const sendMail = async ({ to, subject, body, html, event = 'general', ticket, user, meta, company }) => {
   const htmlBody = html || body.replace(/\n/g, '<br/>');
   if (!config.email.enabled) {
     logger.info(`[EMAIL ${event}] To: ${to} | Subject: ${subject}`);
     logger.info(`[EMAIL BODY]\n${body}`);
-    await logEmail({ to, subject, body, event, ticket, user, status: 'queued', meta: { dev: true } });
+    await logEmail({ to, subject, body, event, ticket, user, status: 'queued', meta: { dev: true }, company });
     return { queued: true, dev: true };
   }
   try {
@@ -50,31 +51,32 @@ const sendMail = async ({ to, subject, body, html, event = 'general', ticket, us
       subject,
       html: htmlBody,
     });
-    await logEmail({ to, subject, body, event, ticket, user, status: 'sent', meta });
+    await logEmail({ to, subject, body, event, ticket, user, status: 'sent', meta, company });
     return { queued: false };
   } catch (err) {
     logger.error(`Email send failed: ${err.message}`);
-    await logEmail({ to, subject, body, event, ticket, user, status: 'failed', error: err.message, meta });
+    await logEmail({ to, subject, body, event, ticket, user, status: 'failed', error: err.message, meta, company });
     return { queued: false, error: err.message };
   }
 };
 
-const loadTemplate = async (key) => {
-  return EmailTemplate.findOne({ key });
+const loadTemplate = async (key, companyId) => {
+  if (companyId) return EmailTemplate.findOne({ key, company: companyId });
+  return EmailTemplate.findOne({ key, company: null });
 };
 
-const sendFromTemplate = async ({ key, to, data, event, ticket, user, meta }) => {
-  const template = await loadTemplate(key);
+const sendFromTemplate = async ({ key, to, data, event, ticket, user, meta, company }) => {
+  const template = await loadTemplate(key, company);
   if (!template) {
     logger.warn(`Email template not found: ${key}`);
     return null;
   }
   const subject = renderTemplate(template.subject, data);
   const body = renderTemplate(template.body, data);
-  return sendMail({ to, subject, body, event, ticket, user, meta: { templateKey: key, ...meta } });
+  return sendMail({ to, subject, body, event, ticket, user, meta: { templateKey: key, ...meta }, company });
 };
 
-const getCompanyContext = async () => {
+const getCompanyContext = async (companyId) => {
   const settings = await SystemSetting.getSettings();
   const c = settings.company || {};
   return {

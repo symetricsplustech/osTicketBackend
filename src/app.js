@@ -11,6 +11,7 @@ const { notFound, errorHandler } = require('./middleware/error');
 
 const app = express();
 
+app.disable('etag');
 app.set('trust proxy', 1);
 
 app.use(
@@ -25,7 +26,14 @@ app.use(
 
 app.use(helmet());
 app.use(compression());
-app.use(express.json({ limit: '2mb' }));
+app.use(
+  express.json({
+    limit: '2mb',
+    verify: (req, res, buf) => {
+      req.rawBody = buf.toString();
+    },
+  })
+);
 app.use(express.urlencoded({ extended: true, limit: '2mb' }));
 
 if (config.env === 'development') {
@@ -57,6 +65,7 @@ if (config.env === 'production') {
     { name: 'customer', prefix: '/', dir: '../../frontend/customer/dist' },
     { name: 'agent', prefix: '/agent', dir: '../../frontend/agent/dist' },
     { name: 'admin', prefix: '/admin', dir: '../../frontend/admin/dist' },
+    { name: 'superadmin', prefix: '/superadmin', dir: '../../frontend/superadmin/dist' },
   ];
   for (const fe of frontends) {
     const feDir = path.resolve(__dirname, fe.dir);
@@ -64,7 +73,7 @@ if (config.env === 'production') {
   }
   app.get('*', (req, res, next) => {
     if (req.path.startsWith('/api') || req.path.startsWith('/uploads')) return next();
-    const target = req.path.startsWith('/agent') ? 'agent' : req.path.startsWith('/admin') ? 'admin' : 'customer';
+    const target = req.path.startsWith('/agent') ? 'agent' : req.path.startsWith('/admin') ? 'admin' : req.path.startsWith('/superadmin') ? 'superadmin' : 'customer';
     const feDir = path.resolve(__dirname, frontends.find((f) => f.name === target).dir);
     res.sendFile(path.join(feDir, 'index.html'));
   });

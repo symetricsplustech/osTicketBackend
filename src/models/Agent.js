@@ -12,6 +12,7 @@ const agentSchema = new mongoose.Schema(
       trim: true,
       index: true,
     },
+    company: { type: mongoose.Schema.Types.ObjectId, ref: 'Company', default: null, index: true },
     password: { type: String, required: true },
     role: { type: mongoose.Schema.Types.ObjectId, ref: 'Role', default: null },
     isAdmin: { type: Boolean, default: false },

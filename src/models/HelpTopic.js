@@ -2,7 +2,8 @@ const mongoose = require('mongoose');
 
 const helpTopicSchema = new mongoose.Schema(
   {
-    topic: { type: String, required: true, unique: true, trim: true },
+    topic: { type: String, required: true, trim: true },
+    company: { type: mongoose.Schema.Types.ObjectId, ref: 'Company', default: null, index: true },
     category: { type: String, default: '' },
     department: { type: mongoose.Schema.Types.ObjectId, ref: 'Department', default: null },
     priority: {
@@ -20,5 +21,7 @@ const helpTopicSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+
+helpTopicSchema.index({ company: 1, topic: 1 }, { unique: true });
 
 module.exports = mongoose.model('HelpTopic', helpTopicSchema);

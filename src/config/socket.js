@@ -20,6 +20,9 @@ const setIO = (server) => {
     socket.on('user:join', (userId) => {
       if (userId) socket.join(`user:${userId}`);
     });
+    socket.on('superadmin:join', (id) => {
+      if (id) socket.join(`superadmin:${id}`);
+    });
   });
   return io;
 };

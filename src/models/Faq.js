@@ -3,6 +3,7 @@ const mongoose = require('mongoose');
 const faqSchema = new mongoose.Schema(
   {
     category: { type: mongoose.Schema.Types.ObjectId, ref: 'FaqCategory', default: null },
+    company: { type: mongoose.Schema.Types.ObjectId, ref: 'Company', default: null, index: true },
     question: { type: String, required: true, trim: true },
     answer: { type: String, required: true },
     keywords: { type: [String], default: [] },

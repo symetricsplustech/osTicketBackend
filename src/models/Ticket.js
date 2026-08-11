@@ -12,7 +12,9 @@ const STATUSES = {
 const ticketSchema = new mongoose.Schema(
   {
     number: { type: String, required: true, unique: true, index: true },
+    company: { type: mongoose.Schema.Types.ObjectId, ref: 'Company', default: null, index: true },
     user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+    createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null, index: true },
     dept: { type: mongoose.Schema.Types.ObjectId, ref: 'Department', default: null, index: true },
     topic: { type: mongoose.Schema.Types.ObjectId, ref: 'HelpTopic', default: null },
     status: { type: String, enum: Object.values(STATUSES), default: STATUSES.OPEN, index: true },

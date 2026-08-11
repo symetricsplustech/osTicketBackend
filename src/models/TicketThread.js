@@ -13,6 +13,7 @@ const attachmentSchema = new mongoose.Schema(
 const threadSchema = new mongoose.Schema(
   {
     ticket: { type: mongoose.Schema.Types.ObjectId, ref: 'Ticket', required: true, index: true },
+    company: { type: mongoose.Schema.Types.ObjectId, ref: 'Company', default: null, index: true },
     type: {
       type: String,
       enum: ['message', 'note', 'system', 'event'],

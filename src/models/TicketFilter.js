@@ -20,6 +20,7 @@ const filterActionSchema = new mongoose.Schema(
 const ticketFilterSchema = new mongoose.Schema(
   {
     name: { type: String, required: true, trim: true },
+    company: { type: mongoose.Schema.Types.ObjectId, ref: 'Company', default: null, index: true },
     rules: { type: [filterRuleSchema], default: [] },
     actions: { type: [filterActionSchema], default: [] },
     match: { type: String, enum: ['all', 'any'], default: 'all' },
@@ -29,5 +30,7 @@ const ticketFilterSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+
+ticketFilterSchema.index({ company: 1, name: 1 }, { unique: true });
 
 module.exports = mongoose.model('TicketFilter', ticketFilterSchema);

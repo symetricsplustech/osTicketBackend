@@ -29,6 +29,7 @@ const getAgentDeptIds = (agent) => (agent.departments || []).map((d) => String(d
 const getAgentTeamIds = (agent) => (agent.teams || []).map((t) => String(t));
 
 const scopeTicketQuery = (agent, query = {}) => {
+  if (agent.company) query.company = agent.company;
   if (isAdminAgent(agent) || hasPerm(agent, 'tickets.view')) return query;
   const deptIds = getAgentDeptIds(agent);
   const teamIds = getAgentTeamIds(agent);
@@ -53,6 +54,7 @@ const canAccessTicket = async (agent, ticket) => {
 
 const loadTicketForAgent = async (number, agent, opts = {}) => {
   const query = { number: String(number).trim().toUpperCase(), status: { $ne: Ticket.STATUSES.DELETED } };
+  if (agent.company) query.company = agent.company;
   const ticket = await Ticket.findOne(query)
     .populate('user')
     .populate('dept', 'name')
@@ -175,11 +177,12 @@ exports.getTicket = asyncHandler(async (req, res) => {
     .populate('user', 'name email')
     .populate('agent', 'name');
   const tasks = await Task.find({ ticket: ticket._id }).sort({ createdAt: -1 }).populate('assignedTo', 'name').populate('createdBy', 'name');
-  const canned = await CannedResponse.find({ status: 'active' }).sort({ title: 1 });
-  const agents = await Agent.find({ isActive: true }).select('name email').sort({ name: 1 });
-  const teams = await Team.find({ status: 'active' }).select('name').sort({ name: 1 });
-  const depts = await Department.find({ status: 'active' }).select('name').sort({ name: 1 });
-  const topics = await require('../models/HelpTopic').find({ status: 'active' }).select('topic').sort({ topic: 1 });
+  const comp = req.companyId ? { company: req.companyId } : {};
+  const canned = await CannedResponse.find({ status: 'active', ...comp }).sort({ title: 1 });
+  const agents = await Agent.find({ isActive: true, ...comp }).select('name email').sort({ name: 1 });
+  const teams = await Team.find({ status: 'active', ...comp }).select('name').sort({ name: 1 });
+  const depts = await Department.find({ status: 'active', ...comp }).select('name').sort({ name: 1 });
+  const topics = await require('../models/HelpTopic').find({ status: 'active', ...comp }).select('topic').sort({ topic: 1 });
   res.json({ success: true, ticket, threads, tasks, canned, agents, teams, depts, topics });
 });
 
@@ -212,10 +215,12 @@ exports.reply = asyncHandler(async (req, res) => {
       event: 'ticket_response',
       ticket: ticket._id,
       user: ticket.user,
+      company: ticket.company,
     });
   } catch (err) { /* non-blocking */ }
   await notifyUser({
     userId: ticket.user,
+    company: ticket.company,
     type: 'reply',
     message: `Your ticket ${ticket.number} received a response`,
     link: `/ticket/${ticket.number}`,
@@ -261,10 +266,10 @@ exports.assign = asyncHandler(async (req, res) => {
     message: `Ticket assigned to ${assignedTo ? assignedTo.name : assignedTeam ? assignedTeam.name : 'nobody'} by ${req.agent.name}`,
   });
   if (assignedTo) {
-    await notifyAgent({ agentId: assignedTo._id, type: 'assignment', message: `Ticket ${ticket.number} assigned to you`, link: `/tickets/${ticket.number}`, ticket: ticket._id });
+    await notifyAgent({ agentId: assignedTo._id, company: ticket.company, type: 'assignment', message: `Ticket ${ticket.number} assigned to you`, link: `/tickets/${ticket.number}`, ticket: ticket._id });
     const ctx = await ticketService.buildTicketContext(ticket);
     try {
-      await emailService.sendFromTemplate({ key: 'ticket_assigned', to: assignedTo.email, data: { ...ctx, recipient: { name: assignedTo.name } }, event: 'ticket_assigned', ticket: ticket._id, user: ticket.user });
+      await emailService.sendFromTemplate({ key: 'ticket_assigned', to: assignedTo.email, data: { ...ctx, recipient: { name: assignedTo.name } }, event: 'ticket_assigned', ticket: ticket._id, user: ticket.user, company: ticket.company });
     } catch (err) { /* non-blocking */ }
   }
   res.json({ success: true, message: 'Ticket assigned', ticket });
@@ -282,7 +287,7 @@ exports.transfer = asyncHandler(async (req, res) => {
   await ticketService.addSystemEvent({ ticket, message: `Ticket transferred to ${dept.name} by ${req.agent.name}` });
   const deptAgents = await Agent.find({ 'departments.department': dept._id, isActive: true });
   for (const a of deptAgents) {
-    await notifyAgent({ agentId: a._id, type: 'transfer', message: `Ticket ${ticket.number} transferred to ${dept.name}`, link: `/tickets/${ticket.number}`, ticket: ticket._id });
+    await notifyAgent({ agentId: a._id, company: ticket.company, type: 'transfer', message: `Ticket ${ticket.number} transferred to ${dept.name}`, link: `/tickets/${ticket.number}`, ticket: ticket._id });
   }
   res.json({ success: true, message: 'Ticket transferred', ticket });
 });
@@ -318,9 +323,9 @@ exports.changeStatus = asyncHandler(async (req, res) => {
   if (status === Ticket.STATUSES.CLOSED) {
     const ctx = await ticketService.buildTicketContext(ticket);
     try {
-      await emailService.sendFromTemplate({ key: 'ticket_closed', to: ticket.user.email, data: ctx, event: 'ticket_closed', ticket: ticket._id, user: ticket.user });
+      await emailService.sendFromTemplate({ key: 'ticket_closed', to: ticket.user.email, data: ctx, event: 'ticket_closed', ticket: ticket._id, user: ticket.user, company: ticket.company });
     } catch (err) { /* non-blocking */ }
-    await notifyUser({ userId: ticket.user, type: 'status_change', message: `Your ticket ${ticket.number} has been closed`, link: `/ticket/${ticket.number}`, ticket: ticket._id });
+    await notifyUser({ userId: ticket.user, company: ticket.company, type: 'status_change', message: `Your ticket ${ticket.number} has been closed`, link: `/ticket/${ticket.number}`, ticket: ticket._id });
   }
   res.json({ success: true, message: 'Status updated', ticket });
 });
@@ -365,6 +370,7 @@ exports.addTask = asyncHandler(async (req, res) => {
   if (!title) throw new ApiError(422, 'Task title is required');
   const task = await Task.create({
     ticket: ticket._id,
+    company: ticket.company || req.companyId,
     title,
     description: description || '',
     assignedTo: assignedTo || null,
@@ -395,6 +401,7 @@ exports.listUsers = asyncHandler(async (req, res) => {
   const { page, limit, skip, sort } = getPagination(req, { page: 1, limit: 20, sort: '-createdAt' });
   const { search } = req.query;
   const query = {};
+  if (req.companyId) query.company = req.companyId;
   if (search) {
     query.$or = [
       { name: { $regex: search, $options: 'i' } },
@@ -413,14 +420,15 @@ exports.createUser = asyncHandler(async (req, res) => {
   if (!hasPerm(req.agent, 'users.manage')) throw new ApiError(403, 'Permission denied');
   const { name, email, phone, organization, registerPassword } = req.body;
   if (!name || !email) throw new ApiError(422, 'Name and email are required');
-  const user = await ticketService.findOrCreateUser({ name, email, phone, registerPassword, organization });
+  const user = await ticketService.findOrCreateUser({ name, email, phone, registerPassword, organization, company: req.companyId });
   res.status(201).json({ success: true, user });
 });
 
 exports.getUser = asyncHandler(async (req, res) => {
   const user = await User.findById(req.params.id);
   if (!user) throw new ApiError(404, 'User not found');
-  const tickets = await Ticket.find({ user: user._id, status: { $ne: Ticket.STATUSES.DELETED } })
+  if (req.companyId && String(user.company) !== String(req.companyId)) throw new ApiError(403, 'Access denied');
+  const tickets = await Ticket.find({ user: user._id, ...(req.companyId ? { company: req.companyId } : {}), status: { $ne: Ticket.STATUSES.DELETED } })
     .sort({ updatedAt: -1 })
     .populate('dept', 'name')
     .populate('agent', 'name');
@@ -431,6 +439,7 @@ exports.listOrgs = asyncHandler(async (req, res) => {
   const { page, limit, skip, sort } = getPagination(req, { page: 1, limit: 20, sort: '-createdAt' });
   const { search } = req.query;
   const query = {};
+  if (req.companyId) query.company = req.companyId;
   if (search) {
     query.$or = [
       { name: { $regex: search, $options: 'i' } },
@@ -448,19 +457,20 @@ exports.createOrg = asyncHandler(async (req, res) => {
   if (!hasPerm(req.agent, 'orgs.manage')) throw new ApiError(403, 'Permission denied');
   const { name, address, phone, website, domain, accountManager, notes } = req.body;
   if (!name) throw new ApiError(422, 'Organization name is required');
-  const org = await Organization.create({ name, address, phone, website, domain, accountManager, notes });
+  const org = await Organization.create({ name, address, phone, website, domain, accountManager, notes, company: req.companyId });
   res.status(201).json({ success: true, org });
 });
 
 exports.getOrg = asyncHandler(async (req, res) => {
   const org = await Organization.findById(req.params.id).populate('accountManager', 'name');
   if (!org) throw new ApiError(404, 'Organization not found');
-  const users = await User.find({ organization: org._id }).select('name email phone');
+  if (req.companyId && String(org.company) !== String(req.companyId)) throw new ApiError(403, 'Access denied');
+  const users = await User.find({ organization: org._id, ...(req.companyId ? { company: req.companyId } : {}) }).select('name email phone');
   res.json({ success: true, org, users });
 });
 
 exports.listCanned = asyncHandler(async (req, res) => {
-  const items = await CannedResponse.find().sort({ title: 1 });
+  const items = await CannedResponse.find(req.companyId ? { company: req.companyId } : {}).sort({ title: 1 });
   res.json({ success: true, items });
 });
 
@@ -468,13 +478,14 @@ exports.createCanned = asyncHandler(async (req, res) => {
   if (!hasPerm(req.agent, 'canned.manage')) throw new ApiError(403, 'Permission denied');
   const { title, response } = req.body;
   if (!title || !response) throw new ApiError(422, 'Title and response are required');
-  const canned = await CannedResponse.create({ title, response, createdBy: req.agent._id });
+  const canned = await CannedResponse.create({ title, response, createdBy: req.agent._id, company: req.companyId });
   res.status(201).json({ success: true, canned });
 });
 
 exports.updateCanned = asyncHandler(async (req, res) => {
   const canned = await CannedResponse.findById(req.params.id);
   if (!canned) throw new ApiError(404, 'Canned response not found');
+  if (req.companyId && String(canned.company) !== String(req.companyId)) throw new ApiError(403, 'Access denied');
   const { title, response, status } = req.body;
   if (title) canned.title = title;
   if (response !== undefined) canned.response = response;
@@ -484,19 +495,19 @@ exports.updateCanned = asyncHandler(async (req, res) => {
 });
 
 exports.deleteCanned = asyncHandler(async (req, res) => {
-  await CannedResponse.findByIdAndDelete(req.params.id);
+  await CannedResponse.deleteOne({ _id: req.params.id, ...(req.companyId ? { company: req.companyId } : {}) });
   res.json({ success: true, message: 'Canned response deleted' });
 });
 
 exports.listFaqCategories = asyncHandler(async (req, res) => {
-  const items = await FaqCategory.find().sort({ sortOrder: 1 });
+  const items = await FaqCategory.find(req.companyId ? { company: req.companyId } : {}).sort({ sortOrder: 1 });
   res.json({ success: true, items });
 });
 
 exports.createFaqCategory = asyncHandler(async (req, res) => {
   if (!hasPerm(req.agent, 'kb.manage')) throw new ApiError(403, 'Permission denied');
   const { name, description, isPublic, sortOrder } = req.body;
-  const cat = await FaqCategory.create({ name, description, isPublic: isPublic !== false, sortOrder: sortOrder || 0, createdBy: req.agent._id });
+  const cat = await FaqCategory.create({ name, description, isPublic: isPublic !== false, sortOrder: sortOrder || 0, createdBy: req.agent._id, company: req.companyId });
   res.status(201).json({ success: true, cat });
 });
 
@@ -504,6 +515,7 @@ exports.listFaqs = asyncHandler(async (req, res) => {
   const { page, limit, skip, sort } = getPagination(req, { page: 1, limit: 20, sort: '-createdAt' });
   const { search, category } = req.query;
   const query = {};
+  if (req.companyId) query.company = req.companyId;
   if (search) query.question = { $regex: search, $options: 'i' };
   if (category) query.category = category;
   const [items, total] = await Promise.all([
@@ -519,6 +531,7 @@ exports.createFaq = asyncHandler(async (req, res) => {
   if (!question || !answer) throw new ApiError(422, 'Question and answer are required');
   const faq = await Faq.create({
     category: category || null,
+    company: req.companyId,
     question,
     answer,
     keywords: keywords || [],
@@ -531,6 +544,7 @@ exports.createFaq = asyncHandler(async (req, res) => {
 exports.updateFaq = asyncHandler(async (req, res) => {
   const faq = await Faq.findById(req.params.id);
   if (!faq) throw new ApiError(404, 'FAQ not found');
+  if (req.companyId && String(faq.company) !== String(req.companyId)) throw new ApiError(403, 'Access denied');
   const { category, question, answer, keywords, isPublished } = req.body;
   if (category !== undefined) faq.category = category;
   if (question) faq.question = question;
@@ -542,12 +556,12 @@ exports.updateFaq = asyncHandler(async (req, res) => {
 });
 
 exports.deleteFaq = asyncHandler(async (req, res) => {
-  await Faq.findByIdAndDelete(req.params.id);
+  await Faq.deleteOne({ _id: req.params.id, ...(req.companyId ? { company: req.companyId } : {}) });
   res.json({ success: true, message: 'FAQ deleted' });
 });
 
 exports.listAnnouncements = asyncHandler(async (req, res) => {
-  const items = await Announcement.find().sort({ createdAt: -1 });
+  const items = await Announcement.find(req.companyId ? { company: req.companyId } : {}).sort({ createdAt: -1 });
   res.json({ success: true, items });
 });
 
@@ -555,12 +569,12 @@ exports.createAnnouncement = asyncHandler(async (req, res) => {
   if (!hasPerm(req.agent, 'kb.manage')) throw new ApiError(403, 'Permission denied');
   const { title, body, showDate, isActive } = req.body;
   if (!title || !body) throw new ApiError(422, 'Title and body are required');
-  const ann = await Announcement.create({ title, body, showDate: showDate || null, isActive: isActive !== false, createdBy: req.agent._id });
+  const ann = await Announcement.create({ title, body, showDate: showDate || null, isActive: isActive !== false, createdBy: req.agent._id, company: req.companyId });
   res.status(201).json({ success: true, ann });
 });
 
 exports.deleteAnnouncement = asyncHandler(async (req, res) => {
-  await Announcement.findByIdAndDelete(req.params.id);
+  await Announcement.deleteOne({ _id: req.params.id, ...(req.companyId ? { company: req.companyId } : {}) });
   res.json({ success: true, message: 'Announcement deleted' });
 });
 
@@ -582,10 +596,11 @@ exports.markNotificationsRead = asyncHandler(async (req, res) => {
 });
 
 exports.agentDirectory = asyncHandler(async (req, res) => {
-  const agents = await Agent.find({ isActive: true })
+  const comp = req.companyId ? { company: req.companyId } : {};
+  const agents = await Agent.find({ isActive: true, ...comp })
     .select('name email lastLogin')
     .sort({ name: 1 });
-  const teams = await Team.find({ status: 'active' }).select('name members').populate('members', 'name');
+  const teams = await Team.find({ status: 'active', ...comp }).select('name members').populate('members', 'name');
   res.json({ success: true, agents, teams });
 });
 
@@ -593,6 +608,7 @@ exports.directoryUsers = asyncHandler(async (req, res) => {
   const { page, limit, skip, sort } = getPagination(req, { page: 1, limit: 30, sort: 'name' });
   const { search } = req.query;
   const query = {};
+  if (req.companyId) query.company = req.companyId;
   if (search) query.$or = [{ name: { $regex: search, $options: 'i' } }, { email: { $regex: search, $options: 'i' } }];
   const [items, total] = await Promise.all([
     User.find(query).sort(getSortObj(sort)).skip(skip).limit(limit),

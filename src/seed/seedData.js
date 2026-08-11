@@ -131,6 +131,24 @@ Regards,
     context: 'account',
   },
   {
+    key: 'employee_welcome',
+    name: 'Employee Account Created',
+    subject: 'Your support portal account has been created',
+    body: `Dear %{user.name},
+
+An employee account has been created for you on the %{company.name} portal by %{createdBy.name}.
+
+Login: %{urls.login}
+Email: %{account.email}
+Password: %{account.password}
+
+Please sign in and change your password after your first login.
+
+Regards,
+%{company.name}`,
+    context: 'account',
+  },
+  {
     key: 'password_reset',
     name: 'Password Reset',
     subject: 'Password Reset Request',
@@ -142,6 +160,42 @@ To reset your password, please click the link below:
 %{urls.reset}
 
 This link will expire in 30 minutes. If you did not request this, please ignore this email.
+
+Regards,
+%{company.name}`,
+    context: 'account',
+  },
+  {
+    key: 'admin_welcome',
+    name: 'Company Admin Account Created',
+    subject: 'Your Administrator account has been created',
+    body: `Dear %{user.name},
+
+Your company "%{company.name}" has been registered and an administrator account has been created for you.
+
+Login: %{urls.login}
+Email: %{account.email}
+Password: %{account.password}
+
+Please sign in to the Administrator Panel and change your password after your first login.
+
+Regards,
+%{company.name}`,
+    context: 'account',
+  },
+  {
+    key: 'company_admin_created',
+    name: 'Company Registered with Admin Credentials',
+    subject: 'Your company is ready',
+    body: `Dear Administrator,
+
+Your company "%{company.name}" has been registered on the support platform. Your administrator login details are below:
+
+Login: %{urls.login}
+Email: %{account.email}
+Password: %{account.password}
+
+Please keep these credentials safe and change your password after the first login.
 
 Regards,
 %{company.name}`,

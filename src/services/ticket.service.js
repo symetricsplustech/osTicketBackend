@@ -15,21 +15,25 @@ const { getIO } = require('../config/socket');
 const config = require('../config/config');
 const logger = require('../utils/logger');
 
-const resolveDepartment = async (helpTopic) => {
+const resolveDepartment = async (helpTopic, companyId = null) => {
+  const scope = { status: 'active' };
+  if (companyId) scope.company = companyId;
   if (helpTopic && helpTopic.department) {
     const dept = await Department.findById(helpTopic.department);
-    if (dept && dept.status === 'active') return dept;
+    if (dept && dept.status === 'active' && (!companyId || !dept.company || String(dept.company) === String(companyId))) return dept;
   }
   const settings = await SystemSetting.getSettings();
   if (settings.system.defaultDept) {
     const dept = await Department.findById(settings.system.defaultDept);
-    if (dept && dept.status === 'active') return dept;
+    if (dept && dept.status === 'active' && (!companyId || !dept.company || String(dept.company) === String(companyId))) return dept;
   }
-  return Department.findOne({ status: 'active' });
+  return Department.findOne(scope);
 };
 
-const applyFilters = async ({ ticket, topic, subject, body, userEmail, userName, priority }) => {
-  const filters = await TicketFilter.find({ status: 'active' }).sort({ order: 1 });
+const applyFilters = async ({ ticket, topic, subject, body, userEmail, userName, priority, companyId }) => {
+  const filterQuery = { status: 'active' };
+  if (companyId) filterQuery.company = companyId;
+  const filters = await TicketFilter.find(filterQuery).sort({ order: 1 });
   const actions = { dept: null, agent: null, team: null, priority: null, sla: null, canned: null, reject: false };
   for (const filter of filters) {
     let matched = false;
@@ -95,10 +99,13 @@ const matchRule = (rule, ctx) => {
   }
 };
 
-const findOrCreateUser = async ({ name, email, phone, registerPassword, organization }) => {
+const findOrCreateUser = async ({ name, email, phone, registerPassword, organization, company }) => {
   email = (email || '').toLowerCase().trim();
-  let user = await User.findOne({ email });
+  let user = company
+    ? await User.findOne({ email, company })
+    : await User.findOne({ email, company: null });
   if (user) {
+    if (company && !user.company) user.company = company;
     if (registerPassword) user.password = registerPassword;
     if (!user.isRegistered && registerPassword) {
       user.isRegistered = true;
@@ -119,6 +126,7 @@ const findOrCreateUser = async ({ name, email, phone, registerPassword, organiza
     emailConfirmed: isRegistered,
     confirmationToken: isRegistered ? null : generateConfirmationToken(),
     organization: organization || null,
+    company: company || null,
   });
   return user;
 };
@@ -169,10 +177,15 @@ const buildTicketContext = async (ticket) => {
   };
 };
 
-const createTicket = async ({ user, subject, details, topicId, priority, deptId, source = 'web', attachments = [], customData = {} }) => {
+const createTicket = async ({ user, orgOwner, createdBy, subject, details, topicId, priority, deptId, source = 'web', attachments = [], customData = {} }) => {
+  const companyId = user?.company || null;
   const helpTopic = topicId ? await HelpTopic.findById(topicId) : null;
+  if (helpTopic && companyId && helpTopic.company && String(helpTopic.company) !== String(companyId)) {
+    throw new Error('Invalid help topic for this tenant');
+  }
   let dept = deptId ? await Department.findById(deptId) : null;
-  if (!dept) dept = await resolveDepartment(helpTopic);
+  if (dept && companyId && dept.company && String(dept.company) !== String(companyId)) dept = null;
+  if (!dept) dept = await resolveDepartment(helpTopic, companyId);
 
   const filterActions = await applyFilters({
     ticket: null,
@@ -182,6 +195,7 @@ const createTicket = async ({ user, subject, details, topicId, priority, deptId,
     userEmail: user.email,
     userName: user.name,
     priority: priority || helpTopic?.priority || 'Normal',
+    companyId,
   });
 
   if (filterActions.reject) {
@@ -191,7 +205,7 @@ const createTicket = async ({ user, subject, details, topicId, priority, deptId,
   let targetDept = dept;
   if (filterActions.dept) {
     const fd = await Department.findById(filterActions.dept);
-    if (fd) targetDept = fd;
+    if (fd && (!companyId || !fd.company || String(fd.company) === String(companyId))) targetDept = fd;
   }
 
   let targetPriority = priority || helpTopic?.priority || 'Normal';
@@ -217,7 +231,9 @@ const createTicket = async ({ user, subject, details, topicId, priority, deptId,
 
   const ticket = await Ticket.create({
     number: generateTicketNumber(),
-    user: user._id,
+    company: companyId,
+    user: orgOwner || user._id,
+    createdBy: createdBy || null,
     dept: targetDept?._id || null,
     topic: helpTopic?._id || null,
     priority: targetPriority,
@@ -234,6 +250,7 @@ const createTicket = async ({ user, subject, details, topicId, priority, deptId,
 
   await TicketThread.create({
     ticket: ticket._id,
+    company: companyId,
     type: 'message',
     posterType: 'user',
     user: user._id,
@@ -251,6 +268,7 @@ const createTicket = async ({ user, subject, details, topicId, priority, deptId,
     const agentDoc = await Agent.findById(targetAgent);
     await notifyAgent({
       agentId: targetAgent,
+      company: companyId,
       type: 'new_ticket',
       message: `New ticket ${ticket.number} assigned to you: ${ticket.subject}`,
       link: `/tickets/${ticket.number}`,
@@ -264,6 +282,7 @@ const createTicket = async ({ user, subject, details, topicId, priority, deptId,
       if (String(m._id) !== String(targetAgent)) {
         await notifyAgent({
           agentId: m._id,
+          company: companyId,
           type: 'new_ticket',
           message: `New ticket ${ticket.number} assigned to team ${teamDoc.name}`,
           link: `/tickets/${ticket.number}`,
@@ -272,12 +291,13 @@ const createTicket = async ({ user, subject, details, topicId, priority, deptId,
       }
     }
   }
-  const deptAgents = await Agent.find({ 'departments.department': targetDept?._id, isActive: true });
+  const deptAgents = await Agent.find({ 'departments.department': targetDept?._id, isActive: true, ...(companyId ? { company: companyId } : {}) });
   if (settings.tickets?.notifyNewTicketToDept) {
     for (const a of deptAgents) {
       if (!targetAgent || String(a._id) !== String(targetAgent)) {
         await notifyAgent({
           agentId: a._id,
+          company: companyId,
           type: 'new_ticket',
           message: `New ticket ${ticket.number} in ${targetDept?.name || 'Support'}: ${ticket.subject}`,
           link: `/tickets/${ticket.number}`,
@@ -286,7 +306,7 @@ const createTicket = async ({ user, subject, details, topicId, priority, deptId,
       }
     }
   }
-  await notifyAdminRoom({ type: 'new_ticket', message: `New ticket ${ticket.number}: ${ticket.subject}`, link: `/tickets/${ticket.number}`, ticket: ticket._id });
+  await notifyAdminRoom({ type: 'new_ticket', message: `New ticket ${ticket.number}: ${ticket.subject}`, link: `/tickets/${ticket.number}`, ticket: ticket._id, company: companyId });
 
   // Emails
   const ctx = await buildTicketContext(ticket);
@@ -299,6 +319,7 @@ const createTicket = async ({ user, subject, details, topicId, priority, deptId,
         event: 'new_ticket_confirmation',
         ticket: ticket._id,
         user: user._id,
+        company: companyId,
       });
     }
   } catch (err) {
@@ -319,6 +340,7 @@ const createTicket = async ({ user, subject, details, topicId, priority, deptId,
           event: 'new_ticket_alert',
           ticket: ticket._id,
           user: user._id,
+          company: companyId,
         });
       }
     }
@@ -332,6 +354,7 @@ const createTicket = async ({ user, subject, details, topicId, priority, deptId,
 const addThreadEntry = async ({ ticket, type = 'message', posterType, user, agent, body, title, attachments = [], systemMessage }) => {
   const entry = await TicketThread.create({
     ticket: ticket._id,
+    company: ticket.company || null,
     type,
     posterType,
     user: user?._id || null,
@@ -365,6 +388,7 @@ const addThreadEntry = async ({ ticket, type = 'message', posterType, user, agen
 const addSystemEvent = async ({ ticket, message }) => {
   return TicketThread.create({
     ticket: ticket._id,
+    company: ticket.company || null,
     type: 'system',
     posterType: 'system',
     title: 'System',

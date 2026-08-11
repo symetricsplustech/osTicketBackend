@@ -1,7 +1,10 @@
 const express = require('express');
 const ctrl = require('../controllers/kb.controller');
+const { optionalUser } = require('../middleware/auth');
 
 const router = express.Router();
+
+router.use(optionalUser);
 
 router.get('/categories', ctrl.categories);
 router.get('/faqs', ctrl.faqs);

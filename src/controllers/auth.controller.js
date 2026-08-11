@@ -20,8 +20,12 @@ const sendTokenResponse = (user, type, res, status = 200) => {
 };
 
 exports.register = asyncHandler(async (req, res) => {
-  const { name, email, password, phone } = req.body;
-  let user = await User.findOne({ email: (email || '').toLowerCase() });
+  const { name, email, password, phone, company } = req.body;
+  const companyId = company || req.companyId || null;
+  const userQuery = { email: (email || '').toLowerCase() };
+  if (companyId) userQuery.company = companyId;
+  else userQuery.company = null;
+  let user = await User.findOne(userQuery);
   if (user && user.isRegistered) {
     throw new ApiError(409, 'An account with this email already exists. Please login.');
   }
@@ -30,6 +34,7 @@ exports.register = asyncHandler(async (req, res) => {
     email,
     phone,
     registerPassword: password,
+    company: companyId,
   });
   user.isRegistered = true;
   user.emailConfirmed = true;
@@ -39,7 +44,7 @@ exports.register = asyncHandler(async (req, res) => {
   const companyCtx = await emailService.getCompanyContext();
   const ctx = { user: { name: user.name, email: user.email, first: user.name?.split(' ')[0] }, urls: { home: config.urls.client }, ...companyCtx };
   try {
-    await emailService.sendFromTemplate({ key: 'welcome_user', to: user.email, data: ctx, event: 'welcome', user: user._id });
+    await emailService.sendFromTemplate({ key: 'welcome_user', to: user.email, data: ctx, event: 'welcome', user: user._id, company: companyId });
   } catch (err) {
     // non-blocking
   }
@@ -61,8 +66,10 @@ exports.login = asyncHandler(async (req, res) => {
 });
 
 exports.ticketAccess = asyncHandler(async (req, res) => {
-  const { email, number } = req.body;
-  const user = await User.findOne({ email: (email || '').toLowerCase() });
+  const { email, number, company } = req.body;
+  const userQuery = { email: (email || '').toLowerCase() };
+  if (company) userQuery.company = company;
+  const user = await User.findOne(userQuery);
   if (!user) throw new ApiError(404, 'No account or ticket found for the email provided');
   const ticket = await Ticket.findOne({ number: String(number || '').trim().toUpperCase(), user: user._id })
     .populate('dept', 'name')
