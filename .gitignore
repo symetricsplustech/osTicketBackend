@@ -7,3 +7,5 @@ src/logs/
 
 # Uploads & local data
 uploads/
+.vercel
+.env*
