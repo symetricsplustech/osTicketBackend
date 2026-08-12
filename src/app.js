@@ -5,6 +5,7 @@ const morgan = require('morgan');
 const compression = require('compression');
 const rateLimit = require('express-rate-limit');
 const path = require('path');
+const fs = require('fs');
 const config = require('./config/config');
 const routes = require('./routes');
 const { notFound, errorHandler } = require('./middleware/error');
@@ -69,13 +70,19 @@ if (config.env === 'production') {
   ];
   for (const fe of frontends) {
     const feDir = path.resolve(__dirname, fe.dir);
-    app.use(fe.prefix, express.static(feDir));
+    if (fs.existsSync(feDir)) {
+      app.use(fe.prefix, express.static(feDir));
+    }
   }
   app.get('*', (req, res, next) => {
     if (req.path.startsWith('/api') || req.path.startsWith('/uploads')) return next();
     const target = req.path.startsWith('/agent') ? 'agent' : req.path.startsWith('/admin') ? 'admin' : req.path.startsWith('/superadmin') ? 'superadmin' : 'customer';
     const feDir = path.resolve(__dirname, frontends.find((f) => f.name === target).dir);
-    res.sendFile(path.join(feDir, 'index.html'));
+    const entry = path.join(feDir, 'index.html');
+    if (fs.existsSync(entry)) {
+      return res.sendFile(entry);
+    }
+    return res.status(404).json({ success: false, message: 'Not found' });
   });
 }
 
