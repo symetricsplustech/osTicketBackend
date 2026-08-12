@@ -4,6 +4,8 @@ const config = require('./config/config');
 const connectDB = require('./config/db');
 const { setIO } = require('./config/socket');
 const { scheduleOverdueCheck } = require('./services/sla.service');
+const { startInboundPoller } = require('./services/inboundEmail.service');
+const { startEscalationRunner } = require('./services/escalation.service');
 const logger = require('./utils/logger');
 
 const start = async () => {
@@ -13,6 +15,8 @@ const start = async () => {
   setIO(server);
 
   scheduleOverdueCheck();
+  startInboundPoller();
+  startEscalationRunner();
 
   server.listen(config.port, () => {
     logger.info(`osTicket MERN API running on http://localhost:${config.port} (${config.env})`);

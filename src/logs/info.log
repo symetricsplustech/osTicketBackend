@@ -354,3 +354,332 @@ Regards,
 [2026-08-11T06:31:42.910Z] [INFO] MongoDB connected: 127.0.0.1
 [2026-08-11T06:45:46.564Z] [INFO] MongoDB connected: 127.0.0.1
 [2026-08-11T06:45:46.649Z] [INFO] osTicket MERN API running on http://localhost:5000 (development)
+[2026-08-11T07:27:58.090Z] [INFO] MongoDB connected: 127.0.0.1
+[2026-08-11T07:27:58.889Z] [INFO] osTicket MERN API running on http://localhost:5000 (development)
+[2026-08-11T07:29:58.584Z] [INFO] MongoDB connected: 127.0.0.1
+[2026-08-11T07:29:58.688Z] [INFO] osTicket MERN API running on http://localhost:5000 (development)
+[2026-08-11T08:22:57.013Z] [INFO] MongoDB connected: 127.0.0.1
+[2026-08-11T08:22:57.334Z] [INFO] osTicket MERN API running on http://localhost:5000 (development)
+[2026-08-11T08:28:41.793Z] [INFO] MongoDB connected: 127.0.0.1
+[2026-08-11T08:28:41.939Z] [INFO] osTicket MERN API running on http://localhost:5000 (development)
+[2026-08-11T12:11:34.496Z] [INFO] MongoDB connected: 127.0.0.1
+[2026-08-11T12:11:34.641Z] [INFO] osTicket MERN API running on http://localhost:5000 (development)
+[2026-08-11T13:19:27.968Z] [INFO] MongoDB connected: 127.0.0.1
+[2026-08-11T13:19:28.095Z] [INFO] osTicket MERN API running on http://localhost:5000 (development)
+[2026-08-11T13:23:02.875Z] [INFO] MongoDB connected: 127.0.0.1
+[2026-08-12T05:12:16.608Z] [INFO] MongoDB connected: 127.0.0.1
+[2026-08-12T05:12:16.609Z] [INFO] MongoDB connected: 127.0.0.1
+[2026-08-12T05:12:18.168Z] [INFO] Inbound email polling started for lalitpatidar1524@gmail.com (INBOX) every 60s
+[2026-08-12T05:12:18.169Z] [INFO] Inbound email polling started for lalitpatidar1524@gmail.com (INBOX) every 60s
+[2026-08-12T05:12:18.178Z] [INFO] osTicket MERN API running on http://localhost:5000 (development)
+[2026-08-12T05:12:45.429Z] [INFO] MongoDB connected: 127.0.0.1
+[2026-08-12T05:12:45.595Z] [INFO] Inbound email polling started for lalitpatidar1524@gmail.com (INBOX) every 60s
+[2026-08-12T05:12:45.601Z] [INFO] osTicket MERN API running on http://localhost:5000 (development)
+[2026-08-12T05:15:54.821Z] [INFO] MongoDB connected: 127.0.0.1
+[2026-08-12T05:15:54.935Z] [INFO] Inbound email polling started for lalitpatidar1524@gmail.com (INBOX) every 60s
+[2026-08-12T05:15:54.941Z] [INFO] osTicket MERN API running on http://localhost:5000 (development)
+[2026-08-12T05:19:08.612Z] [INFO] MongoDB connected: 127.0.0.1
+[2026-08-12T05:19:08.664Z] [INFO] Inbound email polling started for lalitpatidar1524@gmail.com (INBOX) every 60s
+[2026-08-12T05:19:08.668Z] [INFO] osTicket MERN API running on http://localhost:5000 (development)
+[2026-08-12T05:23:52.096Z] [INFO] MongoDB connected: 127.0.0.1
+[2026-08-12T05:23:52.149Z] [INFO] Inbound email polling started for lalitpatidar1524@gmail.com (INBOX) every 60s
+[2026-08-12T05:23:52.152Z] [INFO] osTicket MERN API running on http://localhost:5000 (development)
+[2026-08-12T05:25:18.170Z] [INFO] Inbound poll summary: {"processed":2,"newTickets":1,"replies":0,"skipped":1,"errors":[]}
+[2026-08-12T05:25:42.940Z] [INFO] MongoDB connected: 127.0.0.1
+[2026-08-12T05:25:42.990Z] [INFO] Inbound email polling started for lalitpatidar1524@gmail.com (INBOX) every 60s
+[2026-08-12T05:25:42.994Z] [INFO] osTicket MERN API running on http://localhost:5000 (development)
+[2026-08-12T05:27:41.288Z] [INFO] Inbound poll summary: {"processed":4,"newTickets":3,"replies":0,"skipped":1,"errors":[]}
+[2026-08-12T05:28:13.571Z] [INFO] Inbound poll summary: {"processed":4,"newTickets":3,"replies":0,"skipped":1,"errors":[]}
+[2026-08-12T05:29:21.102Z] [INFO] Inbound poll summary: {"processed":4,"newTickets":3,"replies":1,"skipped":0,"errors":[]}
+[2026-08-12T05:30:33.028Z] [INFO] MongoDB connected: 127.0.0.1
+[2026-08-12T05:30:33.082Z] [INFO] Inbound email polling started for lalitpatidar1524@gmail.com (INBOX) every 60s
+[2026-08-12T05:30:33.087Z] [INFO] osTicket MERN API running on http://localhost:5000 (development)
+[2026-08-12T05:32:18.478Z] [INFO] Inbound poll summary: {"processed":6,"newTickets":6,"replies":0,"skipped":0,"errors":[]}
+[2026-08-12T05:33:46.701Z] [INFO] Inbound poll summary: {"processed":6,"newTickets":6,"replies":0,"skipped":0,"errors":[]}
+[2026-08-12T05:35:37.550Z] [INFO] Inbound poll summary: {"processed":6,"newTickets":5,"replies":0,"skipped":1,"errors":[]}
+[2026-08-12T05:35:40.798Z] [INFO] Inbound poll summary: {"processed":6,"newTickets":5,"replies":0,"skipped":1,"errors":[]}
+[2026-08-12T05:37:20.668Z] [INFO] Inbound poll summary: {"processed":9,"newTickets":9,"replies":0,"skipped":0,"errors":[]}
+[2026-08-12T05:37:48.755Z] [INFO] Inbound poll summary: {"processed":9,"newTickets":8,"replies":0,"skipped":1,"errors":[]}
+[2026-08-12T05:39:12.345Z] [INFO] Inbound poll summary: {"processed":11,"newTickets":11,"replies":0,"skipped":0,"errors":[]}
+[2026-08-12T05:40:30.505Z] [INFO] Inbound poll summary: {"processed":12,"newTickets":10,"replies":0,"skipped":2,"errors":[]}
+[2026-08-12T05:41:30.583Z] [INFO] Inbound poll summary: {"processed":15,"newTickets":15,"replies":0,"skipped":0,"errors":[]}
+[2026-08-12T05:42:56.382Z] [INFO] Inbound poll summary: {"processed":20,"newTickets":19,"replies":0,"skipped":1,"errors":[]}
+[2026-08-12T05:43:47.625Z] [INFO] Inbound poll summary: {"processed":28,"newTickets":27,"replies":0,"skipped":1,"errors":[]}
+[2026-08-12T05:44:53.188Z] [INFO] Inbound poll summary: {"processed":36,"newTickets":34,"replies":0,"skipped":2,"errors":[]}
+[2026-08-12T05:45:29.012Z] [INFO] Inbound poll summary: {"processed":7,"newTickets":5,"replies":0,"skipped":2,"errors":[]}
+[2026-08-12T05:46:07.070Z] [INFO] Inbound poll summary: {"processed":16,"newTickets":0,"replies":0,"skipped":16,"errors":[]}
+[2026-08-12T05:46:37.984Z] [INFO] MongoDB connected: 127.0.0.1
+[2026-08-12T05:46:38.080Z] [INFO] Inbound email polling started for lalitpatidar1524@gmail.com (INBOX) every 60s
+[2026-08-12T05:46:38.087Z] [INFO] osTicket MERN API running on http://localhost:5000 (development)
+[2026-08-12T05:48:03.679Z] [INFO] Inbound poll summary: {"processed":1,"newTickets":0,"replies":0,"skipped":1,"errors":[]}
+[2026-08-12T05:50:03.982Z] [INFO] Inbound poll summary: {"processed":1,"newTickets":0,"replies":0,"skipped":1,"errors":[]}
+[2026-08-12T05:54:28.581Z] [INFO] Inbound poll summary: {"processed":1,"newTickets":0,"replies":0,"skipped":1,"errors":[]}
+[2026-08-12T06:16:50.968Z] [INFO] Inbound poll summary: {"processed":1,"newTickets":1,"replies":0,"skipped":0,"errors":[]}
+[2026-08-12T06:16:53.038Z] [INFO] MongoDB connected: 127.0.0.1
+[2026-08-12T06:16:53.126Z] [INFO] Inbound email polling started for lalitpatidar1524@gmail.com (INBOX) every 60s
+[2026-08-12T06:17:49.138Z] [INFO] Inbound poll summary: {"processed":1,"newTickets":0,"replies":0,"skipped":1,"errors":[]}
+[2026-08-12T06:28:08.569Z] [INFO] Inbound poll summary: {"processed":1,"newTickets":1,"replies":0,"skipped":0,"errors":[]}
+[2026-08-12T06:28:49.598Z] [INFO] Inbound poll summary: {"processed":2,"newTickets":0,"replies":0,"skipped":2,"errors":[]}
+[2026-08-12T06:28:56.400Z] [INFO] MongoDB connected: 127.0.0.1
+[2026-08-12T06:28:56.494Z] [INFO] Inbound email polling started for lalitpatidar1524@gmail.com (INBOX) every 60s
+[2026-08-12T06:29:00.164Z] [INFO] MongoDB connected: 127.0.0.1
+[2026-08-12T06:29:00.232Z] [INFO] Inbound email polling started for lalitpatidar1524@gmail.com (INBOX) every 60s
+[2026-08-12T06:29:11.970Z] [INFO] MongoDB connected: 127.0.0.1
+[2026-08-12T06:29:12.032Z] [INFO] Inbound email polling started for lalitpatidar1524@gmail.com (INBOX) every 60s
+[2026-08-12T06:29:19.694Z] [INFO] MongoDB connected: 127.0.0.1
+[2026-08-12T06:29:19.806Z] [INFO] Inbound email polling started for lalitpatidar1524@gmail.com (INBOX) every 60s
+[2026-08-12T06:29:24.956Z] [INFO] MongoDB connected: 127.0.0.1
+[2026-08-12T06:29:25.016Z] [INFO] Inbound email polling started for lalitpatidar1524@gmail.com (INBOX) every 60s
+[2026-08-12T06:29:28.570Z] [INFO] MongoDB connected: 127.0.0.1
+[2026-08-12T06:29:28.628Z] [INFO] Inbound email polling started for lalitpatidar1524@gmail.com (INBOX) every 60s
+[2026-08-12T06:29:35.781Z] [INFO] MongoDB connected: 127.0.0.1
+[2026-08-12T06:29:35.837Z] [INFO] Inbound email polling started for lalitpatidar1524@gmail.com (INBOX) every 60s
+[2026-08-12T06:29:48.622Z] [INFO] MongoDB connected: 127.0.0.1
+[2026-08-12T06:29:48.683Z] [INFO] Inbound email polling started for lalitpatidar1524@gmail.com (INBOX) every 60s
+[2026-08-12T06:29:48.684Z] [INFO] Escalation runner started (every 5 min)
+[2026-08-12T06:29:54.198Z] [INFO] MongoDB connected: 127.0.0.1
+[2026-08-12T06:29:54.257Z] [INFO] Inbound email polling started for lalitpatidar1524@gmail.com (INBOX) every 60s
+[2026-08-12T06:29:54.258Z] [INFO] Escalation runner started (every 5 min)
+[2026-08-12T06:29:59.828Z] [INFO] MongoDB connected: 127.0.0.1
+[2026-08-12T06:29:59.886Z] [INFO] Inbound email polling started for lalitpatidar1524@gmail.com (INBOX) every 60s
+[2026-08-12T06:29:59.887Z] [INFO] Escalation runner started (every 5 min)
+[2026-08-12T06:30:04.039Z] [INFO] MongoDB connected: 127.0.0.1
+[2026-08-12T06:30:04.101Z] [INFO] Inbound email polling started for lalitpatidar1524@gmail.com (INBOX) every 60s
+[2026-08-12T06:30:04.101Z] [INFO] Escalation runner started (every 5 min)
+[2026-08-12T06:30:11.263Z] [INFO] MongoDB connected: 127.0.0.1
+[2026-08-12T06:30:11.320Z] [INFO] Inbound email polling started for lalitpatidar1524@gmail.com (INBOX) every 60s
+[2026-08-12T06:30:11.322Z] [INFO] Escalation runner started (every 5 min)
+[2026-08-12T06:30:15.454Z] [INFO] MongoDB connected: 127.0.0.1
+[2026-08-12T06:30:15.510Z] [INFO] Inbound email polling started for lalitpatidar1524@gmail.com (INBOX) every 60s
+[2026-08-12T06:30:15.511Z] [INFO] Escalation runner started (every 5 min)
+[2026-08-12T06:30:20.890Z] [INFO] MongoDB connected: 127.0.0.1
+[2026-08-12T06:30:20.950Z] [INFO] Inbound email polling started for lalitpatidar1524@gmail.com (INBOX) every 60s
+[2026-08-12T06:30:20.952Z] [INFO] Escalation runner started (every 5 min)
+[2026-08-12T06:30:25.122Z] [INFO] MongoDB connected: 127.0.0.1
+[2026-08-12T06:30:25.182Z] [INFO] Inbound email polling started for lalitpatidar1524@gmail.com (INBOX) every 60s
+[2026-08-12T06:30:25.183Z] [INFO] Escalation runner started (every 5 min)
+[2026-08-12T06:30:28.790Z] [INFO] MongoDB connected: 127.0.0.1
+[2026-08-12T06:30:28.864Z] [INFO] Inbound email polling started for lalitpatidar1524@gmail.com (INBOX) every 60s
+[2026-08-12T06:30:28.864Z] [INFO] Escalation runner started (every 5 min)
+[2026-08-12T06:30:34.234Z] [INFO] MongoDB connected: 127.0.0.1
+[2026-08-12T06:30:34.290Z] [INFO] Inbound email polling started for lalitpatidar1524@gmail.com (INBOX) every 60s
+[2026-08-12T06:30:34.291Z] [INFO] Escalation runner started (every 5 min)
+[2026-08-12T06:30:50.440Z] [INFO] MongoDB connected: 127.0.0.1
+[2026-08-12T06:30:50.504Z] [INFO] Inbound email polling started for lalitpatidar1524@gmail.com (INBOX) every 60s
+[2026-08-12T06:30:50.505Z] [INFO] Escalation runner started (every 5 min)
+[2026-08-12T06:30:54.783Z] [INFO] MongoDB connected: 127.0.0.1
+[2026-08-12T06:30:54.841Z] [INFO] Inbound email polling started for lalitpatidar1524@gmail.com (INBOX) every 60s
+[2026-08-12T06:30:54.842Z] [INFO] Escalation runner started (every 5 min)
+[2026-08-12T06:30:58.724Z] [INFO] MongoDB connected: 127.0.0.1
+[2026-08-12T06:30:58.783Z] [INFO] Inbound email polling started for lalitpatidar1524@gmail.com (INBOX) every 60s
+[2026-08-12T06:30:58.784Z] [INFO] Escalation runner started (every 5 min)
+[2026-08-12T06:31:04.164Z] [INFO] MongoDB connected: 127.0.0.1
+[2026-08-12T06:31:04.220Z] [INFO] Inbound email polling started for lalitpatidar1524@gmail.com (INBOX) every 60s
+[2026-08-12T06:31:04.221Z] [INFO] Escalation runner started (every 5 min)
+[2026-08-12T06:31:18.292Z] [INFO] MongoDB connected: 127.0.0.1
+[2026-08-12T06:31:18.414Z] [INFO] Inbound email polling started for lalitpatidar1524@gmail.com (INBOX) every 60s
+[2026-08-12T06:31:18.416Z] [INFO] Escalation runner started (every 5 min)
+[2026-08-12T06:31:22.780Z] [INFO] MongoDB connected: 127.0.0.1
+[2026-08-12T06:31:22.877Z] [INFO] Inbound email polling started for lalitpatidar1524@gmail.com (INBOX) every 60s
+[2026-08-12T06:31:22.878Z] [INFO] Escalation runner started (every 5 min)
+[2026-08-12T06:31:26.807Z] [INFO] MongoDB connected: 127.0.0.1
+[2026-08-12T06:31:26.867Z] [INFO] Inbound email polling started for lalitpatidar1524@gmail.com (INBOX) every 60s
+[2026-08-12T06:31:26.868Z] [INFO] Escalation runner started (every 5 min)
+[2026-08-12T06:31:36.207Z] [INFO] MongoDB connected: 127.0.0.1
+[2026-08-12T06:31:36.262Z] [INFO] Inbound email polling started for lalitpatidar1524@gmail.com (INBOX) every 60s
+[2026-08-12T06:31:36.263Z] [INFO] Escalation runner started (every 5 min)
+[2026-08-12T06:31:36.268Z] [INFO] osTicket MERN API running on http://localhost:5000 (development)
+[2026-08-12T06:32:47.907Z] [INFO] MongoDB connected: 127.0.0.1
+[2026-08-12T06:32:47.965Z] [INFO] Inbound email polling started for lalitpatidar1524@gmail.com (INBOX) every 60s
+[2026-08-12T06:32:47.966Z] [INFO] Escalation runner started (every 5 min)
+[2026-08-12T06:32:47.970Z] [INFO] osTicket MERN API running on http://localhost:5000 (development)
+[2026-08-12T06:34:54.001Z] [INFO] Inbound poll summary: {"processed":2,"newTickets":0,"replies":0,"skipped":2,"errors":[]}
+[2026-08-12T06:35:03.216Z] [INFO] Inbound poll summary: {"processed":3,"newTickets":0,"replies":0,"skipped":3,"errors":[]}
+[2026-08-12T06:37:18.916Z] [INFO] MongoDB connected: 127.0.0.1
+[2026-08-12T06:37:18.967Z] [INFO] Inbound email polling started for lalitpatidar1524@gmail.com (INBOX) every 60s
+[2026-08-12T06:37:18.969Z] [INFO] Escalation runner started (every 5 min)
+[2026-08-12T06:37:18.973Z] [INFO] osTicket MERN API running on http://localhost:5000 (development)
+[2026-08-12T06:41:24.692Z] [INFO] Inbound poll summary: {"processed":1,"newTickets":0,"replies":0,"skipped":1,"errors":[]}
+[2026-08-12T06:46:40.941Z] [INFO] Inbound poll summary: {"processed":1,"newTickets":1,"replies":0,"skipped":0,"errors":[]}
+[2026-08-12T06:47:25.767Z] [INFO] Inbound poll summary: {"processed":2,"newTickets":0,"replies":0,"skipped":2,"errors":[]}
+[2026-08-12T06:58:25.651Z] [INFO] Inbound poll summary: {"processed":1,"newTickets":0,"replies":0,"skipped":1,"errors":[]}
+[2026-08-12T07:05:30.825Z] [INFO] Inbound poll summary: {"processed":1,"newTickets":1,"replies":0,"skipped":0,"errors":[]}
+[2026-08-12T07:06:44.431Z] [INFO] Inbound poll summary: {"processed":1,"newTickets":0,"replies":0,"skipped":1,"errors":[]}
+[2026-08-12T07:09:57.234Z] [INFO] MongoDB connected: 127.0.0.1
+[2026-08-12T07:09:57.359Z] [INFO] Inbound email polling started for lalitpatidar1524@gmail.com (INBOX) every 60s
+[2026-08-12T07:09:57.362Z] [INFO] Escalation runner started (every 5 min)
+[2026-08-12T07:09:57.371Z] [INFO] osTicket MERN API running on http://localhost:5000 (development)
+[2026-08-12T08:19:24.594Z] [INFO] MongoDB connected: 127.0.0.1
+[2026-08-12T08:19:24.740Z] [INFO] Inbound email polling started for lalitpatidar1524@gmail.com (INBOX) every 60s
+[2026-08-12T08:19:24.741Z] [INFO] Escalation runner started (every 5 min)
+[2026-08-12T08:19:24.748Z] [INFO] osTicket MERN API running on http://localhost:5000 (development)
+[2026-08-12T08:32:11.924Z] [INFO] MongoDB connected: 127.0.0.1
+[2026-08-12T08:32:12.101Z] [INFO] Inbound email polling started for lalitpatidar1524@gmail.com (INBOX) every 60s
+[2026-08-12T08:32:12.103Z] [INFO] Escalation runner started (every 5 min)
+[2026-08-12T08:32:12.113Z] [INFO] osTicket MERN API running on http://localhost:5000 (development)
+[2026-08-12T09:08:29.317Z] [INFO] MongoDB connected: 127.0.0.1
+[2026-08-12T09:08:30.736Z] [INFO] Inbound email polling started for lalitpatidar1524@gmail.com (INBOX) every 60s
+[2026-08-12T09:08:30.737Z] [INFO] Escalation runner started (every 5 min)
+[2026-08-12T09:08:30.743Z] [INFO] osTicket MERN API running on http://localhost:5000 (development)
+[2026-08-12T09:14:56.348Z] [INFO] MongoDB connected: 127.0.0.1
+[2026-08-12T09:14:56.468Z] [INFO] Inbound email polling started for lalitpatidar1524@gmail.com (INBOX) every 60s
+[2026-08-12T09:14:56.470Z] [INFO] Escalation runner started (every 5 min)
+[2026-08-12T09:14:56.476Z] [INFO] osTicket MERN API running on http://localhost:5000 (development)
+[2026-08-12T09:14:58.905Z] [INFO] MongoDB connected: 127.0.0.1
+[2026-08-12T09:14:58.998Z] [INFO] Inbound email polling started for lalitpatidar1524@gmail.com (INBOX) every 60s
+[2026-08-12T09:14:59.000Z] [INFO] Escalation runner started (every 5 min)
+[2026-08-12T09:14:59.008Z] [INFO] osTicket MERN API running on http://localhost:5000 (development)
+[2026-08-12T09:15:02.001Z] [INFO] MongoDB connected: 127.0.0.1
+[2026-08-12T09:15:02.086Z] [INFO] Inbound email polling started for lalitpatidar1524@gmail.com (INBOX) every 60s
+[2026-08-12T09:15:02.089Z] [INFO] Escalation runner started (every 5 min)
+[2026-08-12T09:15:02.095Z] [INFO] osTicket MERN API running on http://localhost:5000 (development)
+[2026-08-12T09:15:04.766Z] [INFO] MongoDB connected: 127.0.0.1
+[2026-08-12T09:15:04.849Z] [INFO] Inbound email polling started for lalitpatidar1524@gmail.com (INBOX) every 60s
+[2026-08-12T09:15:04.851Z] [INFO] Escalation runner started (every 5 min)
+[2026-08-12T09:15:04.858Z] [INFO] osTicket MERN API running on http://localhost:5000 (development)
+[2026-08-12T09:15:08.465Z] [INFO] MongoDB connected: 127.0.0.1
+[2026-08-12T09:15:08.548Z] [INFO] Inbound email polling started for lalitpatidar1524@gmail.com (INBOX) every 60s
+[2026-08-12T09:15:08.552Z] [INFO] Escalation runner started (every 5 min)
+[2026-08-12T09:15:08.560Z] [INFO] osTicket MERN API running on http://localhost:5000 (development)
+[2026-08-12T09:15:13.591Z] [INFO] MongoDB connected: 127.0.0.1
+[2026-08-12T09:15:13.688Z] [INFO] Inbound email polling started for lalitpatidar1524@gmail.com (INBOX) every 60s
+[2026-08-12T09:15:13.689Z] [INFO] Escalation runner started (every 5 min)
+[2026-08-12T09:15:13.695Z] [INFO] osTicket MERN API running on http://localhost:5000 (development)
+[2026-08-12T09:15:19.540Z] [INFO] MongoDB connected: 127.0.0.1
+[2026-08-12T09:15:19.621Z] [INFO] Inbound email polling started for lalitpatidar1524@gmail.com (INBOX) every 60s
+[2026-08-12T09:15:19.624Z] [INFO] Escalation runner started (every 5 min)
+[2026-08-12T09:15:19.630Z] [INFO] osTicket MERN API running on http://localhost:5000 (development)
+[2026-08-12T09:15:25.535Z] [INFO] MongoDB connected: 127.0.0.1
+[2026-08-12T09:15:25.627Z] [INFO] Inbound email polling started for lalitpatidar1524@gmail.com (INBOX) every 60s
+[2026-08-12T09:15:25.629Z] [INFO] Escalation runner started (every 5 min)
+[2026-08-12T09:15:25.638Z] [INFO] osTicket MERN API running on http://localhost:5000 (development)
+[2026-08-12T09:15:29.638Z] [INFO] MongoDB connected: 127.0.0.1
+[2026-08-12T09:15:29.722Z] [INFO] Inbound email polling started for lalitpatidar1524@gmail.com (INBOX) every 60s
+[2026-08-12T09:15:29.724Z] [INFO] Escalation runner started (every 5 min)
+[2026-08-12T09:15:29.729Z] [INFO] osTicket MERN API running on http://localhost:5000 (development)
+[2026-08-12T09:15:38.880Z] [INFO] MongoDB connected: 127.0.0.1
+[2026-08-12T09:15:38.985Z] [INFO] Inbound email polling started for lalitpatidar1524@gmail.com (INBOX) every 60s
+[2026-08-12T09:15:38.986Z] [INFO] Escalation runner started (every 5 min)
+[2026-08-12T09:15:38.995Z] [INFO] osTicket MERN API running on http://localhost:5000 (development)
+[2026-08-12T09:15:42.194Z] [INFO] MongoDB connected: 127.0.0.1
+[2026-08-12T09:15:42.290Z] [INFO] Inbound email polling started for lalitpatidar1524@gmail.com (INBOX) every 60s
+[2026-08-12T09:15:42.292Z] [INFO] Escalation runner started (every 5 min)
+[2026-08-12T09:15:42.298Z] [INFO] osTicket MERN API running on http://localhost:5000 (development)
+[2026-08-12T09:15:45.936Z] [INFO] MongoDB connected: 127.0.0.1
+[2026-08-12T09:15:46.028Z] [INFO] Inbound email polling started for lalitpatidar1524@gmail.com (INBOX) every 60s
+[2026-08-12T09:15:46.030Z] [INFO] Escalation runner started (every 5 min)
+[2026-08-12T09:15:46.038Z] [INFO] osTicket MERN API running on http://localhost:5000 (development)
+[2026-08-12T09:15:51.883Z] [INFO] MongoDB connected: 127.0.0.1
+[2026-08-12T09:15:52.011Z] [INFO] Inbound email polling started for lalitpatidar1524@gmail.com (INBOX) every 60s
+[2026-08-12T09:15:52.013Z] [INFO] Escalation runner started (every 5 min)
+[2026-08-12T09:15:52.017Z] [INFO] osTicket MERN API running on http://localhost:5000 (development)
+[2026-08-12T09:16:00.273Z] [INFO] MongoDB connected: 127.0.0.1
+[2026-08-12T09:16:00.367Z] [INFO] Inbound email polling started for lalitpatidar1524@gmail.com (INBOX) every 60s
+[2026-08-12T09:16:00.368Z] [INFO] Escalation runner started (every 5 min)
+[2026-08-12T09:16:00.374Z] [INFO] osTicket MERN API running on http://localhost:5000 (development)
+[2026-08-12T09:16:04.144Z] [INFO] MongoDB connected: 127.0.0.1
+[2026-08-12T09:16:04.231Z] [INFO] Inbound email polling started for lalitpatidar1524@gmail.com (INBOX) every 60s
+[2026-08-12T09:16:04.234Z] [INFO] Escalation runner started (every 5 min)
+[2026-08-12T09:16:04.240Z] [INFO] osTicket MERN API running on http://localhost:5000 (development)
+[2026-08-12T09:16:07.116Z] [INFO] MongoDB connected: 127.0.0.1
+[2026-08-12T09:16:07.202Z] [INFO] Inbound email polling started for lalitpatidar1524@gmail.com (INBOX) every 60s
+[2026-08-12T09:16:07.204Z] [INFO] Escalation runner started (every 5 min)
+[2026-08-12T09:16:07.211Z] [INFO] osTicket MERN API running on http://localhost:5000 (development)
+[2026-08-12T09:18:06.885Z] [INFO] MongoDB connected: 127.0.0.1
+[2026-08-12T09:18:06.967Z] [INFO] Inbound email polling started for lalitpatidar1524@gmail.com (INBOX) every 60s
+[2026-08-12T09:18:06.968Z] [INFO] Escalation runner started (every 5 min)
+[2026-08-12T09:18:06.976Z] [INFO] osTicket MERN API running on http://localhost:5000 (development)
+[2026-08-12T09:18:57.928Z] [INFO] MongoDB connected: 127.0.0.1
+[2026-08-12T09:18:58.026Z] [INFO] Inbound email polling started for lalitpatidar1524@gmail.com (INBOX) every 60s
+[2026-08-12T09:18:58.028Z] [INFO] Escalation runner started (every 5 min)
+[2026-08-12T09:18:58.035Z] [INFO] osTicket MERN API running on http://localhost:5000 (development)
+[2026-08-12T09:19:10.929Z] [INFO] MongoDB connected: 127.0.0.1
+[2026-08-12T09:19:11.012Z] [INFO] Inbound email polling started for lalitpatidar1524@gmail.com (INBOX) every 60s
+[2026-08-12T09:19:11.014Z] [INFO] Escalation runner started (every 5 min)
+[2026-08-12T09:19:11.020Z] [INFO] osTicket MERN API running on http://localhost:5000 (development)
+[2026-08-12T09:19:46.339Z] [INFO] MongoDB connected: 127.0.0.1
+[2026-08-12T09:19:46.422Z] [INFO] Inbound email polling started for lalitpatidar1524@gmail.com (INBOX) every 60s
+[2026-08-12T09:19:46.423Z] [INFO] Escalation runner started (every 5 min)
+[2026-08-12T09:19:46.429Z] [INFO] osTicket MERN API running on http://localhost:5000 (development)
+[2026-08-12T09:20:56.929Z] [INFO] MongoDB connected: 127.0.0.1
+[2026-08-12T09:20:57.023Z] [INFO] Inbound email polling started for lalitpatidar1524@gmail.com (INBOX) every 60s
+[2026-08-12T09:20:57.024Z] [INFO] Escalation runner started (every 5 min)
+[2026-08-12T09:20:57.030Z] [INFO] osTicket MERN API running on http://localhost:5000 (development)
+[2026-08-12T09:21:01.883Z] [INFO] MongoDB connected: 127.0.0.1
+[2026-08-12T09:21:01.957Z] [INFO] Inbound email polling started for lalitpatidar1524@gmail.com (INBOX) every 60s
+[2026-08-12T09:21:01.958Z] [INFO] Escalation runner started (every 5 min)
+[2026-08-12T09:21:01.966Z] [INFO] osTicket MERN API running on http://localhost:5000 (development)
+[2026-08-12T09:21:13.985Z] [INFO] MongoDB connected: 127.0.0.1
+[2026-08-12T09:21:14.062Z] [INFO] Inbound email polling started for lalitpatidar1524@gmail.com (INBOX) every 60s
+[2026-08-12T09:21:14.063Z] [INFO] Escalation runner started (every 5 min)
+[2026-08-12T09:21:14.071Z] [INFO] osTicket MERN API running on http://localhost:5000 (development)
+[2026-08-12T09:21:30.051Z] [INFO] MongoDB connected: 127.0.0.1
+[2026-08-12T09:21:30.127Z] [INFO] Inbound email polling started for lalitpatidar1524@gmail.com (INBOX) every 60s
+[2026-08-12T09:21:30.128Z] [INFO] Escalation runner started (every 5 min)
+[2026-08-12T09:21:30.133Z] [INFO] osTicket MERN API running on http://localhost:5000 (development)
+[2026-08-12T09:21:33.955Z] [INFO] MongoDB connected: 127.0.0.1
+[2026-08-12T09:21:34.047Z] [INFO] Inbound email polling started for lalitpatidar1524@gmail.com (INBOX) every 60s
+[2026-08-12T09:21:34.048Z] [INFO] Escalation runner started (every 5 min)
+[2026-08-12T09:21:34.054Z] [INFO] osTicket MERN API running on http://localhost:5000 (development)
+[2026-08-12T09:21:42.480Z] [INFO] MongoDB connected: 127.0.0.1
+[2026-08-12T09:21:42.562Z] [INFO] Inbound email polling started for lalitpatidar1524@gmail.com (INBOX) every 60s
+[2026-08-12T09:21:42.564Z] [INFO] Escalation runner started (every 5 min)
+[2026-08-12T09:21:42.571Z] [INFO] osTicket MERN API running on http://localhost:5000 (development)
+[2026-08-12T09:22:17.974Z] [INFO] MongoDB connected: 127.0.0.1
+[2026-08-12T09:22:18.055Z] [INFO] Inbound email polling started for lalitpatidar1524@gmail.com (INBOX) every 60s
+[2026-08-12T09:22:18.056Z] [INFO] Escalation runner started (every 5 min)
+[2026-08-12T09:22:31.082Z] [INFO] MongoDB connected: 127.0.0.1
+[2026-08-12T09:22:31.151Z] [INFO] Inbound email polling started for lalitpatidar1524@gmail.com (INBOX) every 60s
+[2026-08-12T09:22:31.152Z] [INFO] Escalation runner started (every 5 min)
+[2026-08-12T09:23:46.354Z] [INFO] MongoDB connected: 127.0.0.1
+[2026-08-12T09:23:46.452Z] [INFO] Inbound email polling started for lalitpatidar1524@gmail.com (INBOX) every 60s
+[2026-08-12T09:23:46.453Z] [INFO] Escalation runner started (every 5 min)
+[2026-08-12T09:23:46.458Z] [INFO] osTicket MERN API running on http://localhost:5000 (development)
+[2026-08-12T09:24:58.173Z] [INFO] Inbound poll summary: {"processed":2,"newTickets":0,"replies":0,"skipped":2,"errors":[]}
+[2026-08-12T09:32:00.762Z] [INFO] MongoDB connected: 127.0.0.1
+[2026-08-12T09:32:00.864Z] [INFO] Inbound email polling started for lalitpatidar1524@gmail.com (INBOX) every 60s
+[2026-08-12T09:32:00.865Z] [INFO] Escalation runner started (every 5 min)
+[2026-08-12T09:32:00.875Z] [INFO] osTicket MERN API running on http://localhost:5000 (development)
+[2026-08-12T09:32:12.957Z] [INFO] MongoDB connected: 127.0.0.1
+[2026-08-12T09:32:13.048Z] [INFO] Inbound email polling started for lalitpatidar1524@gmail.com (INBOX) every 60s
+[2026-08-12T09:32:13.049Z] [INFO] Escalation runner started (every 5 min)
+[2026-08-12T09:32:13.055Z] [INFO] osTicket MERN API running on http://localhost:5000 (development)
+[2026-08-12T09:32:16.160Z] [INFO] MongoDB connected: 127.0.0.1
+[2026-08-12T09:32:16.268Z] [INFO] Inbound email polling started for lalitpatidar1524@gmail.com (INBOX) every 60s
+[2026-08-12T09:32:16.270Z] [INFO] Escalation runner started (every 5 min)
+[2026-08-12T09:32:16.281Z] [INFO] osTicket MERN API running on http://localhost:5000 (development)
+[2026-08-12T09:32:37.331Z] [INFO] MongoDB connected: 127.0.0.1
+[2026-08-12T09:32:37.468Z] [INFO] Inbound email polling started for lalitpatidar1524@gmail.com (INBOX) every 60s
+[2026-08-12T09:32:37.471Z] [INFO] Escalation runner started (every 5 min)
+[2026-08-12T09:32:37.477Z] [INFO] osTicket MERN API running on http://localhost:5000 (development)
+[2026-08-12T09:32:40.032Z] [INFO] MongoDB connected: 127.0.0.1
+[2026-08-12T09:32:40.105Z] [INFO] Inbound email polling started for lalitpatidar1524@gmail.com (INBOX) every 60s
+[2026-08-12T09:32:40.106Z] [INFO] Escalation runner started (every 5 min)
+[2026-08-12T09:32:40.112Z] [INFO] osTicket MERN API running on http://localhost:5000 (development)
+[2026-08-12T09:32:43.551Z] [INFO] MongoDB connected: 127.0.0.1
+[2026-08-12T09:32:43.627Z] [INFO] Inbound email polling started for lalitpatidar1524@gmail.com (INBOX) every 60s
+[2026-08-12T09:32:43.629Z] [INFO] Escalation runner started (every 5 min)
+[2026-08-12T09:32:43.635Z] [INFO] osTicket MERN API running on http://localhost:5000 (development)
+[2026-08-12T09:32:48.797Z] [INFO] MongoDB connected: 127.0.0.1
+[2026-08-12T09:32:48.873Z] [INFO] Inbound email polling started for lalitpatidar1524@gmail.com (INBOX) every 60s
+[2026-08-12T09:32:48.875Z] [INFO] Escalation runner started (every 5 min)
+[2026-08-12T09:32:48.882Z] [INFO] osTicket MERN API running on http://localhost:5000 (development)
+[2026-08-12T09:33:25.114Z] [INFO] MongoDB connected: 127.0.0.1
+[2026-08-12T09:33:25.194Z] [INFO] Inbound email polling started for lalitpatidar1524@gmail.com (INBOX) every 60s
+[2026-08-12T09:33:25.196Z] [INFO] Escalation runner started (every 5 min)
+[2026-08-12T09:33:25.202Z] [INFO] osTicket MERN API running on http://localhost:5000 (development)
+[2026-08-12T09:33:49.389Z] [INFO] MongoDB connected: 127.0.0.1
+[2026-08-12T09:33:49.471Z] [INFO] Inbound email polling started for lalitpatidar1524@gmail.com (INBOX) every 60s
+[2026-08-12T09:33:49.472Z] [INFO] Escalation runner started (every 5 min)
+[2026-08-12T09:33:49.478Z] [INFO] osTicket MERN API running on http://localhost:5000 (development)
+[2026-08-12T09:33:54.142Z] [INFO] MongoDB connected: 127.0.0.1
+[2026-08-12T09:33:54.234Z] [INFO] Inbound email polling started for lalitpatidar1524@gmail.com (INBOX) every 60s
+[2026-08-12T09:33:54.236Z] [INFO] Escalation runner started (every 5 min)
+[2026-08-12T09:33:54.241Z] [INFO] osTicket MERN API running on http://localhost:5000 (development)
+[2026-08-12T09:48:12.617Z] [INFO] Inbound poll summary: {"processed":1,"newTickets":1,"replies":0,"skipped":0,"errors":[]}
+[2026-08-12T09:49:06.274Z] [INFO] Inbound poll summary: {"processed":1,"newTickets":0,"replies":0,"skipped":1,"errors":[]}
+[2026-08-12T10:09:46.115Z] [INFO] MongoDB connected: 127.0.0.1
+[2026-08-12T10:09:47.490Z] [INFO] Inbound email polling started for lalitpatidar1524@gmail.com (INBOX) every 60s
+[2026-08-12T10:09:47.492Z] [INFO] Escalation runner started (every 5 min)
+[2026-08-12T10:09:47.498Z] [INFO] osTicket MERN API running on http://localhost:5000 (development)
+[2026-08-12T10:18:00.222Z] [INFO] SIGINT received, shutting down gracefully...

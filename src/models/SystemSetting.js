@@ -30,6 +30,7 @@ const defaultSettings = {
     enableKb: true,
     enableAnnouncements: true,
     registrationEnabled: true,
+    emailToTicket: '',
   },
   tickets: {
     autoResponder: true,
@@ -44,6 +45,50 @@ const defaultSettings = {
   },
   emails: {
     banList: [],
+  },
+  email: {
+    smtpHost: '',
+    smtpPort: 587,
+    smtpSecure: true,
+    smtpUser: '',
+    smtpPass: '',
+    fromEmail: '',
+    fromName: '',
+  },
+  autoresponder: {
+    enabled: true,
+    subject: 'Ticket received - [ticket.number]',
+    body:
+      'Dear [user.name],\n\nThank you for contacting us. Your ticket [ticket.number] has been created and a member of our team will get back to you shortly.\n\nRegards,\nSupport Team',
+  },
+  alerts: {
+    notifyNewTicket: true,
+    notifyMessage: true,
+    notifyAssignment: true,
+    notifyTransfer: true,
+    notifyOverdue: true,
+    notifyEscalation: true,
+    notifyClosed: true,
+  },
+  auth: {
+    registrationEnabled: true,
+    emailVerification: false,
+    allowGuestTickets: true,
+    passwordMinLength: 8,
+    sessionTimeoutMinutes: 0,
+    lockoutEnabled: false,
+    maxLoginAttempts: 5,
+  },
+  schedules: {
+    timezone: 'UTC',
+    businessHoursEnabled: false,
+    monday: { enabled: true, open: '09:00', close: '17:00' },
+    tuesday: { enabled: true, open: '09:00', close: '17:00' },
+    wednesday: { enabled: true, open: '09:00', close: '17:00' },
+    thursday: { enabled: true, open: '09:00', close: '17:00' },
+    friday: { enabled: true, open: '09:00', close: '17:00' },
+    saturday: { enabled: false, open: '09:00', close: '17:00' },
+    sunday: { enabled: false, open: '09:00', close: '17:00' },
   },
 };
 

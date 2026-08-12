@@ -1,9 +1,41 @@
 const Notification = require('../models/Notification');
 const Agent = require('../models/Agent');
+const SystemSetting = require('../models/SystemSetting');
 const { getIO } = require('../config/socket');
+
+const EVENT_TO_SETTING = {
+  new_ticket: 'notifyNewTicket',
+  transfer: 'notifyTransfer',
+  reply: 'notifyMessage',
+  new_message: 'notifyMessage',
+  assignment: 'notifyAssignment',
+  overdue: 'notifyOverdue',
+  escalation: 'notifyEscalation',
+  status_change: 'notifyClosed',
+  closed: 'notifyClosed',
+};
+
+let alertCache = null;
+let alertCacheAt = 0;
+
+const isAlertEnabled = async (type) => {
+  const key = EVENT_TO_SETTING[type];
+  if (!key) return true;
+  if (!alertCache || Date.now() - alertCacheAt > 30000) {
+    try {
+      const settings = await SystemSetting.getSettings();
+      alertCache = settings.alerts || {};
+    } catch (err) {
+      alertCache = {};
+    }
+    alertCacheAt = Date.now();
+  }
+  return alertCache[key] !== false;
+};
 
 const notifyAgent = async ({ agentId, type, message, link, ticket, company }) => {
   if (!agentId) return;
+  if (!(await isAlertEnabled(type))) return;
   try {
     await Notification.create({
       recipientType: 'agent',

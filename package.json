@@ -9,6 +9,8 @@
     "start": "node src/server.js",
     "seed": "node src/seed/run.js",
     "seed:reset": "node src/seed/run.js --reset",
+    "seed:emails": "node scripts/seed-test-users.js",
+    "fetch:email": "node scripts/fetch-inbound-email.js",
     "lint": "eslint src --ext .js"
   },
   "dependencies": {
@@ -20,7 +22,9 @@
     "express-rate-limit": "^7.4.0",
     "express-validator": "^7.2.0",
     "helmet": "^7.1.0",
+    "imapflow": "^1.6.6",
     "jsonwebtoken": "^9.0.2",
+    "mailparser": "^3.9.15",
     "mongoose": "^8.5.1",
     "morgan": "^1.10.0",
     "multer": "^1.4.5-lts.1",

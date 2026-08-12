@@ -38,3 +38,4 @@ exports.fetchPayment = (paymentId) => instance.payments.fetch(paymentId);
 
 exports.refundPayment = (paymentId, amount) =>
   instance.payments.refund(paymentId, { amount: Math.round(amount * 100) });
+

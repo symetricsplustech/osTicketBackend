@@ -11,6 +11,9 @@ const FaqCategory = require('../models/FaqCategory');
 const Faq = require('../models/Faq');
 const Announcement = require('../models/Announcement');
 const Notification = require('../models/Notification');
+const EscalationRule = require('../models/EscalationRule');
+const SystemSetting = require('../models/SystemSetting');
+const TicketStatus = require('../models/TicketStatus');
 const ApiError = require('../utils/ApiError');
 const asyncHandler = require('../utils/asyncHandler');
 const { getPagination, getSortObj } = require('../utils/pagination');
@@ -24,6 +27,22 @@ const hasPerm = (agent, perm) => {
   if (isAdminAgent(agent)) return true;
   return new Set([...(agent.permissions || []), ...(agent.role?.permissions || [])]).has(perm);
 };
+
+const VALID_PRIORITIES = ['Low', 'Normal', 'High', 'Emergency'];
+const VALID_SOURCES = ['web', 'email', 'phone', 'api'];
+
+const assertNotLocked = (ticket, agent) => {
+  if (
+    ticket.lockedBy &&
+    String(ticket.lockedBy) !== String(agent._id) &&
+    ticket.lockExpiresAt &&
+    ticket.lockExpiresAt > new Date()
+  ) {
+    throw new ApiError(423, 'This ticket is locked by another agent');
+  }
+};
+
+const canManageEscalations = (agent) => isAdminAgent(agent) || hasPerm(agent, 'escalations.manage');
 
 const getAgentDeptIds = (agent) => (agent.departments || []).map((d) => String(d.department)).filter(Boolean);
 const getAgentTeamIds = (agent) => (agent.teams || []).map((t) => String(t));
@@ -61,7 +80,8 @@ const loadTicketForAgent = async (number, agent, opts = {}) => {
     .populate('topic', 'topic')
     .populate('agent', 'name email')
     .populate('team', 'name')
-    .populate('sla', 'name');
+    .populate('sla', 'name')
+    .populate('collaborators', 'name email');
   if (!ticket) throw new ApiError(404, 'Ticket not found');
   if (!opts.skipAccess && !(await canAccessTicket(agent, ticket))) {
     throw new ApiError(403, 'You do not have access to this ticket');
@@ -172,6 +192,7 @@ exports.listTickets = asyncHandler(async (req, res) => {
 
 exports.getTicket = asyncHandler(async (req, res) => {
   const ticket = await loadTicketForAgent(req.params.number, req.agent);
+  await Ticket.populate(ticket, { path: 'lockedBy', select: 'name' });
   const threads = await TicketThread.find({ ticket: ticket._id, deletedAt: null })
     .sort({ createdAt: 1 })
     .populate('user', 'name email')
@@ -183,12 +204,14 @@ exports.getTicket = asyncHandler(async (req, res) => {
   const teams = await Team.find({ status: 'active', ...comp }).select('name').sort({ name: 1 });
   const depts = await Department.find({ status: 'active', ...comp }).select('name').sort({ name: 1 });
   const topics = await require('../models/HelpTopic').find({ status: 'active', ...comp }).select('topic').sort({ topic: 1 });
-  res.json({ success: true, ticket, threads, tasks, canned, agents, teams, depts, topics });
+  const statuses = await TicketStatus.find({ isActive: true }).select('name key color isDefault sortOrder').sort({ sortOrder: 1 });
+  res.json({ success: true, ticket, threads, tasks, canned, agents, teams, depts, topics, statuses });
 });
 
 exports.reply = asyncHandler(async (req, res) => {
   if (!hasPerm(req.agent, 'tickets.reply')) throw new ApiError(403, 'Permission denied');
   const ticket = await loadTicketForAgent(req.params.number, req.agent);
+  assertNotLocked(ticket, req.agent);
   const { message } = req.body;
   if (!message) throw new ApiError(422, 'Message is required');
   const attachments = (req.files || []).map((f) => ({
@@ -218,6 +241,28 @@ exports.reply = asyncHandler(async (req, res) => {
       company: ticket.company,
     });
   } catch (err) { /* non-blocking */ }
+  const collabRecipients = (ticket.collaborators || []).filter((c) => c && String(c._id) !== String(ticket.user._id));
+  for (const collab of collabRecipients) {
+    try {
+      await emailService.sendFromTemplate({
+        key: 'ticket_response',
+        to: collab.email,
+        data: ctx,
+        event: 'ticket_response',
+        ticket: ticket._id,
+        user: collab._id,
+        company: ticket.company,
+      });
+    } catch (err) { /* non-blocking */ }
+    await notifyUser({
+      userId: collab._id,
+      company: ticket.company,
+      type: 'reply',
+      message: `Ticket ${ticket.number} received a response`,
+      link: `/ticket/${ticket.number}`,
+      ticket: ticket._id,
+    });
+  }
   await notifyUser({
     userId: ticket.user,
     company: ticket.company,
@@ -233,6 +278,7 @@ exports.reply = asyncHandler(async (req, res) => {
 exports.addNote = asyncHandler(async (req, res) => {
   if (!hasPerm(req.agent, 'tickets.note')) throw new ApiError(403, 'Permission denied');
   const ticket = await loadTicketForAgent(req.params.number, req.agent);
+  assertNotLocked(ticket, req.agent);
   const { message } = req.body;
   if (!message) throw new ApiError(422, 'Note is required');
   await ticketService.addThreadEntry({
@@ -250,14 +296,20 @@ exports.addNote = asyncHandler(async (req, res) => {
 exports.assign = asyncHandler(async (req, res) => {
   if (!hasPerm(req.agent, 'tickets.assign')) throw new ApiError(403, 'Permission denied');
   const ticket = await loadTicketForAgent(req.params.number, req.agent);
+  assertNotLocked(ticket, req.agent);
   const { agentId, teamId } = req.body;
-  if (!agentId && !teamId) throw new ApiError(422, 'Select an agent or team to assign');
+  if (agentId === undefined && teamId === undefined) throw new ApiError(422, 'Select an agent or team to assign');
   const assignedTo = agentId ? await Agent.findById(agentId) : null;
   const assignedTeam = teamId ? await Team.findById(teamId) : null;
+  if (agentId && !assignedTo) throw new ApiError(404, 'Agent not found');
+  if (teamId && !assignedTeam) throw new ApiError(404, 'Team not found');
   ticket.agent = assignedTo?._id || null;
   ticket.team = assignedTeam?._id || null;
   if (assignedTo || assignedTeam) {
     ticket.status = Ticket.STATUSES.ASSIGNED;
+    ticket.isOverdue = false;
+  } else {
+    ticket.status = Ticket.STATUSES.OPEN;
     ticket.isOverdue = false;
   }
   await ticket.save();
@@ -278,6 +330,7 @@ exports.assign = asyncHandler(async (req, res) => {
 exports.transfer = asyncHandler(async (req, res) => {
   if (!hasPerm(req.agent, 'tickets.transfer')) throw new ApiError(403, 'Permission denied');
   const ticket = await loadTicketForAgent(req.params.number, req.agent);
+  assertNotLocked(ticket, req.agent);
   const { deptId } = req.body;
   if (!deptId) throw new ApiError(422, 'Select a department to transfer to');
   const dept = await Department.findById(deptId);
@@ -294,15 +347,18 @@ exports.transfer = asyncHandler(async (req, res) => {
 
 exports.changeStatus = asyncHandler(async (req, res) => {
   const ticket = await loadTicketForAgent(req.params.number, req.agent);
+  assertNotLocked(ticket, req.agent);
   const { status, closedReason } = req.body;
-  const valid = [
+  const builtIn = [
     Ticket.STATUSES.OPEN,
     Ticket.STATUSES.ASSIGNED,
     Ticket.STATUSES.OVERDUE,
     Ticket.STATUSES.CLOSED,
     Ticket.STATUSES.ARCHIVED,
   ];
-  if (!valid.includes(status)) throw new ApiError(422, 'Invalid status');
+  const configured = await TicketStatus.find({ isActive: true }).select('key');
+  const valid = new Set([...builtIn, ...configured.map((s) => s.key)]);
+  if (!valid.has(status)) throw new ApiError(422, 'Invalid status');
   const prev = ticket.status;
   ticket.status = status;
   if (status === Ticket.STATUSES.CLOSED) {
@@ -332,10 +388,15 @@ exports.changeStatus = asyncHandler(async (req, res) => {
 
 exports.lockTicket = asyncHandler(async (req, res) => {
   const ticket = await loadTicketForAgent(req.params.number, req.agent);
-  const settings = require('../models/SystemSetting').getSettings ? await require('../models/SystemSetting').getSettings() : {};
+  const settings = await SystemSetting.getSettings();
   const minutes = settings.system?.ticketLockMinutes || 5;
   const now = new Date();
-  if (ticket.lockedBy && String(ticket.lockedBy) !== String(req.agent._id) && ticket.lockExpiresAt > now) {
+  if (ticket.lockExpiresAt && ticket.lockExpiresAt <= now) {
+    ticket.lockedBy = null;
+    ticket.lockedAt = null;
+    ticket.lockExpiresAt = null;
+  }
+  if (ticket.lockedBy && String(ticket.lockedBy) !== String(req.agent._id)) {
     const locker = await Agent.findById(ticket.lockedBy);
     throw new ApiError(423, `Ticket is locked by ${locker?.name || 'another agent'}`);
   }
@@ -348,11 +409,243 @@ exports.lockTicket = asyncHandler(async (req, res) => {
 
 exports.unlockTicket = asyncHandler(async (req, res) => {
   const ticket = await loadTicketForAgent(req.params.number, req.agent);
+  if (ticket.lockedBy && String(ticket.lockedBy) !== String(req.agent._id)) {
+    const locker = await Agent.findById(ticket.lockedBy);
+    throw new ApiError(423, `Ticket is locked by ${locker?.name || 'another agent'}`);
+  }
   ticket.lockedBy = null;
   ticket.lockedAt = null;
   ticket.lockExpiresAt = null;
   await ticket.save();
   res.json({ success: true, message: 'Ticket unlocked', ticket });
+});
+
+exports.updateFields = asyncHandler(async (req, res) => {
+  if (!hasPerm(req.agent, 'tickets.edit')) throw new ApiError(403, 'Permission denied');
+  const ticket = await loadTicketForAgent(req.params.number, req.agent);
+  assertNotLocked(ticket, req.agent);
+  const { subject, priority, dueDate, source } = req.body;
+  const changed = [];
+  if (subject !== undefined) {
+    if (!String(subject).trim()) throw new ApiError(422, 'Subject cannot be empty');
+    ticket.subject = String(subject).trim();
+    changed.push('subject');
+  }
+  if (priority !== undefined) {
+    if (!VALID_PRIORITIES.includes(priority)) throw new ApiError(422, 'Invalid priority');
+    ticket.priority = priority;
+    changed.push('priority');
+  }
+  if (dueDate !== undefined) {
+    ticket.dueDate = dueDate ? new Date(dueDate) : null;
+    changed.push('due date');
+  }
+  if (source !== undefined) {
+    if (!VALID_SOURCES.includes(source)) throw new ApiError(422, 'Invalid source');
+    ticket.source = source;
+    changed.push('source');
+  }
+  if (!changed.length) throw new ApiError(422, 'Nothing to update');
+  await ticket.save();
+  await ticketService.addSystemEvent({
+    ticket,
+    message: `Fields updated (${changed.join(', ')}) by ${req.agent.name}`,
+  });
+  res.json({ success: true, message: 'Ticket updated', ticket });
+});
+
+exports.claim = asyncHandler(async (req, res) => {
+  if (!hasPerm(req.agent, 'tickets.assign')) throw new ApiError(403, 'Permission denied');
+  const ticket = await loadTicketForAgent(req.params.number, req.agent);
+  assertNotLocked(ticket, req.agent);
+  if (ticket.agent && String(ticket.agent) !== String(req.agent._id)) {
+    const holder = await Agent.findById(ticket.agent);
+    throw new ApiError(409, `Ticket is already assigned to ${holder?.name || 'another agent'}`);
+  }
+  const claimed = !ticket.agent;
+  ticket.agent = req.agent._id;
+  ticket.team = null;
+  ticket.status = Ticket.STATUSES.ASSIGNED;
+  ticket.isOverdue = false;
+  await ticket.save();
+  await ticketService.addSystemEvent({
+    ticket,
+    message: `${req.agent.name} ${claimed ? 'claimed' : 'took over'} this ticket`,
+  });
+  res.json({ success: true, message: 'Ticket claimed', ticket });
+});
+
+exports.create = asyncHandler(async (req, res) => {
+  if (!hasPerm(req.agent, 'tickets.create')) throw new ApiError(403, 'Permission denied');
+  const { email, name, phone, subject, details, priority, topicId, deptId, source, customData } = req.body;
+  if (!email) throw new ApiError(422, 'Customer email is required');
+  if (!subject || !String(subject).trim()) throw new ApiError(422, 'Subject is required');
+  const user = await ticketService.findOrCreateUser({
+    name: name || email.split('@')[0],
+    email,
+    phone: phone || '',
+    company: req.companyId,
+  });
+  let parsedCustom = {};
+  if (customData) {
+    try {
+      parsedCustom = typeof customData === 'string' ? JSON.parse(customData) : customData;
+    } catch (err) {
+      throw new ApiError(422, 'Invalid custom field data');
+    }
+  }
+  const ticket = await ticketService.createTicket({
+    user,
+    orgOwner: user._id,
+    createdBy: user._id,
+    subject: String(subject).trim(),
+    details: details || '',
+    topicId: topicId || undefined,
+    deptId: deptId || undefined,
+    priority: VALID_PRIORITIES.includes(priority) ? priority : undefined,
+    source: VALID_SOURCES.includes(source) ? source : 'web',
+    customData: parsedCustom,
+  });
+  await ticketService.addSystemEvent({
+    ticket,
+    message: `Ticket opened by ${req.agent.name} on behalf of ${user.name}`,
+  });
+  res.status(201).json({ success: true, ticket });
+});
+
+exports.addCollaborator = asyncHandler(async (req, res) => {
+  const ticket = await loadTicketForAgent(req.params.number, req.agent);
+  const { email, name } = req.body;
+  if (!email) throw new ApiError(422, 'Email is required');
+  const user = await ticketService.findOrCreateUser({
+    name: name || email.split('@')[0],
+    email,
+    company: req.companyId,
+  });
+  if (String(ticket.user._id) === String(user._id)) {
+    throw new ApiError(400, 'The ticket owner is already involved in this ticket');
+  }
+  const existing = (ticket.collaborators || []).some((c) => c && String(c._id) === String(user._id));
+  if (existing) throw new ApiError(409, 'This user is already a collaborator');
+  await Ticket.updateOne({ _id: ticket._id }, { $addToSet: { collaborators: user._id } });
+  await ticketService.addSystemEvent({
+    ticket,
+    message: `${user.name} (${user.email}) added as collaborator by ${req.agent.name}`,
+  });
+  await notifyUser({
+    userId: user._id,
+    company: ticket.company,
+    type: 'collaborator',
+    message: `You have been added as a collaborator on ticket ${ticket.number}`,
+    link: `/ticket/${ticket.number}`,
+    ticket: ticket._id,
+  });
+  const updated = await Ticket.findById(ticket._id).populate('collaborators', 'name email');
+  res.json({ success: true, message: 'Collaborator added', ticket: updated });
+});
+
+exports.removeCollaborator = asyncHandler(async (req, res) => {
+  const ticket = await loadTicketForAgent(req.params.number, req.agent);
+  await Ticket.updateOne({ _id: ticket._id }, { $pull: { collaborators: req.params.userId } });
+  await ticketService.addSystemEvent({
+    ticket,
+    message: `Collaborator removed by ${req.agent.name}`,
+  });
+  const updated = await Ticket.findById(ticket._id).populate('collaborators', 'name email');
+  res.json({ success: true, message: 'Collaborator removed', ticket: updated });
+});
+
+exports.workload = asyncHandler(async (req, res) => {
+  const agent = req.agent;
+  const comp = req.companyId ? { company: req.companyId } : {};
+  const scope = scopeTicketQuery(agent, { status: { $nin: [Ticket.STATUSES.CLOSED, Ticket.STATUSES.ARCHIVED, Ticket.STATUSES.DELETED] } });
+  const agents = await Agent.find({ isActive: true, ...comp }).select('name email').sort({ name: 1 });
+  const counts = await Ticket.aggregate([
+    { $match: scope },
+    {
+      $group: {
+        _id: '$agent',
+        total: { $sum: 1 },
+        open: { $sum: { $cond: [{ $eq: ['$status', Ticket.STATUSES.OPEN] }, 1, 0] } },
+        assigned: { $sum: { $cond: [{ $eq: ['$status', Ticket.STATUSES.ASSIGNED] }, 1, 0] } },
+        overdue: { $sum: { $cond: [{ $eq: ['$status', Ticket.STATUSES.OVERDUE] }, 1, 0] } },
+      },
+    },
+  ]);
+  const byAgent = new Map(counts.map((c) => [String(c._id), c]));
+  const rows = agents.map((a) => {
+    const c = byAgent.get(String(a._id)) || { total: 0, open: 0, assigned: 0, overdue: 0 };
+    return { agent: a, total: c.total, open: c.open, assigned: c.assigned, overdue: c.overdue };
+  });
+  res.json({ success: true, items: rows });
+});
+
+exports.listEscalations = asyncHandler(async (req, res) => {
+  if (!canManageEscalations(req.agent)) throw new ApiError(403, 'Permission denied');
+  const items = await EscalationRule.find(req.companyId ? { company: req.companyId } : {})
+    .populate('department', 'name')
+    .populate('action.reassignAgent', 'name')
+    .populate('action.reassignTeam', 'name')
+    .populate('action.notifyAgent', 'name')
+    .sort({ createdAt: -1 });
+  res.json({ success: true, items });
+});
+
+exports.createEscalation = asyncHandler(async (req, res) => {
+  if (!canManageEscalations(req.agent)) throw new ApiError(403, 'Permission denied');
+  const { name, department, priority, statuses, overdueMinutes, action, isActive } = req.body;
+  if (!name || !String(name).trim()) throw new ApiError(422, 'Rule name is required');
+  if (priority && !VALID_PRIORITIES.includes(priority)) throw new ApiError(422, 'Invalid priority');
+  if (action?.raisePriorityTo && !VALID_PRIORITIES.includes(action.raisePriorityTo)) throw new ApiError(422, 'Invalid raise priority');
+  const rule = await EscalationRule.create({
+    name: String(name).trim(),
+    company: req.companyId,
+    department: department || null,
+    priority: priority || null,
+    statuses: Array.isArray(statuses) && statuses.length ? statuses : ['open', 'assigned', 'overdue'],
+    overdueMinutes: parseInt(overdueMinutes, 10) || 0,
+    action: {
+      raisePriorityTo: action?.raisePriorityTo || null,
+      reassignAgent: action?.reassignAgent || null,
+      reassignTeam: action?.reassignTeam || null,
+      notifyAgent: action?.notifyAgent || null,
+    },
+    isActive: isActive !== false,
+  });
+  res.status(201).json({ success: true, rule });
+});
+
+exports.updateEscalation = asyncHandler(async (req, res) => {
+  if (!canManageEscalations(req.agent)) throw new ApiError(403, 'Permission denied');
+  const rule = await EscalationRule.findById(req.params.id);
+  if (!rule) throw new ApiError(404, 'Escalation rule not found');
+  if (req.companyId && String(rule.company) !== String(req.companyId)) throw new ApiError(403, 'Access denied');
+  const { name, department, priority, statuses, overdueMinutes, action, isActive } = req.body;
+  if (name !== undefined) rule.name = String(name).trim();
+  if (department !== undefined) rule.department = department;
+  if (priority !== undefined) rule.priority = priority;
+  if (statuses !== undefined) rule.statuses = statuses;
+  if (overdueMinutes !== undefined) rule.overdueMinutes = parseInt(overdueMinutes, 10) || 0;
+  if (action !== undefined) {
+    rule.action = {
+      raisePriorityTo: action.raisePriorityTo || null,
+      reassignAgent: action.reassignAgent || null,
+      reassignTeam: action.reassignTeam || null,
+      notifyAgent: action.notifyAgent || null,
+    };
+  }
+  if (isActive !== undefined) rule.isActive = isActive;
+  await rule.save();
+  res.json({ success: true, rule });
+});
+
+exports.deleteEscalation = asyncHandler(async (req, res) => {
+  if (!canManageEscalations(req.agent)) throw new ApiError(403, 'Permission denied');
+  const rule = await EscalationRule.findById(req.params.id);
+  if (!rule) throw new ApiError(404, 'Escalation rule not found');
+  if (req.companyId && String(rule.company) !== String(req.companyId)) throw new ApiError(403, 'Access denied');
+  await rule.deleteOne();
+  res.json({ success: true, message: 'Escalation rule deleted' });
 });
 
 exports.deleteTicket = asyncHandler(async (req, res) => {
@@ -366,6 +659,7 @@ exports.deleteTicket = asyncHandler(async (req, res) => {
 exports.addTask = asyncHandler(async (req, res) => {
   if (!hasPerm(req.agent, 'tickets.tasks')) throw new ApiError(403, 'Permission denied');
   const ticket = await loadTicketForAgent(req.params.number, req.agent);
+  assertNotLocked(ticket, req.agent);
   const { title, description, assignedTo, dueDate } = req.body;
   if (!title) throw new ApiError(422, 'Task title is required');
   const task = await Task.create({
@@ -382,6 +676,7 @@ exports.addTask = asyncHandler(async (req, res) => {
 
 exports.updateTask = asyncHandler(async (req, res) => {
   const ticket = await loadTicketForAgent(req.params.number, req.agent);
+  assertNotLocked(ticket, req.agent);
   const task = await Task.findOne({ _id: req.params.taskId, ticket: ticket._id });
   if (!task) throw new ApiError(404, 'Task not found');
   const { title, description, assignedTo, dueDate, status } = req.body;
@@ -595,13 +890,22 @@ exports.markNotificationsRead = asyncHandler(async (req, res) => {
   res.json({ success: true, message: 'Notifications marked as read' });
 });
 
+exports.markNotificationRead = asyncHandler(async (req, res) => {
+  await Notification.updateOne(
+    { _id: req.params.id, recipient: req.agent._id, recipientType: 'agent' },
+    { $set: { read: true } }
+  );
+  res.json({ success: true, message: 'Notification marked as read' });
+});
+
 exports.agentDirectory = asyncHandler(async (req, res) => {
   const comp = req.companyId ? { company: req.companyId } : {};
   const agents = await Agent.find({ isActive: true, ...comp })
     .select('name email lastLogin')
     .sort({ name: 1 });
   const teams = await Team.find({ status: 'active', ...comp }).select('name members').populate('members', 'name');
-  res.json({ success: true, agents, teams });
+  const departments = await Department.find({ status: 'active', ...comp }).select('name').sort({ name: 1 });
+  res.json({ success: true, agents, teams, departments });
 });
 
 exports.directoryUsers = asyncHandler(async (req, res) => {

@@ -45,6 +45,13 @@ router.post(
   ctrl.adminLogin
 );
 
+router.post(
+  '/portal-login',
+  [body('email').isEmail().withMessage('Valid email is required'), body('password').notEmpty().withMessage('Password is required')],
+  validate,
+  ctrl.portalLogin
+);
+
 router.get('/confirm', ctrl.confirmEmail);
 
 router.post(

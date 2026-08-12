@@ -142,3 +142,414 @@ SyntaxError: Expected property name or '}' in JSON at position 1 (line 1 column 
     at IncomingMessage.emit (node:events:519:28)
     at endReadableNT (node:internal/streams/readable:1698:12)
     at process.processTicksAndRejections (node:internal/process/task_queues:89:21)
+[2026-08-11T07:28:37.920Z] [ERROR] Unhandled: SuperAdmin is not defined
+ReferenceError: SuperAdmin is not defined
+    at D:\PROJECTS\OS_TICKET_MERN\backend\src\controllers\auth.controller.js:101:22
+    at D:\PROJECTS\OS_TICKET_MERN\backend\src\utils\asyncHandler.js:2:19
+    at Layer.handle [as handle_request] (D:\PROJECTS\OS_TICKET_MERN\node_modules\express\lib\router\layer.js:95:5)
+    at next (D:\PROJECTS\OS_TICKET_MERN\node_modules\express\lib\router\route.js:149:13)
+    at validate (D:\PROJECTS\OS_TICKET_MERN\backend\src\middleware\validate.js:10:3)
+    at Layer.handle [as handle_request] (D:\PROJECTS\OS_TICKET_MERN\node_modules\express\lib\router\layer.js:95:5)
+    at next (D:\PROJECTS\OS_TICKET_MERN\node_modules\express\lib\router\route.js:149:13)
+    at middleware (D:\PROJECTS\OS_TICKET_MERN\node_modules\express-validator\lib\middlewares\check.js:16:13)
+    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+[2026-08-11T07:28:37.944Z] [ERROR] Unhandled: SuperAdmin is not defined
+ReferenceError: SuperAdmin is not defined
+    at D:\PROJECTS\OS_TICKET_MERN\backend\src\controllers\auth.controller.js:101:22
+    at D:\PROJECTS\OS_TICKET_MERN\backend\src\utils\asyncHandler.js:2:19
+    at Layer.handle [as handle_request] (D:\PROJECTS\OS_TICKET_MERN\node_modules\express\lib\router\layer.js:95:5)
+    at next (D:\PROJECTS\OS_TICKET_MERN\node_modules\express\lib\router\route.js:149:13)
+    at validate (D:\PROJECTS\OS_TICKET_MERN\backend\src\middleware\validate.js:10:3)
+    at Layer.handle [as handle_request] (D:\PROJECTS\OS_TICKET_MERN\node_modules\express\lib\router\layer.js:95:5)
+    at next (D:\PROJECTS\OS_TICKET_MERN\node_modules\express\lib\router\route.js:149:13)
+    at middleware (D:\PROJECTS\OS_TICKET_MERN\node_modules\express-validator\lib\middlewares\check.js:16:13)
+    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+[2026-08-11T07:28:37.950Z] [ERROR] Unhandled: SuperAdmin is not defined
+ReferenceError: SuperAdmin is not defined
+    at D:\PROJECTS\OS_TICKET_MERN\backend\src\controllers\auth.controller.js:101:22
+    at D:\PROJECTS\OS_TICKET_MERN\backend\src\utils\asyncHandler.js:2:19
+    at Layer.handle [as handle_request] (D:\PROJECTS\OS_TICKET_MERN\node_modules\express\lib\router\layer.js:95:5)
+    at next (D:\PROJECTS\OS_TICKET_MERN\node_modules\express\lib\router\route.js:149:13)
+    at validate (D:\PROJECTS\OS_TICKET_MERN\backend\src\middleware\validate.js:10:3)
+    at Layer.handle [as handle_request] (D:\PROJECTS\OS_TICKET_MERN\node_modules\express\lib\router\layer.js:95:5)
+    at next (D:\PROJECTS\OS_TICKET_MERN\node_modules\express\lib\router\route.js:149:13)
+    at middleware (D:\PROJECTS\OS_TICKET_MERN\node_modules\express-validator\lib\middlewares\check.js:16:13)
+    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+[2026-08-11T07:28:37.956Z] [ERROR] Unhandled: SuperAdmin is not defined
+ReferenceError: SuperAdmin is not defined
+    at D:\PROJECTS\OS_TICKET_MERN\backend\src\controllers\auth.controller.js:101:22
+    at D:\PROJECTS\OS_TICKET_MERN\backend\src\utils\asyncHandler.js:2:19
+    at Layer.handle [as handle_request] (D:\PROJECTS\OS_TICKET_MERN\node_modules\express\lib\router\layer.js:95:5)
+    at next (D:\PROJECTS\OS_TICKET_MERN\node_modules\express\lib\router\route.js:149:13)
+    at validate (D:\PROJECTS\OS_TICKET_MERN\backend\src\middleware\validate.js:10:3)
+    at Layer.handle [as handle_request] (D:\PROJECTS\OS_TICKET_MERN\node_modules\express\lib\router\layer.js:95:5)
+    at next (D:\PROJECTS\OS_TICKET_MERN\node_modules\express\lib\router\route.js:149:13)
+    at middleware (D:\PROJECTS\OS_TICKET_MERN\node_modules\express-validator\lib\middlewares\check.js:16:13)
+    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+[2026-08-11T07:28:37.964Z] [ERROR] Unhandled: SuperAdmin is not defined
+ReferenceError: SuperAdmin is not defined
+    at D:\PROJECTS\OS_TICKET_MERN\backend\src\controllers\auth.controller.js:101:22
+    at D:\PROJECTS\OS_TICKET_MERN\backend\src\utils\asyncHandler.js:2:19
+    at Layer.handle [as handle_request] (D:\PROJECTS\OS_TICKET_MERN\node_modules\express\lib\router\layer.js:95:5)
+    at next (D:\PROJECTS\OS_TICKET_MERN\node_modules\express\lib\router\route.js:149:13)
+    at validate (D:\PROJECTS\OS_TICKET_MERN\backend\src\middleware\validate.js:10:3)
+    at Layer.handle [as handle_request] (D:\PROJECTS\OS_TICKET_MERN\node_modules\express\lib\router\layer.js:95:5)
+    at next (D:\PROJECTS\OS_TICKET_MERN\node_modules\express\lib\router\route.js:149:13)
+    at middleware (D:\PROJECTS\OS_TICKET_MERN\node_modules\express-validator\lib\middlewares\check.js:16:13)
+    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+[2026-08-12T05:25:04.644Z] [ERROR] Failed to mark inbound email processed: EmailLog validation failed: status: `processed` is not a valid enum value for path `status`.
+[2026-08-12T05:25:10.971Z] [ERROR] Failed to mark inbound email processed: EmailLog validation failed: status: `processed` is not a valid enum value for path `status`.
+[2026-08-12T05:42:50.190Z] [ERROR] Email send failed: Invalid login: 454-4.7.0 Too many login attempts, please try again later. For more information,
+454-4.7.0 go to
+454 4.7.0  https://support.google.com/mail/answer/7126229 d9443c01a7336-2d35220f3f9sm1602135ad.69 - gsmtp
+[2026-08-12T05:42:50.262Z] [ERROR] Email send failed: Invalid login: 454-4.7.0 Too many login attempts, please try again later. For more information,
+454-4.7.0 go to
+454 4.7.0  https://support.google.com/mail/answer/7126229 d9443c01a7336-2d35115726fsm1704075ad.34 - gsmtp
+[2026-08-12T05:42:52.056Z] [ERROR] Email send failed: Invalid login: 454-4.7.0 Too many login attempts, please try again later. For more information,
+454-4.7.0 go to
+454 4.7.0  https://support.google.com/mail/answer/7126229 98e67ed59e1d1-392f908a82bsm2160426a91.0 - gsmtp
+[2026-08-12T05:42:52.197Z] [ERROR] Email send failed: Invalid login: 454-4.7.0 Too many login attempts, please try again later. For more information,
+454-4.7.0 go to
+454 4.7.0  https://support.google.com/mail/answer/7126229 98e67ed59e1d1-392f94d30f4sm2246785a91.14 - gsmtp
+[2026-08-12T05:42:54.035Z] [ERROR] Email send failed: Invalid login: 454-4.7.0 Too many login attempts, please try again later. For more information,
+454-4.7.0 go to
+454 4.7.0  https://support.google.com/mail/answer/7126229 d2e1a72fcca58-84fb1d519efsm509231b3a.25 - gsmtp
+[2026-08-12T05:42:54.255Z] [ERROR] Email send failed: Invalid login: 454-4.7.0 Too many login attempts, please try again later. For more information,
+454-4.7.0 go to
+454 4.7.0  https://support.google.com/mail/answer/7126229 98e67ed59e1d1-392f94d30b9sm2149775a91.13 - gsmtp
+[2026-08-12T05:42:55.073Z] [ERROR] Email send failed: Invalid login: 454-4.7.0 Too many login attempts, please try again later. For more information,
+454-4.7.0 go to
+454 4.7.0  https://support.google.com/mail/answer/7126229 41be03b00d2f7-cbee7d34855sm197398a12.23 - gsmtp
+[2026-08-12T05:42:55.217Z] [ERROR] Email send failed: Invalid login: 454-4.7.0 Too many login attempts, please try again later. For more information,
+454-4.7.0 go to
+454 4.7.0  https://support.google.com/mail/answer/7126229 d9443c01a7336-2d350fb09c6sm1625825ad.11 - gsmtp
+[2026-08-12T05:42:55.952Z] [ERROR] Email send failed: Invalid login: 454-4.7.0 Too many login attempts, please try again later. For more information,
+454-4.7.0 go to
+454 4.7.0  https://support.google.com/mail/answer/7126229 98e67ed59e1d1-392fe4b1659sm587428a91.3 - gsmtp
+[2026-08-12T05:42:56.045Z] [ERROR] Email send failed: Invalid login: 454-4.7.0 Too many login attempts, please try again later. For more information,
+454-4.7.0 go to
+454 4.7.0  https://support.google.com/mail/answer/7126229 98e67ed59e1d1-392f88d239esm2219278a91.6 - gsmtp
+[2026-08-12T05:42:56.872Z] [ERROR] Email send failed: Invalid login: 454-4.7.0 Too many login attempts, please try again later. For more information,
+454-4.7.0 go to
+454 4.7.0  https://support.google.com/mail/answer/7126229 d9443c01a7336-2d3511496f9sm1667085ad.25 - gsmtp
+[2026-08-12T05:42:58.728Z] [ERROR] Email send failed: Invalid login: 454-4.7.0 Too many login attempts, please try again later. For more information,
+454-4.7.0 go to
+454 4.7.0  https://support.google.com/mail/answer/7126229 98e67ed59e1d1-392f85feb67sm2208048a91.0 - gsmtp
+[2026-08-12T05:42:59.246Z] [ERROR] Email send failed: Invalid login: 454-4.7.0 Too many login attempts, please try again later. For more information,
+454-4.7.0 go to
+454 4.7.0  https://support.google.com/mail/answer/7126229 98e67ed59e1d1-392f94add3asm2047842a91.12 - gsmtp
+[2026-08-12T05:42:59.675Z] [ERROR] Email send failed: Invalid login: 454-4.7.0 Too many login attempts, please try again later. For more information,
+454-4.7.0 go to
+454 4.7.0  https://support.google.com/mail/answer/7126229 98e67ed59e1d1-392f935fee4sm2029505a91.8 - gsmtp
+[2026-08-12T05:43:01.110Z] [ERROR] Email send failed: Invalid login: 454-4.7.0 Too many login attempts, please try again later. For more information,
+454-4.7.0 go to
+454 4.7.0  https://support.google.com/mail/answer/7126229 98e67ed59e1d1-392f9675e32sm705736a91.0 - gsmtp
+[2026-08-12T05:43:01.746Z] [ERROR] Email send failed: Invalid login: 454-4.7.0 Too many login attempts, please try again later. For more information,
+454-4.7.0 go to
+454 4.7.0  https://support.google.com/mail/answer/7126229 98e67ed59e1d1-392f8e3f96dsm2194495a91.14 - gsmtp
+[2026-08-12T05:43:03.113Z] [ERROR] Email send failed: Invalid login: 454-4.7.0 Too many login attempts, please try again later. For more information,
+454-4.7.0 go to
+454 4.7.0  https://support.google.com/mail/answer/7126229 98e67ed59e1d1-392f935f73csm2096303a91.6 - gsmtp
+[2026-08-12T05:43:03.570Z] [ERROR] Email send failed: Invalid login: 454-4.7.0 Too many login attempts, please try again later. For more information,
+454-4.7.0 go to
+454 4.7.0  https://support.google.com/mail/answer/7126229 41be03b00d2f7-cbee797c623sm182333a12.3 - gsmtp
+[2026-08-12T05:43:04.081Z] [ERROR] Email send failed: Invalid login: 454-4.7.0 Too many login attempts, please try again later. For more information,
+454-4.7.0 go to
+454 4.7.0  https://support.google.com/mail/answer/7126229 41be03b00d2f7-cbee7d16673sm181701a12.16 - gsmtp
+[2026-08-12T05:43:06.071Z] [ERROR] Email send failed: Invalid login: 454-4.7.0 Too many login attempts, please try again later. For more information,
+454-4.7.0 go to
+454 4.7.0  https://support.google.com/mail/answer/7126229 98e67ed59e1d1-392f94ad854sm2062464a91.10 - gsmtp
+[2026-08-12T05:43:06.678Z] [ERROR] Email send failed: Invalid login: 454-4.7.0 Too many login attempts, please try again later. For more information,
+454-4.7.0 go to
+454 4.7.0  https://support.google.com/mail/answer/7126229 41be03b00d2f7-cbee7d5275csm189322a12.30 - gsmtp
+[2026-08-12T05:43:06.998Z] [ERROR] Email send failed: Invalid login: 454-4.7.0 Too many login attempts, please try again later. For more information,
+454-4.7.0 go to
+454 4.7.0  https://support.google.com/mail/answer/7126229 d2e1a72fcca58-84fb1ee8bdcsm518676b3a.39 - gsmtp
+[2026-08-12T05:43:07.630Z] [ERROR] Email send failed: Invalid login: 454-4.7.0 Too many login attempts, please try again later. For more information,
+454-4.7.0 go to
+454 4.7.0  https://support.google.com/mail/answer/7126229 d2e1a72fcca58-84fb1cf7fadsm517678b3a.7 - gsmtp
+[2026-08-12T05:43:08.900Z] [ERROR] Email send failed: Invalid login: 454-4.7.0 Too many login attempts, please try again later. For more information,
+454-4.7.0 go to
+454 4.7.0  https://support.google.com/mail/answer/7126229 d9443c01a7336-2d35223283fsm1610285ad.80 - gsmtp
+[2026-08-12T05:43:09.839Z] [ERROR] Email send failed: Invalid login: 454-4.7.0 Too many login attempts, please try again later. For more information,
+454-4.7.0 go to
+454 4.7.0  https://support.google.com/mail/answer/7126229 41be03b00d2f7-cbee7a8d612sm201063a12.12 - gsmtp
+[2026-08-12T05:43:10.593Z] [ERROR] Email send failed: Invalid login: 454-4.7.0 Too many login attempts, please try again later. For more information,
+454-4.7.0 go to
+454 4.7.0  https://support.google.com/mail/answer/7126229 d2e1a72fcca58-84fb1f2a737sm498019b3a.44 - gsmtp
+[2026-08-12T05:43:11.832Z] [ERROR] Email send failed: Invalid login: 454-4.7.0 Too many login attempts, please try again later. For more information,
+454-4.7.0 go to
+454 4.7.0  https://support.google.com/mail/answer/7126229 d9443c01a7336-2d350ff0772sm1642605ad.21 - gsmtp
+[2026-08-12T05:43:12.420Z] [ERROR] Email send failed: Invalid login: 454-4.7.0 Too many login attempts, please try again later. For more information,
+454-4.7.0 go to
+454 4.7.0  https://support.google.com/mail/answer/7126229 98e67ed59e1d1-392f935f73csm2096747a91.6 - gsmtp
+[2026-08-12T05:43:12.795Z] [ERROR] Email send failed: Invalid login: 454-4.7.0 Too many login attempts, please try again later. For more information,
+454-4.7.0 go to
+454 4.7.0  https://support.google.com/mail/answer/7126229 98e67ed59e1d1-392f8e3f96dsm2195069a91.14 - gsmtp
+[2026-08-12T05:43:14.954Z] [ERROR] Email send failed: Invalid login: 454-4.7.0 Too many login attempts, please try again later. For more information,
+454-4.7.0 go to
+454 4.7.0  https://support.google.com/mail/answer/7126229 d2e1a72fcca58-84fb1cf445bsm521928b3a.12 - gsmtp
+[2026-08-12T05:43:16.083Z] [ERROR] Email send failed: Invalid login: 454-4.7.0 Too many login attempts, please try again later. For more information,
+454-4.7.0 go to
+454 4.7.0  https://support.google.com/mail/answer/7126229 d9443c01a7336-2d35219ee32sm1593695ad.38 - gsmtp
+[2026-08-12T05:43:16.785Z] [ERROR] Email send failed: Invalid login: 454-4.7.0 Too many login attempts, please try again later. For more information,
+454-4.7.0 go to
+454 4.7.0  https://support.google.com/mail/answer/7126229 d2e1a72fcca58-84fb1f24a47sm493096b3a.42 - gsmtp
+[2026-08-12T05:43:17.003Z] [ERROR] Email send failed: Invalid login: 454-4.7.0 Too many login attempts, please try again later. For more information,
+454-4.7.0 go to
+454 4.7.0  https://support.google.com/mail/answer/7126229 98e67ed59e1d1-392f88d1e8csm2247040a91.5 - gsmtp
+[2026-08-12T05:43:18.789Z] [ERROR] Email send failed: Invalid login: 454-4.7.0 Too many login attempts, please try again later. For more information,
+454-4.7.0 go to
+454 4.7.0  https://support.google.com/mail/answer/7126229 d2e1a72fcca58-84fb1ee805csm512697b3a.37 - gsmtp
+[2026-08-12T05:43:18.852Z] [ERROR] Email send failed: Invalid login: 454-4.7.0 Too many login attempts, please try again later. For more information,
+454-4.7.0 go to
+454 4.7.0  https://support.google.com/mail/answer/7126229 98e67ed59e1d1-392f94add3asm2048841a91.12 - gsmtp
+[2026-08-12T05:43:19.742Z] [ERROR] Email send failed: Invalid login: 454-4.7.0 Too many login attempts, please try again later. For more information,
+454-4.7.0 go to
+454 4.7.0  https://support.google.com/mail/answer/7126229 d2e1a72fcca58-84fb1f2645bsm482266b3a.50 - gsmtp
+[2026-08-12T05:43:19.792Z] [ERROR] Email send failed: Invalid login: 454-4.7.0 Too many login attempts, please try again later. For more information,
+454-4.7.0 go to
+454 4.7.0  https://support.google.com/mail/answer/7126229 d2e1a72fcca58-84fb1cf48e0sm534577b3a.4 - gsmtp
+[2026-08-12T05:43:21.931Z] [ERROR] Email send failed: Invalid login: 454-4.7.0 Too many login attempts, please try again later. For more information,
+454-4.7.0 go to
+454 4.7.0  https://support.google.com/mail/answer/7126229 98e67ed59e1d1-392f88d239esm2220642a91.6 - gsmtp
+[2026-08-12T05:43:22.778Z] [ERROR] Email send failed: Invalid login: 454-4.7.0 Too many login attempts, please try again later. For more information,
+454-4.7.0 go to
+454 4.7.0  https://support.google.com/mail/answer/7126229 98e67ed59e1d1-392f984cff1sm642624a91.1 - gsmtp
+[2026-08-12T05:43:22.927Z] [ERROR] Email send failed: Invalid login: 454-4.7.0 Too many login attempts, please try again later. For more information,
+454-4.7.0 go to
+454 4.7.0  https://support.google.com/mail/answer/7126229 98e67ed59e1d1-392f9675e32sm706069a91.0 - gsmtp
+[2026-08-12T05:43:23.905Z] [ERROR] Email send failed: Invalid login: 454-4.7.0 Too many login attempts, please try again later. For more information,
+454-4.7.0 go to
+454 4.7.0  https://support.google.com/mail/answer/7126229 d2e1a72fcca58-84fb1f252d4sm489269b3a.46 - gsmtp
+[2026-08-12T05:43:24.986Z] [ERROR] Email send failed: Invalid login: 454-4.7.0 Too many login attempts, please try again later. For more information,
+454-4.7.0 go to
+454 4.7.0  https://support.google.com/mail/answer/7126229 d2e1a72fcca58-84fb1cf3228sm542133b3a.2 - gsmtp
+[2026-08-12T05:43:26.725Z] [ERROR] Email send failed: Invalid login: 454-4.7.0 Too many login attempts, please try again later. For more information,
+454-4.7.0 go to
+454 4.7.0  https://support.google.com/mail/answer/7126229 d9443c01a7336-2d3522086c7sm1606885ad.64 - gsmtp
+[2026-08-12T05:43:26.845Z] [ERROR] Email send failed: Invalid login: 454-4.7.0 Too many login attempts, please try again later. For more information,
+454-4.7.0 go to
+454 4.7.0  https://support.google.com/mail/answer/7126229 98e67ed59e1d1-392f935f670sm2078958a91.7 - gsmtp
+[2026-08-12T05:43:27.686Z] [ERROR] Email send failed: Invalid login: 454-4.7.0 Too many login attempts, please try again later. For more information,
+454-4.7.0 go to
+454 4.7.0  https://support.google.com/mail/answer/7126229 98e67ed59e1d1-392f935f670sm2079020a91.7 - gsmtp
+[2026-08-12T05:43:29.527Z] [ERROR] Email send failed: Invalid login: 454-4.7.0 Too many login attempts, please try again later. For more information,
+454-4.7.0 go to
+454 4.7.0  https://support.google.com/mail/answer/7126229 d2e1a72fcca58-84fb1ee805csm512889b3a.37 - gsmtp
+[2026-08-12T05:43:29.755Z] [ERROR] Email send failed: Invalid login: 454-4.7.0 Too many login attempts, please try again later. For more information,
+454-4.7.0 go to
+454 4.7.0  https://support.google.com/mail/answer/7126229 d9443c01a7336-2d352208536sm1564815ad.58 - gsmtp
+[2026-08-12T05:43:30.487Z] [ERROR] Email send failed: Invalid login: 454-4.7.0 Too many login attempts, please try again later. For more information,
+454-4.7.0 go to
+454 4.7.0  https://support.google.com/mail/answer/7126229 98e67ed59e1d1-392f8896c20sm2199214a91.1 - gsmtp
+[2026-08-12T05:43:30.682Z] [ERROR] Email send failed: Invalid login: 454-4.7.0 Too many login attempts, please try again later. For more information,
+454-4.7.0 go to
+454 4.7.0  https://support.google.com/mail/answer/7126229 d2e1a72fcca58-84fb1f7517dsm513216b3a.58 - gsmtp
+[2026-08-12T05:43:32.355Z] [ERROR] Email send failed: Invalid login: 454-4.7.0 Too many login attempts, please try again later. For more information,
+454-4.7.0 go to
+454 4.7.0  https://support.google.com/mail/answer/7126229 98e67ed59e1d1-392f8e3f565sm2171271a91.13 - gsmtp
+[2026-08-12T05:43:33.288Z] [ERROR] Email send failed: Invalid login: 454-4.7.0 Too many login attempts, please try again later. For more information,
+454-4.7.0 go to
+454 4.7.0  https://support.google.com/mail/answer/7126229 98e67ed59e1d1-392f933fa84sm2073179a91.4 - gsmtp
+[2026-08-12T05:43:34.050Z] [ERROR] Email send failed: Invalid login: 454-4.7.0 Too many login attempts, please try again later. For more information,
+454-4.7.0 go to
+454 4.7.0  https://support.google.com/mail/answer/7126229 d2e1a72fcca58-84fb1f24461sm498862b3a.40 - gsmtp
+[2026-08-12T05:43:34.998Z] [ERROR] Email send failed: Invalid login: 454-4.7.0 Too many login attempts, please try again later. For more information,
+454-4.7.0 go to
+454 4.7.0  https://support.google.com/mail/answer/7126229 98e67ed59e1d1-392f8d00067sm2314151a91.12 - gsmtp
+[2026-08-12T05:43:35.168Z] [ERROR] Email send failed: Invalid login: 454-4.7.0 Too many login attempts, please try again later. For more information,
+454-4.7.0 go to
+454 4.7.0  https://support.google.com/mail/answer/7126229 98e67ed59e1d1-392f8901c1bsm2189833a91.8 - gsmtp
+[2026-08-12T05:43:36.126Z] [ERROR] Email send failed: Invalid login: 454-4.7.0 Too many login attempts, please try again later. For more information,
+454-4.7.0 go to
+454 4.7.0  https://support.google.com/mail/answer/7126229 98e67ed59e1d1-392f94f24fdsm2051219a91.16 - gsmtp
+[2026-08-12T05:43:36.951Z] [ERROR] Email send failed: Invalid login: 454-4.7.0 Too many login attempts, please try again later. For more information,
+454-4.7.0 go to
+454 4.7.0  https://support.google.com/mail/answer/7126229 d2e1a72fcca58-84fb1cf419fsm529599b3a.5 - gsmtp
+[2026-08-12T05:43:37.925Z] [ERROR] Email send failed: Invalid login: 454-4.7.0 Too many login attempts, please try again later. For more information,
+454-4.7.0 go to
+454 4.7.0  https://support.google.com/mail/answer/7126229 98e67ed59e1d1-392f8cffe0fsm2162376a91.9 - gsmtp
+[2026-08-12T05:43:38.829Z] [ERROR] Email send failed: Invalid login: 454-4.7.0 Too many login attempts, please try again later. For more information,
+454-4.7.0 go to
+454 4.7.0  https://support.google.com/mail/answer/7126229 98e67ed59e1d1-392f8d00067sm2314355a91.12 - gsmtp
+[2026-08-12T05:43:39.776Z] [ERROR] Email send failed: Invalid login: 454-4.7.0 Too many login attempts, please try again later. For more information,
+454-4.7.0 go to
+454 4.7.0  https://support.google.com/mail/answer/7126229 98e67ed59e1d1-392f94f24fdsm2051380a91.16 - gsmtp
+[2026-08-12T05:43:40.767Z] [ERROR] Email send failed: Invalid login: 454-4.7.0 Too many login attempts, please try again later. For more information,
+454-4.7.0 go to
+454 4.7.0  https://support.google.com/mail/answer/7126229 d2e1a72fcca58-84fb1f252dfsm484863b3a.48 - gsmtp
+[2026-08-12T05:43:41.709Z] [ERROR] Email send failed: Invalid login: 454-4.7.0 Too many login attempts, please try again later. For more information,
+454-4.7.0 go to
+454 4.7.0  https://support.google.com/mail/answer/7126229 98e67ed59e1d1-392f88d239esm2221601a91.6 - gsmtp
+[2026-08-12T05:43:42.697Z] [ERROR] Email send failed: Invalid login: 454-4.7.0 Too many login attempts, please try again later. For more information,
+454-4.7.0 go to
+454 4.7.0  https://support.google.com/mail/answer/7126229 98e67ed59e1d1-392f984cff1sm642899a91.1 - gsmtp
+[2026-08-12T05:43:43.678Z] [ERROR] Email send failed: Invalid login: 454-4.7.0 Too many login attempts, please try again later. For more information,
+454-4.7.0 go to
+454 4.7.0  https://support.google.com/mail/answer/7126229 d9443c01a7336-2d350fb0cddsm1664295ad.1 - gsmtp
+[2026-08-12T05:43:45.282Z] [ERROR] Email send failed: Invalid login: 454-4.7.0 Too many login attempts, please try again later. For more information,
+454-4.7.0 go to
+454 4.7.0  https://support.google.com/mail/answer/7126229 d9443c01a7336-2d35117c548sm1642415ad.37 - gsmtp
+[2026-08-12T05:43:45.644Z] [ERROR] Email send failed: Invalid login: 454-4.7.0 Too many login attempts, please try again later. For more information,
+454-4.7.0 go to
+454 4.7.0  https://support.google.com/mail/answer/7126229 41be03b00d2f7-cbee7d16673sm182341a12.16 - gsmtp
+[2026-08-12T05:43:46.564Z] [ERROR] Email send failed: Invalid login: 454-4.7.0 Too many login attempts, please try again later. For more information,
+454-4.7.0 go to
+454 4.7.0  https://support.google.com/mail/answer/7126229 98e67ed59e1d1-392f933f600sm2073099a91.2 - gsmtp
+[2026-08-12T05:43:47.147Z] [ERROR] Email send failed: Invalid login: 454-4.7.0 Too many login attempts, please try again later. For more information,
+454-4.7.0 go to
+454 4.7.0  https://support.google.com/mail/answer/7126229 d2e1a72fcca58-84fb1d2342dsm517427b3a.16 - gsmtp
+[2026-08-12T05:43:51.738Z] [ERROR] Email send failed: Invalid login: 454-4.7.0 Too many login attempts, please try again later. For more information,
+454-4.7.0 go to
+454 4.7.0  https://support.google.com/mail/answer/7126229 98e67ed59e1d1-392f94add3asm2050464a91.12 - gsmtp
+[2026-08-12T05:43:53.614Z] [ERROR] Email send failed: Invalid login: 454-4.7.0 Too many login attempts, please try again later. For more information,
+454-4.7.0 go to
+454 4.7.0  https://support.google.com/mail/answer/7126229 d2e1a72fcca58-84fb1b73aa6sm547898b3a.0 - gsmtp
+[2026-08-12T05:43:56.647Z] [ERROR] Email send failed: Invalid login: 454-4.7.0 Too many login attempts, please try again later. For more information,
+454-4.7.0 go to
+454 4.7.0  https://support.google.com/mail/answer/7126229 d9443c01a7336-2d35220c8edsm1624135ad.66 - gsmtp
+[2026-08-12T05:43:57.590Z] [ERROR] Email send failed: Invalid login: 454-4.7.0 Too many login attempts, please try again later. For more information,
+454-4.7.0 go to
+454 4.7.0  https://support.google.com/mail/answer/7126229 98e67ed59e1d1-392f94d5cb7sm2090893a91.15 - gsmtp
+[2026-08-12T05:44:00.208Z] [ERROR] Email send failed: Invalid login: 454-4.7.0 Too many login attempts, please try again later. For more information,
+454-4.7.0 go to
+454 4.7.0  https://support.google.com/mail/answer/7126229 d9443c01a7336-2d352231283sm1646305ad.78 - gsmtp
+[2026-08-12T05:44:01.148Z] [ERROR] Email send failed: Invalid login: 454-4.7.0 Too many login attempts, please try again later. For more information,
+454-4.7.0 go to
+454 4.7.0  https://support.google.com/mail/answer/7126229 98e67ed59e1d1-392fe4fb406sm607094a91.4 - gsmtp
+[2026-08-12T05:44:03.470Z] [ERROR] Email send failed: Invalid login: 454-4.7.0 Too many login attempts, please try again later. For more information,
+454-4.7.0 go to
+454 4.7.0  https://support.google.com/mail/answer/7126229 98e67ed59e1d1-392f933fae6sm2058731a91.1 - gsmtp
+[2026-08-12T05:44:04.412Z] [ERROR] Email send failed: Invalid login: 454-4.7.0 Too many login attempts, please try again later. For more information,
+454-4.7.0 go to
+454 4.7.0  https://support.google.com/mail/answer/7126229 41be03b00d2f7-cbee797c2easm182013a12.6 - gsmtp
+[2026-08-12T05:44:07.424Z] [ERROR] Email send failed: Invalid login: 454-4.7.0 Too many login attempts, please try again later. For more information,
+454-4.7.0 go to
+454 4.7.0  https://support.google.com/mail/answer/7126229 41be03b00d2f7-cbee78b3e11sm207156a12.0 - gsmtp
+[2026-08-12T05:44:08.359Z] [ERROR] Email send failed: Invalid login: 454-4.7.0 Too many login attempts, please try again later. For more information,
+454-4.7.0 go to
+454 4.7.0  https://support.google.com/mail/answer/7126229 d2e1a72fcca58-84fb1f7517dsm513823b3a.58 - gsmtp
+[2026-08-12T05:44:10.679Z] [ERROR] Email send failed: Invalid login: 454-4.7.0 Too many login attempts, please try again later. For more information,
+454-4.7.0 go to
+454 4.7.0  https://support.google.com/mail/answer/7126229 d9443c01a7336-2d3511496f9sm1677105ad.25 - gsmtp
+[2026-08-12T05:44:11.636Z] [ERROR] Email send failed: Invalid login: 454-4.7.0 Too many login attempts, please try again later. For more information,
+454-4.7.0 go to
+454 4.7.0  https://support.google.com/mail/answer/7126229 d2e1a72fcca58-84fb1cf445bsm522763b3a.12 - gsmtp
+[2026-08-12T05:44:17.648Z] [ERROR] Email send failed: Invalid login: 454-4.7.0 Too many login attempts, please try again later. For more information,
+454-4.7.0 go to
+454 4.7.0  https://support.google.com/mail/answer/7126229 98e67ed59e1d1-392f94ad854sm2066079a91.10 - gsmtp
+[2026-08-12T05:44:18.615Z] [ERROR] Email send failed: Invalid login: 454-4.7.0 Too many login attempts, please try again later. For more information,
+454-4.7.0 go to
+454 4.7.0  https://support.google.com/mail/answer/7126229 41be03b00d2f7-cbee7d150f0sm185916a12.20 - gsmtp
+[2026-08-12T05:44:21.092Z] [ERROR] Email send failed: Invalid login: 454-4.7.0 Too many login attempts, please try again later. For more information,
+454-4.7.0 go to
+454 4.7.0  https://support.google.com/mail/answer/7126229 98e67ed59e1d1-392f8893496sm2219184a91.2 - gsmtp
+[2026-08-12T05:44:22.045Z] [ERROR] Email send failed: Invalid login: 454-4.7.0 Too many login attempts, please try again later. For more information,
+454-4.7.0 go to
+454 4.7.0  https://support.google.com/mail/answer/7126229 98e67ed59e1d1-392f8cffe2csm2176437a91.10 - gsmtp
+[2026-08-12T05:44:26.318Z] [ERROR] Email send failed: Invalid login: 454-4.7.0 Too many login attempts, please try again later. For more information,
+454-4.7.0 go to
+454 4.7.0  https://support.google.com/mail/answer/7126229 d9443c01a7336-2d350ff0772sm1652545ad.21 - gsmtp
+[2026-08-12T05:44:27.274Z] [ERROR] Email send failed: Invalid login: 454-4.7.0 Too many login attempts, please try again later. For more information,
+454-4.7.0 go to
+454 4.7.0  https://support.google.com/mail/answer/7126229 98e67ed59e1d1-392f8896c20sm2202045a91.1 - gsmtp
+[2026-08-12T05:44:30.662Z] [ERROR] Email send failed: Invalid login: 454-4.7.0 Too many login attempts, please try again later. For more information,
+454-4.7.0 go to
+454 4.7.0  https://support.google.com/mail/answer/7126229 d2e1a72fcca58-84fb1ee8ebdsm495420b3a.33 - gsmtp
+[2026-08-12T05:44:31.611Z] [ERROR] Email send failed: Invalid login: 454-4.7.0 Too many login attempts, please try again later. For more information,
+454-4.7.0 go to
+454 4.7.0  https://support.google.com/mail/answer/7126229 98e67ed59e1d1-392f908a82bsm2165508a91.0 - gsmtp
+[2026-08-12T05:44:33.653Z] [ERROR] Email send failed: Invalid login: 454-4.7.0 Too many login attempts, please try again later. For more information,
+454-4.7.0 go to
+454 4.7.0  https://support.google.com/mail/answer/7126229 98e67ed59e1d1-392f8e3f565sm2174329a91.13 - gsmtp
+[2026-08-12T05:44:35.504Z] [ERROR] Email send failed: Invalid login: 454-4.7.0 Too many login attempts, please try again later. For more information,
+454-4.7.0 go to
+454 4.7.0  https://support.google.com/mail/answer/7126229 d9443c01a7336-2d35219d91dsm1629055ad.51 - gsmtp
+[2026-08-12T05:44:37.607Z] [ERROR] Email send failed: Invalid login: 454-4.7.0 Too many login attempts, please try again later. For more information,
+454-4.7.0 go to
+454 4.7.0  https://support.google.com/mail/answer/7126229 d9443c01a7336-2d35219d137sm1685345ad.45 - gsmtp
+[2026-08-12T05:44:38.538Z] [ERROR] Email send failed: Invalid login: 454-4.7.0 Too many login attempts, please try again later. For more information,
+454-4.7.0 go to
+454 4.7.0  https://support.google.com/mail/answer/7126229 98e67ed59e1d1-392f8896c20sm2202572a91.1 - gsmtp
+[2026-08-12T05:44:40.719Z] [ERROR] Email send failed: Invalid login: 454-4.7.0 Too many login attempts, please try again later. For more information,
+454-4.7.0 go to
+454 4.7.0  https://support.google.com/mail/answer/7126229 d9443c01a7336-2d350fe9a30sm1690575ad.19 - gsmtp
+[2026-08-12T05:44:41.673Z] [ERROR] Email send failed: Invalid login: 454-4.7.0 Too many login attempts, please try again later. For more information,
+454-4.7.0 go to
+454 4.7.0  https://support.google.com/mail/answer/7126229 98e67ed59e1d1-392f85feb67sm2213078a91.0 - gsmtp
+[2026-08-12T05:44:43.750Z] [ERROR] Email send failed: Invalid login: 454-4.7.0 Too many login attempts, please try again later. For more information,
+454-4.7.0 go to
+454 4.7.0  https://support.google.com/mail/answer/7126229 98e67ed59e1d1-392f94f9e47sm2225913a91.17 - gsmtp
+[2026-08-12T05:44:44.729Z] [ERROR] Email send failed: Invalid login: 454-4.7.0 Too many login attempts, please try again later. For more information,
+454-4.7.0 go to
+454 4.7.0  https://support.google.com/mail/answer/7126229 d2e1a72fcca58-84fb1ee8ac9sm492707b3a.32 - gsmtp
+[2026-08-12T05:44:47.560Z] [ERROR] Email send failed: Invalid login: 454-4.7.0 Too many login attempts, please try again later. For more information,
+454-4.7.0 go to
+454 4.7.0  https://support.google.com/mail/answer/7126229 41be03b00d2f7-cbee7a92c96sm185643a12.13 - gsmtp
+[2026-08-12T05:44:48.472Z] [ERROR] Email send failed: Invalid login: 454-4.7.0 Too many login attempts, please try again later. For more information,
+454-4.7.0 go to
+454 4.7.0  https://support.google.com/mail/answer/7126229 d2e1a72fcca58-84fb1f1edefsm492752b3a.45 - gsmtp
+[2026-08-12T05:44:50.468Z] [ERROR] Email send failed: Invalid login: 454-4.7.0 Too many login attempts, please try again later. For more information,
+454-4.7.0 go to
+454 4.7.0  https://support.google.com/mail/answer/7126229 d2e1a72fcca58-84fb1d285a8sm528075b3a.18 - gsmtp
+[2026-08-12T05:44:51.559Z] [ERROR] Email send failed: Invalid login: 454-4.7.0 Too many login attempts, please try again later. For more information,
+454-4.7.0 go to
+454 4.7.0  https://support.google.com/mail/answer/7126229 98e67ed59e1d1-392f8e3f3dfsm2173912a91.15 - gsmtp
+[2026-08-12T05:44:52.313Z] [ERROR] Email send failed: Invalid login: 454-4.7.0 Too many login attempts, please try again later. For more information,
+454-4.7.0 go to
+454 4.7.0  https://support.google.com/mail/answer/7126229 d2e1a72fcca58-84fb1ee8ac9sm492790b3a.32 - gsmtp
+[2026-08-12T05:44:52.518Z] [ERROR] Email send failed: Invalid login: 454-4.7.0 Too many login attempts, please try again later. For more information,
+454-4.7.0 go to
+454 4.7.0  https://support.google.com/mail/answer/7126229 98e67ed59e1d1-392f8e7a68fsm2144436a91.17 - gsmtp
+[2026-08-12T05:44:56.655Z] [ERROR] Email send failed: Invalid login: 454-4.7.0 Too many login attempts, please try again later. For more information,
+454-4.7.0 go to
+454 4.7.0  https://support.google.com/mail/answer/7126229 98e67ed59e1d1-392f8cffe0fsm2166325a91.9 - gsmtp
+[2026-08-12T05:44:58.472Z] [ERROR] Email send failed: Invalid login: 454-4.7.0 Too many login attempts, please try again later. For more information,
+454-4.7.0 go to
+454 4.7.0  https://support.google.com/mail/answer/7126229 d9443c01a7336-2d35219f793sm1621995ad.46 - gsmtp
+[2026-08-12T05:45:02.343Z] [ERROR] Email send failed: Invalid login: 454-4.7.0 Too many login attempts, please try again later. For more information,
+454-4.7.0 go to
+454 4.7.0  https://support.google.com/mail/answer/7126229 d9443c01a7336-2d350fb0b95sm1735605ad.8 - gsmtp
+[2026-08-12T05:45:03.272Z] [ERROR] Email send failed: Invalid login: 454-4.7.0 Too many login attempts, please try again later. For more information,
+454-4.7.0 go to
+454 4.7.0  https://support.google.com/mail/answer/7126229 98e67ed59e1d1-392f85feb67sm2214083a91.0 - gsmtp
+[2026-08-12T05:45:10.410Z] [ERROR] Email send failed: Invalid login: 454-4.7.0 Too many login attempts, please try again later. For more information,
+454-4.7.0 go to
+454 4.7.0  https://support.google.com/mail/answer/7126229 d9443c01a7336-2d3511514c4sm1673415ad.29 - gsmtp
+[2026-08-12T05:45:11.395Z] [ERROR] Email send failed: Invalid login: 454-4.7.0 Too many login attempts, please try again later. For more information,
+454-4.7.0 go to
+454 4.7.0  https://support.google.com/mail/answer/7126229 d2e1a72fcca58-84fb1d2b813sm536180b3a.22 - gsmtp
+[2026-08-12T05:45:15.651Z] [ERROR] Email send failed: Invalid login: 454-4.7.0 Too many login attempts, please try again later. For more information,
+454-4.7.0 go to
+454 4.7.0  https://support.google.com/mail/answer/7126229 d2e1a72fcca58-84fb1f2a87csm499928b3a.43 - gsmtp
+[2026-08-12T05:45:16.634Z] [ERROR] Email send failed: Invalid login: 454-4.7.0 Too many login attempts, please try again later. For more information,
+454-4.7.0 go to
+454 4.7.0  https://support.google.com/mail/answer/7126229 98e67ed59e1d1-392f94d5cb7sm2094892a91.15 - gsmtp
+[2026-08-12T05:45:16.777Z] [ERROR] Email send failed: Invalid login: 454-4.7.0 Too many login attempts, please try again later. For more information,
+454-4.7.0 go to
+454 4.7.0  https://support.google.com/mail/answer/7126229 d2e1a72fcca58-84fb1f71ee5sm501149b3a.57 - gsmtp
+[2026-08-12T05:45:17.705Z] [ERROR] Email send failed: Invalid login: 454-4.7.0 Too many login attempts, please try again later. For more information,
+454-4.7.0 go to
+454 4.7.0  https://support.google.com/mail/answer/7126229 98e67ed59e1d1-392f96165fasm844374a91.0 - gsmtp
+[2026-08-12T05:45:18.967Z] [ERROR] Email send failed: Invalid login: 454-4.7.0 Too many login attempts, please try again later. For more information,
+454-4.7.0 go to
+454 4.7.0  https://support.google.com/mail/answer/7126229 d9443c01a7336-2d3521a3120sm1634495ad.52 - gsmtp
+[2026-08-12T05:45:19.909Z] [ERROR] Email send failed: Invalid login: 454-4.7.0 Too many login attempts, please try again later. For more information,
+454-4.7.0 go to
+454 4.7.0  https://support.google.com/mail/answer/7126229 98e67ed59e1d1-392f8cffe0fsm2167518a91.9 - gsmtp
+[2026-08-12T05:45:22.095Z] [ERROR] Email send failed: Invalid login: 454-4.7.0 Too many login attempts, please try again later. For more information,
+454-4.7.0 go to
+454 4.7.0  https://support.google.com/mail/answer/7126229 d9443c01a7336-2d35220b665sm1630955ad.67 - gsmtp
+[2026-08-12T05:45:23.068Z] [ERROR] Email send failed: Invalid login: 454-4.7.0 Too many login attempts, please try again later. For more information,
+454-4.7.0 go to
+454 4.7.0  https://support.google.com/mail/answer/7126229 d9443c01a7336-2d35219f247sm1675695ad.39 - gsmtp
+[2026-08-12T05:45:25.529Z] [ERROR] Email send failed: Invalid login: 454-4.7.0 Too many login attempts, please try again later. For more information,
+454-4.7.0 go to
+454 4.7.0  https://support.google.com/mail/answer/7126229 98e67ed59e1d1-392f8892e29sm2181551a91.3 - gsmtp
+[2026-08-12T05:45:26.495Z] [ERROR] Email send failed: Invalid login: 454-4.7.0 Too many login attempts, please try again later. For more information,
+454-4.7.0 go to
+454 4.7.0  https://support.google.com/mail/answer/7126229 98e67ed59e1d1-392f88d2a8esm2241293a91.7 - gsmtp
+[2026-08-12T07:18:57.434Z] [ERROR] IMAP poll failed: getaddrinfo ENOTFOUND imap.gmail.com
+[2026-08-12T07:32:39.460Z] [ERROR] IMAP poll failed: getaddrinfo ENOTFOUND imap.gmail.com
+[2026-08-12T08:15:23.030Z] [ERROR] IMAP poll failed: getaddrinfo ENOTFOUND imap.gmail.com

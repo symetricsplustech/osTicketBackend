@@ -1,5 +1,6 @@
 const User = require('../models/User');
 const Agent = require('../models/Agent');
+const SuperAdmin = require('../models/SuperAdmin');
 const Ticket = require('../models/Ticket');
 const SystemSetting = require('../models/SystemSetting');
 const ApiError = require('../utils/ApiError');
@@ -91,6 +92,45 @@ exports.agentLogin = asyncHandler(async (req, res) => {
   await agent.save();
   const token = signToken({ id: agent._id, type: 'agent' });
   res.json({ success: true, token, user: agent });
+});
+
+exports.portalLogin = asyncHandler(async (req, res) => {
+  const { email, password } = req.body;
+  const norm = String(email || '').toLowerCase().trim();
+  if (!norm || !password) throw new ApiError(422, 'Email and password are required');
+
+  const superAdmin = await SuperAdmin.findOne({ email: norm });
+  if (superAdmin && superAdmin.isActive && (await superAdmin.matchPassword(password))) {
+    if (superAdmin.allowedIps && superAdmin.allowedIps.length) {
+      const ip = req.ip || req.connection?.remoteAddress || '';
+      if (!superAdmin.allowedIps.includes(ip)) {
+        throw new ApiError(403, 'Access denied for this IP address');
+      }
+    }
+    superAdmin.lastLogin = new Date();
+    await superAdmin.save();
+    const token = signToken({ id: superAdmin._id, type: 'superadmin' });
+    return res.json({ success: true, token, user: superAdmin, role: 'superadmin' });
+  }
+
+  const agent = await Agent.findOne({ email: norm }).populate('role');
+  if (agent && agent.isActive && (await agent.matchPassword(password))) {
+    const isAdmin = agent.isAdmin || (agent.role && agent.role.isAdmin);
+    agent.lastLogin = new Date();
+    await agent.save();
+    const token = signToken({ id: agent._id, type: 'agent' });
+    return res.json({ success: true, token, user: agent, role: isAdmin ? 'admin' : 'agent' });
+  }
+
+  const user = await User.findOne({ email: norm });
+  if (user && user.status === 'active' && user.password && (await user.matchPassword(password))) {
+    user.lastLogin = new Date();
+    await user.save();
+    const token = signToken({ id: user._id, type: 'user' });
+    return res.json({ success: true, token, user, role: 'customer' });
+  }
+
+  throw new ApiError(401, 'Invalid email or password');
 });
 
 exports.adminLogin = asyncHandler(async (req, res) => {

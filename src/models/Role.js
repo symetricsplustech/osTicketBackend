@@ -16,6 +16,7 @@ const PERMISSIONS = [
   'canned.manage',
   'admin.manage',
   'orgs.manage',
+  'escalations.manage',
 ];
 
 const roleSchema = new mongoose.Schema(

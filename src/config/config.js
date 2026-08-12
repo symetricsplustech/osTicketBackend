@@ -20,6 +20,18 @@ const config = {
     password: process.env.EMAIL_PASSWORD || '',
     from: process.env.EMAIL_FROM || 'osTicket Support <support@osticket.local>',
     enabled: !!(process.env.EMAIL_HOST && process.env.EMAIL_USER),
+    // Inbound email-to-ticket (IMAP polling). The helpdesk inbox receives customer emails.
+    imapHost: process.env.EMAIL_IMAP_HOST || (process.env.EMAIL_HOST === 'smtp.gmail.com' ? 'imap.gmail.com' : process.env.EMAIL_HOST),
+    imapPort: parseInt(process.env.EMAIL_IMAP_PORT, 10) || 993,
+    imapSecure: process.env.EMAIL_IMAP_SECURE !== 'false',
+    imapUser: process.env.EMAIL_IMAP_USER || process.env.EMAIL_USER,
+    imapPassword: process.env.EMAIL_IMAP_PASSWORD || process.env.EMAIL_PASSWORD,
+    imapMailbox: process.env.EMAIL_IMAP_MAILBOX || 'INBOX',
+    imapPollInterval: parseInt(process.env.EMAIL_POLL_INTERVAL, 10) || 60000,
+    imapWindowDays: parseInt(process.env.EMAIL_INBOUND_WINDOW_DAYS, 10) || 1,
+    imapEnabled: !!((process.env.EMAIL_HOST && process.env.EMAIL_USER) && process.env.EMAIL_IMAP_ENABLED !== 'false'),
+    // Public address customers email to create a ticket. Falls back to the helpdesk inbox.
+    emailToTicket: process.env.EMAIL_TO_TICKET_ADDRESS || process.env.EMAIL_USER || '',
   },
   urls: {
     client: process.env.CLIENT_URL || 'http://localhost:5173',
@@ -40,6 +52,10 @@ const config = {
   rateLimit: {
     window: parseInt(process.env.RATE_LIMIT_WINDOW, 10) || 15,
     max: parseInt(process.env.RATE_LIMIT_MAX, 10) || 300,
+  },
+  escalation: {
+    enabled: process.env.ESCALATION_ENABLED === 'true',
+    intervalMinutes: parseInt(process.env.ESCALATION_INTERVAL_MINUTES, 10) || 5,
   },
 };
 

@@ -10,7 +10,7 @@ const emailLogSchema = new mongoose.Schema(
     company: { type: mongoose.Schema.Types.ObjectId, ref: 'Company', default: null, index: true },
     ticket: { type: mongoose.Schema.Types.ObjectId, ref: 'Ticket', default: null },
     user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
-    status: { type: String, enum: ['sent', 'queued', 'failed'], default: 'queued' },
+    status: { type: String, enum: ['sent', 'queued', 'failed', 'processed'], default: 'queued' },
     error: { type: String, default: '' },
     meta: { type: mongoose.Schema.Types.Mixed, default: {} },
   },

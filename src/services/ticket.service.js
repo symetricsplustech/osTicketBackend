@@ -310,17 +310,31 @@ const createTicket = async ({ user, orgOwner, createdBy, subject, details, topic
 
   // Emails
   const ctx = await buildTicketContext(ticket);
+  const autoresp = settings.autoresponder || {};
   try {
-    if (settings.tickets?.autoResponder !== false) {
-      await emailService.sendFromTemplate({
-        key: 'new_ticket_confirmation',
-        to: user.email,
-        data: ctx,
-        event: 'new_ticket_confirmation',
-        ticket: ticket._id,
-        user: user._id,
-        company: companyId,
-      });
+    if ((autoresp.enabled !== false) && (settings.tickets?.autoResponder !== false)) {
+      if (autoresp.subject || autoresp.body) {
+        const render = (tpl) => tpl.replace(/\[([\w.]+)\]/g, (m, key) => key.split('.').reduce((o, k) => (o == null ? '' : o[k]), ctx) ?? '');
+        await emailService.sendMail({
+          to: user.email,
+          subject: autoresp.subject ? render(autoresp.subject) : ctx.subject,
+          body: autoresp.body ? render(autoresp.body) : '',
+          event: 'new_ticket_confirmation',
+          ticket: ticket._id,
+          user: user._id,
+          company: companyId,
+        });
+      } else {
+        await emailService.sendFromTemplate({
+          key: 'new_ticket_confirmation',
+          to: user.email,
+          data: ctx,
+          event: 'new_ticket_confirmation',
+          ticket: ticket._id,
+          user: user._id,
+          company: companyId,
+        });
+      }
     }
   } catch (err) {
     logger.error(`Confirmation email failed: ${err.message}`);

@@ -15,6 +15,9 @@ router.get('/logs', ctrl.emailLogs);
 // Notifications
 router.get('/notifications', ctrl.notifications);
 router.put('/notifications/read', ctrl.markNotificationsRead);
+router.put('/notifications/:id/read', ctrl.markNotificationRead);
+router.delete('/notifications/read', ctrl.deleteReadNotifications);
+router.delete('/notifications/:id', ctrl.deleteNotification);
 
 // Agents
 router.get('/agents', ctrl.listAgents);
@@ -60,8 +63,10 @@ router.delete('/filters/:id', ctrl.deleteFilter);
 
 // Email Templates
 router.get('/email-templates', ctrl.listEmailTemplates);
+router.post('/email-templates', ctrl.createEmailTemplate);
 router.get('/email-templates/:id', ctrl.getEmailTemplate);
 router.put('/email-templates/:id', ctrl.updateEmailTemplate);
+router.delete('/email-templates/:id', ctrl.deleteEmailTemplate);
 
 // Settings
 router.get('/settings', ctrl.getSettings);
@@ -101,5 +106,35 @@ router.delete('/announcements/:id', ctrl.deleteAnnouncement);
 
 // Utilities
 router.post('/recompute-due-dates', ctrl.recomputeDueDates);
+
+// Ticket Statuses
+router.get('/ticket-statuses', ctrl.ticketStatuses.list);
+router.post('/ticket-statuses', ctrl.ticketStatuses.create);
+router.put('/ticket-statuses/:id', ctrl.ticketStatuses.update);
+router.delete('/ticket-statuses/:id', ctrl.ticketStatuses.remove);
+
+// Custom Fields
+router.get('/custom-fields', ctrl.customFields.list);
+router.post('/custom-fields', ctrl.customFields.create);
+router.put('/custom-fields/:id', ctrl.customFields.update);
+router.delete('/custom-fields/:id', ctrl.customFields.remove);
+
+// Ticket Forms
+router.get('/ticket-forms', ctrl.ticketForms.list);
+router.post('/ticket-forms', ctrl.ticketForms.create);
+router.put('/ticket-forms/:id', ctrl.ticketForms.update);
+router.delete('/ticket-forms/:id', ctrl.ticketForms.remove);
+
+// Holidays
+router.get('/holidays', ctrl.holidays.list);
+router.post('/holidays', ctrl.holidays.create);
+router.put('/holidays/:id', ctrl.holidays.update);
+router.delete('/holidays/:id', ctrl.holidays.remove);
+
+// Integrations / Plugins
+router.get('/integrations', ctrl.integrations.list);
+router.post('/integrations', ctrl.integrations.create);
+router.put('/integrations/:id', ctrl.integrations.update);
+router.delete('/integrations/:id', ctrl.integrations.remove);
 
 module.exports = router;

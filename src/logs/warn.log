@@ -1,3 +1,7 @@
 [2026-08-08T06:21:20.874Z] [WARN] Email template not found: employee_welcome
 [2026-08-08T06:21:42.701Z] [WARN] Email template not found: employee_welcome
 [2026-08-08T06:32:23.814Z] [WARN] Email template not found: employee_welcome
+[2026-08-12T05:15:09.584Z] [WARN] Email template not found: new_ticket_confirmation
+[2026-08-12T05:15:09.590Z] [WARN] Email template not found: new_ticket_alert
+[2026-08-12T05:15:09.959Z] [WARN] Email template not found: new_reply_alert
+[2026-08-12T05:15:15.378Z] [WARN] Email template not found: ticket_response

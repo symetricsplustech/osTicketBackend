@@ -25,6 +25,7 @@ const Plan = require('../models/Plan');
 const Company = require('../models/Company');
 const Invoice = require('../models/Invoice');
 const AuditLog = require('../models/AuditLog');
+const TicketStatus = require('../models/TicketStatus');
 const { emailTemplates } = require('./seedData');
 const { generateTicketNumber } = require('../utils/generators');
 const { computeDueDate } = require('../services/sla.service');
@@ -37,6 +38,7 @@ const MODELS = [
   SuperAdmin,
   EmailTemplate,
   SystemSetting,
+  TicketStatus,
   TicketFilter,
   TicketThread,
   Task,
@@ -75,9 +77,22 @@ const run = async () => {
 
   // ----- Email templates -----
   for (const t of emailTemplates) {
-    await EmailTemplate.findOneAndUpdate({ key: t.key }, t, { upsert: true });
+    await EmailTemplate.findOneAndUpdate({ key: t.key, company: null }, t, { upsert: true });
   }
   console.log('Email templates seeded.');
+
+  // ----- Ticket statuses -----
+  const defaultStatuses = [
+    { name: 'Open', key: 'open', color: '#4a86b0', isDefault: true, sortOrder: 1 },
+    { name: 'Assigned', key: 'assigned', color: '#8e6bb0', sortOrder: 2 },
+    { name: 'Overdue', key: 'overdue', color: '#c0392b', sortOrder: 3 },
+    { name: 'Closed', key: 'closed', color: '#6c757d', sortOrder: 4 },
+    { name: 'Archived', key: 'archived', color: '#95a5a6', sortOrder: 5 },
+  ];
+  for (const s of defaultStatuses) {
+    await require('../models/TicketStatus').findOneAndUpdate({ key: s.key }, s, { upsert: true });
+  }
+  console.log('Ticket statuses seeded.');
 
   // ----- Super admin -----
   let superAdmin = await SuperAdmin.findOne({ email: 'superadmin@osticket.local' });
@@ -126,7 +141,7 @@ const run = async () => {
 
   // ----- Roles -----
   const [adminRole, supportRole, techRole] = await Promise.all([
-    Role.create({ name: 'Administrator', permissions: ['tickets.view', 'tickets.create', 'tickets.edit', 'tickets.assign', 'tickets.transfer', 'tickets.close', 'tickets.delete', 'tickets.reply', 'tickets.note', 'tickets.tasks', 'users.manage', 'kb.manage', 'canned.manage', 'admin.manage', 'orgs.manage'], isAdmin: true }),
+    Role.create({ name: 'Administrator', permissions: ['tickets.view', 'tickets.create', 'tickets.edit', 'tickets.assign', 'tickets.transfer', 'tickets.close', 'tickets.delete', 'tickets.reply', 'tickets.note', 'tickets.tasks', 'users.manage', 'kb.manage', 'canned.manage', 'admin.manage', 'orgs.manage', 'escalations.manage'], isAdmin: true }),
     Role.create({ name: 'Support Agent', permissions: ['tickets.view', 'tickets.create', 'tickets.edit', 'tickets.assign', 'tickets.transfer', 'tickets.close', 'tickets.reply', 'tickets.note', 'tickets.tasks', 'users.manage', 'canned.manage', 'kb.manage'], isAdmin: false }),
     Role.create({ name: 'Technician', permissions: ['tickets.view', 'tickets.reply', 'tickets.note', 'tickets.assign', 'tickets.close', 'tickets.tasks'], isAdmin: false }),
   ]);
@@ -254,6 +269,24 @@ const run = async () => {
     organization: acme._id,
   });
 
+  const testUsers = [
+    { name: 'Mahima Seldiya 1', email: 'mahimaseldiya1@gmail.com' },
+    { name: 'Mahima Seldiya 3', email: 'mahimaseldiya3@gmail.com' },
+    { name: 'Mahima Seldiya 7', email: 'mahimaseldiya7@gmail.com' },
+    { name: 'Mahima Seldiya 365', email: 'mahimaseldiya365@gmail.com' },
+  ];
+  for (const tu of testUsers) {
+    await User.create({
+      name: tu.name,
+      email: tu.email,
+      password: 'Customer@123',
+      isRegistered: true,
+      emailConfirmed: true,
+      status: 'active',
+      company: demoCompany._id,
+    });
+  }
+
   const daysAgo = (d) => new Date(Date.now() - d * 24 * 60 * 60 * 1000);
 
   // ----- Tickets -----
@@ -376,9 +409,18 @@ const run = async () => {
   await SystemSetting.setSetting('system.autoLockTickets', true);
   await SystemSetting.setSetting('system.ticketLockMinutes', 5);
   await SystemSetting.setSetting('system.allowTicketReopen', true);
+  await SystemSetting.setSetting('system.emailToTicket', require('../config/config').email.user);
   await SystemSetting.setSetting('tickets.autoResponder', true);
   await SystemSetting.setSetting('tickets.autoAssign', true);
   await SystemSetting.setSetting('tickets.notifyNewTicketToDept', true);
+  await SystemSetting.setSetting('autoresponder.enabled', true);
+  await SystemSetting.setSetting('autoresponder.subject', 'Ticket received - [ticket.number]');
+  await SystemSetting.setSetting('alerts.notifyNewTicket', true);
+  await SystemSetting.setSetting('alerts.notifyAssignment', true);
+  await SystemSetting.setSetting('auth.registrationEnabled', true);
+  await SystemSetting.setSetting('auth.allowGuestTickets', true);
+  await SystemSetting.setSetting('auth.passwordMinLength', 8);
+  await SystemSetting.setSetting('schedules.timezone', 'Asia/Kolkata');
   console.log('Settings seeded.');
 
   // ----- Assign all seeded data to the demo company -----

@@ -11,6 +11,9 @@ const ticketService = require('../services/ticket.service');
 const emailService = require('../services/email.service');
 const { notifyAgent, notifyUser } = require('../services/notification.service');
 const { getOrgOwner, hasPermission, USER_PERMISSIONS } = require('../utils/userPermissions');
+const config = require('../config/config');
+const CustomField = require('../models/CustomField');
+const TicketForm = require('../models/TicketForm');
 
 exports.openForm = asyncHandler(async (req, res) => {
   const companyId = req.companyId || (req.query.company && req.query.company !== 'null' ? req.query.company : null);
@@ -20,12 +23,17 @@ exports.openForm = asyncHandler(async (req, res) => {
     topicQuery.$or = [{ company: companyId }, { company: null }];
     deptQuery.$or = [{ company: companyId }, { company: null }];
   }
-  const [topics, departments, settings] = await Promise.all([
+  const fieldQuery = companyId ? { isActive: true, $or: [{ company: companyId }, { company: null }] } : { isActive: true };
+  const formQuery = companyId ? { isActive: true, $or: [{ company: companyId }, { company: null }] } : { isActive: true };
+  const [topics, departments, settings, customFields, forms] = await Promise.all([
     HelpTopic.find(topicQuery).sort({ topic: 1 }).populate('department', 'name'),
     Department.find(deptQuery).sort({ name: 1 }),
     SystemSetting.getSettings(),
+    CustomField.find(fieldQuery).sort({ sortOrder: 1 }).populate('helpTopic', 'topic'),
+    TicketForm.find(formQuery).sort({ name: 1 }).populate('helpTopic', 'topic').populate('fields'),
   ]);
-  res.json({ success: true, topics, departments, settings });
+  const emailToTicket = settings.system?.emailToTicket || config.email.emailToTicket || '';
+  res.json({ success: true, topics, departments, settings, emailToTicket, customFields, forms });
 });
 
 exports.getMyTickets = asyncHandler(async (req, res) => {
@@ -48,6 +56,14 @@ exports.getMyTickets = asyncHandler(async (req, res) => {
 exports.create = asyncHandler(async (req, res) => {
   const { subject, details, topic, priority, customData } = req.body;
   if (!subject || !details) throw new ApiError(422, 'Subject and details are required');
+  let parsedCustom = {};
+  if (customData) {
+    try {
+      parsedCustom = typeof customData === 'string' ? JSON.parse(customData) : customData;
+    } catch (err) {
+      throw new ApiError(422, 'Invalid custom field data');
+    }
+  }
 
   let user = req.user;
   if (!user) {
@@ -76,7 +92,7 @@ exports.create = asyncHandler(async (req, res) => {
     priority,
     source: 'web',
     attachments,
-    customData: customData ? JSON.parse(customData) : {},
+    customData: parsedCustom,
   });
 
   if (String(ticketOwner) !== String(user._id)) {
