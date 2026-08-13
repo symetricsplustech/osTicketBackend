@@ -9,3 +9,4 @@ src/logs/
 uploads/
 .vercel
 .env*
+atlas-credentials*.env
