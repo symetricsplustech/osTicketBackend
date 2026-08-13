@@ -24,15 +24,29 @@ app.use(
 
 app.use(helmet());
 app.use(compression());
-app.use(
-  express.json({
-    limit: '2mb',
-    verify: (req, res, buf) => {
-      req.rawBody = buf.toString();
-    },
-  })
-);
-app.use(express.urlencoded({ extended: true, limit: '2mb' }));
+
+if (process.env.VERCEL === '1' || process.env.VERCEL === 'true') {
+  // Vercel's Node runtime pre-parses the request body into req.body and
+  // consumes the stream, so Express body-parsers would throw "Invalid JSON".
+  app.use((req, res, next) => {
+    if (req.body && typeof req.body === 'object') {
+      req.rawBody = JSON.stringify(req.body);
+    } else {
+      req.rawBody = String(req.body || '');
+    }
+    next();
+  });
+} else {
+  app.use(
+    express.json({
+      limit: '2mb',
+      verify: (req, res, buf) => {
+        req.rawBody = buf.toString();
+      },
+    })
+  );
+  app.use(express.urlencoded({ extended: true, limit: '2mb' }));
+}
 
 if (config.env === 'development') {
   app.use(morgan('dev'));
