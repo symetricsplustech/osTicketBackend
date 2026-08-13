@@ -1,10 +1,16 @@
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+const os = require('os');
 const config = require('./config');
 
-const uploadsDir = path.join(__dirname, '../../uploads');
-if (!fs.existsSync(uploadsDir)) {
+let uploadsDir = path.join(__dirname, '../../uploads');
+try {
+  fs.mkdirSync(uploadsDir, { recursive: true });
+  fs.accessSync(uploadsDir, fs.constants.W_OK);
+} catch (err) {
+  // Read-only filesystem (e.g. Vercel serverless) — fall back to the temp dir.
+  uploadsDir = path.join(os.tmpdir(), 'osticket-uploads');
   fs.mkdirSync(uploadsDir, { recursive: true });
 }
 

@@ -2,8 +2,10 @@ const path = require('path');
 const fs = require('fs');
 
 const dir = path.join(__dirname, '../logs');
-if (!fs.existsSync(dir)) {
+try {
   fs.mkdirSync(dir, { recursive: true });
+} catch (err) {
+  // no writable logs directory (e.g. Vercel serverless) — console only
 }
 
 const levels = { error: 0, warn: 1, info: 2, debug: 3 };

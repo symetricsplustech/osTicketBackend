@@ -46,7 +46,11 @@ const resolveInboundCompany = async () => {
 };
 
 const saveEmailAttachments = async (attachments = []) => {
-  if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
+  try {
+    if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
+  } catch (err) {
+    logger.error(`Failed to create uploads dir: ${err.message}`);
+  }
   const saved = [];
   for (const att of attachments) {
     if (!ALLOWED_ATTACHMENT_TYPES.has(att.contentType)) continue;
