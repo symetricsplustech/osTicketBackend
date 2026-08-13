@@ -1,6 +1,9 @@
 /* eslint-disable no-console */
 const mongoose = require('mongoose');
+const dns = require('dns');
 const config = require('../config/config');
+
+dns.setServers(['8.8.8.8', '1.1.1.1']);
 const Role = require('../models/Role');
 const Agent = require('../models/Agent');
 const Team = require('../models/Team');

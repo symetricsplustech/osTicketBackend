@@ -1,6 +1,7 @@
 const mongoose = require('mongoose');
 const app = require('../src/app');
 const config = require('../src/config/config');
+const { ensureDefaults } = require('../src/bootstrap/ensureDefaults');
 
 let cached = global.__ostMongooseConn;
 if (!cached) {
@@ -32,6 +33,7 @@ module.exports = async (req, res) => {
   }
   try {
     await connectDB();
+    await ensureDefaults().catch((err) => console.error('ensureDefaults failed:', err.message));
   } catch (err) {
     cached.promise = null;
     res.writeHead(500, { ...headers, 'Content-Type': 'application/json' });

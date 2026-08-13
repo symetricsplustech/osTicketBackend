@@ -1,4 +1,5 @@
 const http = require('http');
+const dns = require("dns");
 const app = require('./app');
 const config = require('./config/config');
 const connectDB = require('./config/db');
@@ -7,9 +8,13 @@ const { scheduleOverdueCheck } = require('./services/sla.service');
 const { startInboundPoller } = require('./services/inboundEmail.service');
 const { startEscalationRunner } = require('./services/escalation.service');
 const logger = require('./utils/logger');
+const { ensureDefaults } = require('./bootstrap/ensureDefaults');
 
+const DNS_SERVERS = config.dnsServers || ["8.8.8.8", "1.1.1.1"];
+dns.setServers(DNS_SERVERS);
 const start = async () => {
   await connectDB();
+  await ensureDefaults().catch((err) => logger.error(`ensureDefaults failed: ${err.message}`));
 
   const server = http.createServer(app);
   setIO(server);
