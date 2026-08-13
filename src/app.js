@@ -17,10 +17,7 @@ app.set('trust proxy', 1);
 
 app.use(
   cors({
-    origin(origin, cb) {
-      if (!origin || config.corsOrigins.includes(origin)) return cb(null, true);
-      cb(new Error('Not allowed by CORS'));
-    },
+    origin: true,
     credentials: true,
   })
 );
