@@ -19,21 +19,23 @@ async function connectDB() {
 }
 
 module.exports = async (req, res) => {
-  res.set({
+  const headers = {
     'Access-Control-Allow-Origin': req.headers.origin || '*',
     'Access-Control-Allow-Credentials': 'true',
     'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With',
     'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
-  });
+  };
   if (req.method === 'OPTIONS') {
-    res.status(204).end();
+    res.writeHead(204, headers);
+    res.end();
     return;
   }
   try {
     await connectDB();
   } catch (err) {
     cached.promise = null;
-    res.status(500).json({ success: false, message: 'Database connection failed' });
+    res.writeHead(500, { ...headers, 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ success: false, message: 'Database connection failed' }));
     return;
   }
   app(req, res);
