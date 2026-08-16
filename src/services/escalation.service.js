@@ -6,6 +6,7 @@ const Agent = require('../models/Agent');
 const Team = require('../models/Team');
 const ticketService = require('./ticket.service');
 const { notifyAgent } = require('./notification.service');
+const { emit } = require('./events');
 
 const PRIORITY_RANK = { Low: 1, Normal: 2, High: 3, Emergency: 4 };
 
@@ -61,6 +62,7 @@ const applyRule = async ({ rule, ticket }) => {
       ticket: ticket._id,
     });
   }
+  emit('ticket.escalated', { company: ticket.company, ticketId: ticket._id, ticketNumber: ticket.number, ruleId: rule._id });
   return 1;
 };
 

@@ -13,6 +13,18 @@ const integrationSchema = new mongoose.Schema(
     icon: { type: String, default: '' },
     isEnabled: { type: Boolean, default: false },
     config: { type: mongoose.Schema.Types.Mixed, default: {} },
+    events: { type: [String], default: [] },
+    lastDeliveryAt: { type: Date, default: null },
+    lastStatus: { type: String, default: '' },
+    failureCount: { type: Number, default: 0 },
+    deliveryLogs: [
+      {
+        at: { type: Date, default: Date.now },
+        status: { type: String, default: '' },
+        event: { type: String, default: '' },
+        response: { type: String, default: '' },
+      },
+    ],
     company: { type: mongoose.Schema.Types.ObjectId, ref: 'Company', default: null, index: true },
   },
   { timestamps: true }

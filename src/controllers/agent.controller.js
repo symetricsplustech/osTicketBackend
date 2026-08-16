@@ -20,6 +20,7 @@ const { getPagination, getSortObj } = require('../utils/pagination');
 const ticketService = require('../services/ticket.service');
 const emailService = require('../services/email.service');
 const { notifyAgent, notifyUser } = require('../services/notification.service');
+const { emit } = require('../services/events');
 const config = require('../config/config');
 
 const isAdminAgent = (agent) => agent.isAdmin || (agent.role && agent.role.isAdmin);
@@ -30,6 +31,12 @@ const hasPerm = (agent, perm) => {
 
 const VALID_PRIORITIES = ['Low', 'Normal', 'High', 'Emergency'];
 const VALID_SOURCES = ['web', 'email', 'phone', 'api'];
+const { isValidPriority } = require('../services/priority.service');
+const assertValidPriority = async (value, msg = 'Invalid priority') => {
+  if (!value) return;
+  const ok = await isValidPriority(value);
+  if (!ok) throw new ApiError(422, msg);
+};
 
 const assertNotLocked = (ticket, agent) => {
   if (
@@ -229,6 +236,7 @@ exports.reply = asyncHandler(async (req, res) => {
     attachments,
   });
   await ticketService.addSystemEvent({ ticket, message: `Response posted by ${req.agent.name}` });
+  await notifyMentionedAgents({ ticket, message, actor: req.agent, company: ticket.company });
   const ctx = await ticketService.buildTicketContext(ticket);
   try {
     await emailService.sendFromTemplate({
@@ -289,6 +297,7 @@ exports.addNote = asyncHandler(async (req, res) => {
     title: 'Internal Note',
     body: message,
   });
+  await notifyMentionedAgents({ ticket, message, actor: req.agent, company: ticket.company });
   const threads = await TicketThread.find({ ticket: ticket._id, deletedAt: null }).sort({ createdAt: 1 }).populate('user', 'name email').populate('agent', 'name');
   res.json({ success: true, message: 'Note added', threads });
 });
@@ -317,6 +326,7 @@ exports.assign = asyncHandler(async (req, res) => {
     ticket,
     message: `Ticket assigned to ${assignedTo ? assignedTo.name : assignedTeam ? assignedTeam.name : 'nobody'} by ${req.agent.name}`,
   });
+  emit('ticket.assigned', { company: ticket.company, ticketId: ticket._id, ticketNumber: ticket.number, agentId: assignedTo?._id || null, teamId: assignedTeam?._id || null, actor: req.agent._id });
   if (assignedTo) {
     await notifyAgent({ agentId: assignedTo._id, company: ticket.company, type: 'assignment', message: `Ticket ${ticket.number} assigned to you`, link: `/tickets/${ticket.number}`, ticket: ticket._id });
     const ctx = await ticketService.buildTicketContext(ticket);
@@ -338,6 +348,7 @@ exports.transfer = asyncHandler(async (req, res) => {
   ticket.dept = dept._id;
   await ticket.save();
   await ticketService.addSystemEvent({ ticket, message: `Ticket transferred to ${dept.name} by ${req.agent.name}` });
+  emit('ticket.transferred', { company: ticket.company, ticketId: ticket._id, ticketNumber: ticket.number, deptId: dept._id, actor: req.agent._id });
   const deptAgents = await Agent.find({ 'departments.department': dept._id, isActive: true });
   for (const a of deptAgents) {
     await notifyAgent({ agentId: a._id, company: ticket.company, type: 'transfer', message: `Ticket ${ticket.number} transferred to ${dept.name}`, link: `/tickets/${ticket.number}`, ticket: ticket._id });
@@ -356,7 +367,7 @@ exports.changeStatus = asyncHandler(async (req, res) => {
     Ticket.STATUSES.CLOSED,
     Ticket.STATUSES.ARCHIVED,
   ];
-  const configured = await TicketStatus.find({ isActive: true }).select('key');
+  const configured = await TicketStatus.find({ isActive: true }).select('key pauseSla isClosed');
   const valid = new Set([...builtIn, ...configured.map((s) => s.key)]);
   if (!valid.has(status)) throw new ApiError(422, 'Invalid status');
   const prev = ticket.status;
@@ -371,17 +382,35 @@ exports.changeStatus = asyncHandler(async (req, res) => {
     ticket.closedBy = null;
     ticket.stats.reopened += 1;
   }
+
+  // ---- Enterprise: SLA pause/resume on configurable statuses ----
+  const statusDef = configured.find((s) => s.key === status);
+  const { pauseSla, resumeSla } = require('../services/sla.service');
+  if (statusDef && statusDef.pauseSla) {
+    await pauseSla(ticket);
+  } else if (ticket.slaPaused) {
+    await resumeSla(ticket);
+  }
+  if (status === Ticket.STATUSES.CLOSED) {
+    if (ticket.slaPaused) await resumeSla(ticket);
+  }
+
   await ticket.save();
   await ticketService.addSystemEvent({
     ticket,
     message: `Status changed from ${prev} to ${status}${closedReason ? ` (${closedReason})` : ''} by ${req.agent.name}`,
   });
+  emit('ticket.status_changed', { company: ticket.company, ticketId: ticket._id, ticketNumber: ticket.number, from: prev, to: status, actor: req.agent._id });
   if (status === Ticket.STATUSES.CLOSED) {
     const ctx = await ticketService.buildTicketContext(ticket);
     try {
       await emailService.sendFromTemplate({ key: 'ticket_closed', to: ticket.user.email, data: ctx, event: 'ticket_closed', ticket: ticket._id, user: ticket.user, company: ticket.company });
     } catch (err) { /* non-blocking */ }
     await notifyUser({ userId: ticket.user, company: ticket.company, type: 'status_change', message: `Your ticket ${ticket.number} has been closed`, link: `/ticket/${ticket.number}`, ticket: ticket._id });
+    await ticketService.handleTicketClosed(ticket, { actor: req.agent._id });
+  }
+  if (status !== Ticket.STATUSES.CLOSED && prev === Ticket.STATUSES.CLOSED) {
+    await ticketService.handleTicketReopened(ticket);
   }
   res.json({ success: true, message: 'Status updated', ticket });
 });
@@ -432,7 +461,7 @@ exports.updateFields = asyncHandler(async (req, res) => {
     changed.push('subject');
   }
   if (priority !== undefined) {
-    if (!VALID_PRIORITIES.includes(priority)) throw new ApiError(422, 'Invalid priority');
+    await assertValidPriority(priority);
     ticket.priority = priority;
     changed.push('priority');
   }
@@ -472,6 +501,7 @@ exports.claim = asyncHandler(async (req, res) => {
     ticket,
     message: `${req.agent.name} ${claimed ? 'claimed' : 'took over'} this ticket`,
   });
+  emit('ticket.claimed', { company: ticket.company, ticketId: ticket._id, ticketNumber: ticket.number, agentId: req.agent._id, actor: req.agent._id });
   res.json({ success: true, message: 'Ticket claimed', ticket });
 });
 
@@ -502,7 +532,7 @@ exports.create = asyncHandler(async (req, res) => {
     details: details || '',
     topicId: topicId || undefined,
     deptId: deptId || undefined,
-    priority: VALID_PRIORITIES.includes(priority) ? priority : undefined,
+    priority: (priority && (await isValidPriority(priority))) ? priority : undefined,
     source: VALID_SOURCES.includes(source) ? source : 'web',
     customData: parsedCustom,
   });
@@ -595,8 +625,8 @@ exports.createEscalation = asyncHandler(async (req, res) => {
   if (!canManageEscalations(req.agent)) throw new ApiError(403, 'Permission denied');
   const { name, department, priority, statuses, overdueMinutes, action, isActive } = req.body;
   if (!name || !String(name).trim()) throw new ApiError(422, 'Rule name is required');
-  if (priority && !VALID_PRIORITIES.includes(priority)) throw new ApiError(422, 'Invalid priority');
-  if (action?.raisePriorityTo && !VALID_PRIORITIES.includes(action.raisePriorityTo)) throw new ApiError(422, 'Invalid raise priority');
+  if (priority && !(await isValidPriority(priority))) throw new ApiError(422, 'Invalid priority');
+  if (action?.raisePriorityTo && !(await isValidPriority(action.raisePriorityTo))) throw new ApiError(422, 'Invalid raise priority');
   const rule = await EscalationRule.create({
     name: String(name).trim(),
     company: req.companyId,
@@ -626,6 +656,7 @@ exports.updateEscalation = asyncHandler(async (req, res) => {
   if (priority !== undefined) rule.priority = priority;
   if (statuses !== undefined) rule.statuses = statuses;
   if (overdueMinutes !== undefined) rule.overdueMinutes = parseInt(overdueMinutes, 10) || 0;
+  if (priority !== undefined && !(await isValidPriority(priority))) throw new ApiError(422, 'Invalid priority');
   if (action !== undefined) {
     rule.action = {
       raisePriorityTo: action.raisePriorityTo || null,
@@ -919,4 +950,258 @@ exports.directoryUsers = asyncHandler(async (req, res) => {
     User.countDocuments(query),
   ]);
   res.json({ success: true, items, total, page, limit, pages: Math.ceil(total / limit) });
+});
+
+// ========================== Mention support ==========================
+const extractMentionIds = async (message, actor) => {
+  if (!message) return [];
+  const comp = actor.company ? { company: actor.company, isActive: true } : { isActive: true };
+  const ids = new Set();
+  const emailRe = /([A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,})/g;
+  const emails = (message.match(emailRe) || []).map((e) => e.toLowerCase());
+  if (emails.length) {
+    const byEmail = await require('../models/Agent').find({ ...comp, email: { $in: emails } }).select('_id');
+    byEmail.forEach((a) => ids.add(String(a._id)));
+  }
+  const nameRe = /@([A-Za-z][\w.\-']*(?:\s+[A-Za-z][\w.\-']*)?)/g;
+  const names = [];
+  const matches = message.matchAll(nameRe);
+  for (const m of matches) {
+    const n = m[1].trim();
+    if (!n) continue;
+    if (n.includes('.') && !n.includes(' ')) continue;
+    names.push(n);
+  }
+  const uniqueNames = [...new Set(names)].filter(Boolean);
+  for (const n of uniqueNames) {
+    const [a, ...rest] = n.split(/\s+/);
+    const needle = rest.length ? `${a} ${rest.join(' ')}` : a;
+    const found = await require('../models/Agent').findOne({
+      ...comp,
+      name: new RegExp(`^${needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i'),
+    }).select('_id');
+    if (found) ids.add(String(found._id));
+  }
+  ids.delete(String(actor._id));
+  return [...ids];
+};
+
+const notifyMentionedAgents = async ({ ticket, message, actor, company }) => {
+  const ids = await extractMentionIds(message, actor);
+  const { notifyAgent } = require('../services/notification.service');
+  for (const agentId of ids) {
+    await notifyAgent({
+      agentId,
+      company: company || null,
+      type: 'mention',
+      message: `${actor.name} mentioned you on ticket ${ticket.number}: ${String(message).slice(0, 80)}`,
+      link: `/tickets/${ticket.number}`,
+      ticket: ticket._id,
+    });
+  }
+};
+
+exports.mergeTickets = asyncHandler(async (req, res) => {
+  if (!hasPerm(req.agent, 'tickets.edit')) throw new ApiError(403, 'Permission denied');
+  const source = await loadTicketForAgent(req.params.number, req.agent);
+  assertNotLocked(source, req.agent);
+  const { targetNumber } = req.body;
+  if (!targetNumber || String(targetNumber).toUpperCase() === source.number) {
+    throw new ApiError(422, 'Select a different target ticket to merge into');
+  }
+  const target = await loadTicketForAgent(String(targetNumber).toUpperCase(), req.agent);
+  assertNotLocked(target, req.agent);
+  if (String(source.company || '') !== String(target.company || '')) {
+    throw new ApiError(403, 'Cannot merge tickets across companies');
+  }
+  const TicketThreadModel = require('../models/TicketThread');
+  const TicketLink = require('../models/TicketLink');
+  await TicketThreadModel.updateMany({ ticket: source._id }, { $set: { ticket: target._id } });
+  const collabs = new Set([...(target.collaborators || []).map((c) => String(c)), ...(source.collaborators || []).map((c) => String(c))]);
+  target.collaborators = [...collabs].map((c) => require('mongoose').Types.ObjectId(c));
+  await target.save();
+  await TicketLink.create({ company: source.company, from: source._id, to: target._id, type: 'merged', createdBy: req.agent._id });
+  await TicketLink.create({ company: target.company, from: target._id, to: source._id, type: 'merged', createdBy: req.agent._id });
+  const prev = { number: source.number, status: source.status };
+  source.status = Ticket.STATUSES.CLOSED;
+  source.closedAt = new Date();
+  source.closedBy = req.agent._id;
+  source.lockedBy = null;
+  source.lockExpiresAt = null;
+  await source.save();
+  await ticketService.addSystemEvent({ ticket: target, message: `Ticket ${source.number} merged into this ticket by ${req.agent.name}` });
+  await ticketService.addSystemEvent({ ticket: source, message: `Ticket merged into ${target.number} by ${req.agent.name}` });
+  const audit = require('../services/audit.service').audit;
+  const meta = { company: source.company, actorType: 'agent', actor: req.agent._id, actorName: req.agent.name, action: 'ticket.merged', entityType: 'ticket', entityId: source._id, before: prev, after: { number: target.number, status: source.status }, req };
+  await audit({ ...meta });
+  await audit({ ...meta, after: { mergedFrom: source.number } });
+  const bus = require('../services/events');
+  bus.emit('ticket.merged', { company: source.company, ticketId: target._id, ticketNumber: target.number, mergedFrom: source.number, actor: req.agent._id });
+  res.json({ success: true, message: `Ticket ${source.number} merged into ${target.number}`, ticket: target });
+});
+
+exports.splitTicket = asyncHandler(async (req, res) => {
+  if (!hasPerm(req.agent, 'tickets.edit')) throw new ApiError(403, 'Permission denied');
+  const source = await loadTicketForAgent(req.params.number, req.agent);
+  assertNotLocked(source, req.agent);
+  const { threadIds, subject } = req.body;
+  if (!Array.isArray(threadIds) || !threadIds.length) throw new ApiError(422, 'Select at least one thread to split out');
+  if (!subject || !String(subject).trim()) throw new ApiError(422, 'Subject is required for the new ticket');
+  const TicketThreadModel = require('../models/TicketThread');
+  const TicketLink = require('../models/TicketLink');
+  const threads = await TicketThreadModel.find({ _id: { $in: threadIds }, ticket: source._id, deletedAt: null, type: 'message' });
+  if (!threads.length) throw new ApiError(404, 'No matching message threads to split');
+  const newTicket = await ticketService.createTicket({
+    user: source.user,
+    orgOwner: source.createdBy || source.user,
+    subject: String(subject).trim(),
+    details: '',
+    topicId: source.topic || undefined,
+    deptId: source.dept || undefined,
+    priority: source.priority,
+    sla: source.sla,
+    source: 'web',
+    skipRouting: true,
+    audit: false,
+  });
+  const ids = threads.map((t) => t._id);
+  await TicketThreadModel.updateMany({ _id: { $in: ids } }, { $set: { ticket: newTicket._id } });
+  await TicketLink.create({ company: source.company, from: source._id, to: newTicket._id, type: 'parent', createdBy: req.agent._id });
+  await TicketLink.create({ company: source.company, from: newTicket._id, to: source._id, type: 'child', createdBy: req.agent._id });
+  await ticketService.addSystemEvent({ ticket: source, message: `${threads.length} message(s) split into new ticket ${newTicket.number} by ${req.agent.name}` });
+  await ticketService.addSystemEvent({ ticket: newTicket, message: `Ticket split from ${source.number} by ${req.agent.name}` });
+  const audit = require('../services/audit.service').audit;
+  await audit({ company: source.company, actorType: 'agent', actor: req.agent._id, actorName: req.agent.name, action: 'ticket.split', entityType: 'ticket', entityId: source._id, after: { splitInto: newTicket.number, threads: threads.length }, req });
+  const bus = require('../services/events');
+  bus.emit('ticket.created', { company: source.company, ticketId: newTicket._id, ticketNumber: newTicket.number, actor: req.agent._id });
+  res.status(201).json({ success: true, message: `Ticket ${newTicket.number} created from split`, ticket: newTicket });
+});
+
+exports.updateThread = asyncHandler(async (req, res) => {
+  if (!hasPerm(req.agent, 'tickets.edit')) throw new ApiError(403, 'Permission denied');
+  const ticket = await loadTicketForAgent(req.params.number, req.agent);
+  assertNotLocked(ticket, req.agent);
+  const { body } = req.body;
+  if (!body || !String(body).trim()) throw new ApiError(422, 'Message body is required');
+  const TicketThreadModel = require('../models/TicketThread');
+  const thread = await TicketThreadModel.findOne({ _id: req.params.threadId, ticket: ticket._id, deletedAt: null });
+  if (!thread) throw new ApiError(404, 'Thread entry not found');
+  if (thread.posterType === 'system') throw new ApiError(400, 'System events cannot be edited');
+  thread.editHistory = thread.editHistory || [];
+  thread.editHistory.push({ at: new Date(), by: req.agent._id, preview: String(thread.body).slice(0, 120) });
+  thread.body = String(body).trim();
+  thread.editedAt = new Date();
+  thread.editedBy = req.agent._id;
+  await thread.save();
+  const audit = require('../services/audit.service').audit;
+  await audit({ company: ticket.company, actorType: 'agent', actor: req.agent._id, actorName: req.agent.name, action: 'thread.updated', entityType: 'ticket', entityId: ticket._id, after: { threadId: thread._id }, req });
+  const threads = await TicketThreadModel.find({ ticket: ticket._id, deletedAt: null }).sort({ createdAt: 1 }).populate('user', 'name email').populate('agent', 'name');
+  res.json({ success: true, message: 'Message updated', threads });
+});
+
+exports.deleteThread = asyncHandler(async (req, res) => {
+  if (!hasPerm(req.agent, 'tickets.edit')) throw new ApiError(403, 'Permission denied');
+  const ticket = await loadTicketForAgent(req.params.number, req.agent);
+  assertNotLocked(ticket, req.agent);
+  const TicketThreadModel = require('../models/TicketThread');
+  const thread = await TicketThreadModel.findOne({ _id: req.params.threadId, ticket: ticket._id, deletedAt: null });
+  if (!thread) throw new ApiError(404, 'Thread entry not found');
+  if (thread.posterType === 'system') throw new ApiError(400, 'System events cannot be deleted');
+  thread.deletedAt = new Date();
+  thread.deletedBy = req.agent._id;
+  await thread.save();
+  if (thread.type === 'message' && thread.posterType === 'agent') {
+    ticket.stats.messages = Math.max(0, (ticket.stats.messages || 0) - 1);
+    await ticket.save().catch(() => {});
+  }
+  const audit = require('../services/audit.service').audit;
+  await audit({ company: ticket.company, actorType: 'agent', actor: req.agent._id, actorName: req.agent.name, action: 'thread.deleted', entityType: 'ticket', entityId: ticket._id, after: { threadId: thread._id, type: thread.type }, req });
+  const threads = await TicketThreadModel.find({ ticket: ticket._id, deletedAt: null }).sort({ createdAt: 1 }).populate('user', 'name email').populate('agent', 'name');
+  res.json({ success: true, message: 'Message deleted', threads });
+});
+
+exports.pauseSla = asyncHandler(async (req, res) => {
+  const ticket = await loadTicketForAgent(req.params.number, req.agent);
+  assertNotLocked(ticket, req.agent);
+  const { pauseSla } = require('../services/sla.service');
+  const updated = await pauseSla(ticket);
+  const audit = require('../services/audit.service').audit;
+  await audit({ company: ticket.company, actorType: 'agent', actor: req.agent._id, actorName: req.agent.name, action: 'sla.paused', entityType: 'ticket', entityId: ticket._id, after: { dueDate: updated.dueDate, waitingOn: updated.waitingOn }, req });
+  res.json({ success: true, message: 'SLA timer paused', ticket: updated });
+});
+
+exports.resumeSla = asyncHandler(async (req, res) => {
+  const ticket = await loadTicketForAgent(req.params.number, req.agent);
+  assertNotLocked(ticket, req.agent);
+  const { resumeSla } = require('../services/sla.service');
+  const updated = await resumeSla(ticket);
+  const audit = require('../services/audit.service').audit;
+  await audit({ company: ticket.company, actorType: 'agent', actor: req.agent._id, actorName: req.agent.name, action: 'sla.resumed', entityType: 'ticket', entityId: ticket._id, after: { dueDate: updated.dueDate }, req });
+  res.json({ success: true, message: 'SLA timer resumed', ticket: updated });
+});
+
+exports.listSavedQueues = asyncHandler(async (req, res) => {
+  const SavedQueue = require('../models/SavedQueue');
+  const items = await SavedQueue.find({ agent: req.agent._id }).sort({ name: 1 });
+  res.json({ success: true, items });
+});
+
+exports.createSavedQueue = asyncHandler(async (req, res) => {
+  const SavedQueue = require('../models/SavedQueue');
+  const { name, filters } = req.body;
+  if (!name || !String(name).trim()) throw new ApiError(422, 'Queue name is required');
+  const item = await SavedQueue.create({
+    company: req.companyId,
+    agent: req.agent._id,
+    name: String(name).trim(),
+    filters: filters || {},
+  });
+  res.status(201).json({ success: true, item });
+});
+
+exports.deleteSavedQueue = asyncHandler(async (req, res) => {
+  const SavedQueue = require('../models/SavedQueue');
+  await SavedQueue.deleteOne({ _id: req.params.id, agent: req.agent._id });
+  res.json({ success: true, message: 'Queue removed' });
+});
+
+exports.exportTickets = asyncHandler(async (req, res) => {
+  if (!hasPerm(req.agent, 'tickets.view')) throw new ApiError(403, 'Permission denied');
+  const { status, priority, dept, assignee, search, number, q } = req.query;
+  const query = req.companyId ? { company: req.companyId } : {};
+  const statusKey = status || q || (number ? null : 'active');
+  if (statusKey && statusKey !== 'all' && statusKey !== 'active') query.status = statusKey;
+  if (statusKey === 'all') { /* no status filter */ }
+  if (priority && priority !== 'all') query.priority = priority;
+  if (dept && dept !== 'all') query.dept = dept;
+  if (assignee && assignee !== 'all') {
+    if (assignee === 'unassigned') query.agent = null;
+    else if (assignee === 'mine') query.agent = req.agent._id;
+    else query.agent = assignee;
+  }
+  const s = search || number;
+  if (s) {
+    query.$or = [
+      { number: { $regex: s, $options: 'i' } },
+      { subject: { $regex: s, $options: 'i' } },
+    ];
+  }
+  const tickets = await require('../models/Ticket').find(query)
+    .sort({ updatedAt: -1 }).limit(5000)
+    .populate('user', 'name email')
+    .populate('dept', 'name')
+    .populate('agent', 'name')
+    .populate('team', 'name')
+    .populate('topic', 'topic')
+    .lean();
+  const esc = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+  const header = ['Number', 'Status', 'Priority', 'Subject', 'Customer Name', 'Customer Email', 'Department', 'Agent', 'Team', 'Help Topic', 'Source', 'Due Date', 'Created', 'Last Update', 'Closed At'];
+  const rows = tickets.map((t) => [
+    t.number, t.status, t.priority, t.subject, t.user?.name, t.user?.email, t.dept?.name, t.agent?.name, t.team?.name, t.topic?.topic, t.source,
+    t.dueDate ? new Date(t.dueDate).toISOString() : '', t.createdAt ? new Date(t.createdAt).toISOString() : '', t.lastActivity ? new Date(t.lastActivity).toISOString() : '', t.closedAt ? new Date(t.closedAt).toISOString() : '',
+  ].map(esc).join(','));
+  const csv = [header.join(','), ...rows].join('\n');
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="tickets-${new Date().toISOString().slice(0, 10)}.csv"`);
+  res.send(csv);
 });

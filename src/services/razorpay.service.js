@@ -2,13 +2,21 @@ const Razorpay = require('razorpay');
 const crypto = require('crypto');
 const config = require('../config/config');
 
-const instance = new Razorpay({
-  key_id: config.razorpay.keyId,
-  key_secret: config.razorpay.keySecret,
-});
+let instance = null;
+const getInstance = () => {
+  if (instance) return instance;
+  if (!config.razorpay.keyId || !config.razorpay.keySecret) {
+    throw new Error('Razorpay is not configured (RAZORPAY_KEY_ID / RAZORPAY_KEY_SECRET)');
+  }
+  instance = new Razorpay({
+    key_id: config.razorpay.keyId,
+    key_secret: config.razorpay.keySecret,
+  });
+  return instance;
+};
 
 exports.createOrder = async ({ amount, currency = 'INR', receipt, notes = {} }) => {
-  const order = await instance.orders.create({
+  const order = await getInstance().orders.create({
     amount: Math.round(amount * 100),
     currency,
     receipt: receipt || `rcpt_${Date.now()}`,
@@ -34,8 +42,8 @@ exports.verifyWebhookSignature = (body, signature) => {
   return expected === signature;
 };
 
-exports.fetchPayment = (paymentId) => instance.payments.fetch(paymentId);
+exports.fetchPayment = (paymentId) => getInstance().payments.fetch(paymentId);
 
 exports.refundPayment = (paymentId, amount) =>
-  instance.payments.refund(paymentId, { amount: Math.round(amount * 100) });
+  getInstance().payments.refund(paymentId, { amount: Math.round(amount * 100) });
 

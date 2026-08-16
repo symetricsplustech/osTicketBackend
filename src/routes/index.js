@@ -6,6 +6,9 @@ const kbRoutes = require('./kb.routes');
 const agentRoutes = require('./agent.routes');
 const adminRoutes = require('./admin.routes');
 const superadminRoutes = require('./superadmin.routes');
+const enterpriseRoutes = require('./enterprise.routes');
+const aiRoutes = require('./ai.routes');
+const publicRoutes = require('./public.routes');
 
 const router = express.Router();
 
@@ -20,5 +23,8 @@ router.use('/kb', kbRoutes);
 router.use('/agent', agentRoutes);
 router.use('/admin', adminRoutes);
 router.use('/superadmin', superadminRoutes);
+router.use('/enterprise', enterpriseRoutes);
+router.use('/ai', aiRoutes);
+router.use('/public', publicRoutes);
 
 module.exports = router;

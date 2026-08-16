@@ -111,7 +111,7 @@ exports.updateAgent = asyncHandler(async (req, res) => {
   const agent = await Agent.findById(req.params.id);
   if (!agent) throw new ApiError(404, 'Agent not found');
   if (req.companyId && String(agent.company) !== String(req.companyId)) throw new ApiError(403, 'Access denied');
-  const { name, email, password, role, isAdmin, isActive, departments, teams, signature, notes, permissions } = req.body;
+  const { name, email, password, role, isAdmin, isActive, departments, teams, signature, notes, permissions, skills, presence, capacity, notificationPrefs } = req.body;
   if (name) agent.name = name;
   if (email) agent.email = email;
   if (password) agent.password = password;
@@ -121,6 +121,11 @@ exports.updateAgent = asyncHandler(async (req, res) => {
   if (departments !== undefined) agent.departments = departments;
   if (teams !== undefined) agent.teams = teams;
   if (permissions !== undefined) agent.permissions = Array.isArray(permissions) ? permissions : [];
+  if (skills !== undefined) agent.skills = Array.isArray(skills) ? skills : [];
+  if (presence !== undefined) agent.presence = presence;
+  if (capacity !== undefined) agent.capacity = capacity;
+  if (notificationPrefs !== undefined && typeof notificationPrefs === 'object') agent.notificationPrefs = notificationPrefs || {};
+  if (agent.skillsChanged) { delete agent.skillsChanged; }
   if (signature !== undefined) agent.signature = signature;
   if (notes !== undefined) agent.notes = notes;
   await agent.save();
@@ -236,7 +241,7 @@ exports.updateDepartment = asyncHandler(async (req, res) => {
   const dept = await Department.findById(req.params.id);
   if (!dept) throw new ApiError(404, 'Department not found');
   if (req.companyId && String(dept.company) !== String(req.companyId)) throw new ApiError(403, 'Access denied');
-  const { name, parent, email, isPublic, sla, manager, autoAssignAgent, autoAssignTeam, signature, notes, status } = req.body;
+  const { name, parent, email, isPublic, sla, manager, autoAssignAgent, autoAssignTeam, signature, notes, status, schedule } = req.body;
   if (name) dept.name = name;
   if (parent !== undefined) dept.parent = parent;
   if (email !== undefined) dept.email = email;
@@ -246,6 +251,7 @@ exports.updateDepartment = asyncHandler(async (req, res) => {
   if (autoAssignAgent !== undefined) dept.autoAssignAgent = autoAssignAgent;
   if (autoAssignTeam !== undefined) dept.autoAssignTeam = autoAssignTeam;
   if (signature !== undefined) dept.signature = signature;
+  if (schedule !== undefined) dept.schedule = schedule;
   if (notes !== undefined) dept.notes = notes;
   if (status !== undefined) dept.status = status;
   await dept.save();
@@ -271,17 +277,19 @@ exports.listHelpTopics = asyncHandler(async (req, res) => {
 });
 
 exports.createHelpTopic = asyncHandler(async (req, res) => {
-  const { topic, category, department, priority, sla, autoAssignAgent, autoAssignTeam, isPublic, status, notes } = req.body;
+  const { topic, category, parent, department, priority, sla, autoAssignAgent, autoAssignTeam, autoresponder, isPublic, status, notes } = req.body;
   if (!topic) throw new ApiError(422, 'Help topic is required');
   const ht = await HelpTopic.create({
     topic,
     company: req.companyId,
     category: category || '',
+    parent: parent || null,
     department: department || null,
     priority: priority || 'Normal',
     sla: sla || null,
     autoAssignAgent: autoAssignAgent || null,
     autoAssignTeam: autoAssignTeam || null,
+    autoresponder: autoresponder && autoresponder.enabled !== undefined ? autoresponder : undefined,
     isPublic: isPublic !== false,
     status: status || 'active',
     notes: notes || '',
@@ -293,14 +301,16 @@ exports.updateHelpTopic = asyncHandler(async (req, res) => {
   const ht = await HelpTopic.findById(req.params.id);
   if (!ht) throw new ApiError(404, 'Help topic not found');
   if (req.companyId && String(ht.company) !== String(req.companyId)) throw new ApiError(403, 'Access denied');
-  const { topic, category, department, priority, sla, autoAssignAgent, autoAssignTeam, isPublic, status, notes } = req.body;
+  const { topic, category, parent, department, priority, sla, autoAssignAgent, autoAssignTeam, autoresponder, isPublic, status, notes } = req.body;
   if (topic) ht.topic = topic;
   if (category !== undefined) ht.category = category;
+  if (parent !== undefined) ht.parent = parent || null;
   if (department !== undefined) ht.department = department || null;
   if (priority !== undefined) ht.priority = priority;
   if (sla !== undefined) ht.sla = sla || null;
   if (autoAssignAgent !== undefined) ht.autoAssignAgent = autoAssignAgent || null;
   if (autoAssignTeam !== undefined) ht.autoAssignTeam = autoAssignTeam || null;
+  if (autoresponder !== undefined) ht.autoresponder = autoresponder;
   if (isPublic !== undefined) ht.isPublic = isPublic;
   if (status !== undefined) ht.status = status;
   if (notes !== undefined) ht.notes = notes;
@@ -648,9 +658,9 @@ exports.listOrgs = asyncHandler(async (req, res) => {
 });
 
 exports.createOrg = asyncHandler(async (req, res) => {
-  const { name, address, phone, website, domain, accountManager, notes } = req.body;
+  const { name, address, phone, website, domain, accountManager, sla, notes } = req.body;
   if (!name) throw new ApiError(422, 'Organization name is required');
-  const org = await Organization.create({ name, address, phone, website, domain, accountManager, notes, company: req.companyId });
+  const org = await Organization.create({ name, address, phone, website, domain, accountManager, sla: sla || null, notes, company: req.companyId });
   res.status(201).json({ success: true, org });
 });
 
@@ -658,13 +668,14 @@ exports.updateOrg = asyncHandler(async (req, res) => {
   const org = await Organization.findById(req.params.id);
   if (!org) throw new ApiError(404, 'Organization not found');
   if (req.companyId && String(org.company) !== String(req.companyId)) throw new ApiError(403, 'Access denied');
-  const { name, address, phone, website, domain, accountManager, status, notes } = req.body;
+  const { name, address, phone, website, domain, accountManager, sla, status, notes } = req.body;
   if (name) org.name = name;
   if (address !== undefined) org.address = address;
   if (phone !== undefined) org.phone = phone;
   if (website !== undefined) org.website = website;
   if (domain !== undefined) org.domain = domain;
   if (accountManager !== undefined) org.accountManager = accountManager;
+  if (sla !== undefined) org.sla = sla || null;
   if (status !== undefined) org.status = status;
   if (notes !== undefined) org.notes = notes;
   await org.save();
@@ -894,6 +905,11 @@ const normalizeCustomField = (body) => {
     body.options = body.options.split(',').map((s) => s.trim()).filter(Boolean);
   }
   if (body.helpTopic === '') body.helpTopic = null;
+  if (Array.isArray(body.conditions)) {
+    body.conditions = body.conditions
+      .filter((c) => c && c.field && c.value !== undefined && c.value !== '')
+      .map((c) => ({ field: c.field, operator: c.operator || 'equals', value: String(c.value) }));
+  }
 };
 
 exports.customFields = makeCrud(CustomField, { preSave: normalizeCustomField });
@@ -905,6 +921,199 @@ exports.ticketForms = makeCrud(TicketForm, { listPopulate: [{ path: 'fields', se
 // ------------------------- Holidays -------------------------
 
 exports.holidays = makeCrud(Holiday);
+
+// ------------------------- CSV Import / Export -------------------------
+
+const parseCsv = (text) => {
+  const rows = [];
+  let row = [];
+  let cur = '';
+  let inQuotes = false;
+  const lines = String(text || '').replace(/\r/g, '').split('\n');
+  for (const line of lines) {
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i];
+      if (inQuotes) {
+        if (ch === '"') {
+          if (line[i + 1] === '"') { cur += '"'; i++; } else inQuotes = false;
+        } else cur += ch;
+      } else if (ch === '"') inQuotes = true;
+      else if (ch === ',') { row.push(cur); cur = ''; }
+      else cur += ch;
+    }
+    row.push(cur); cur = '';
+    if (row.some((c) => c.trim() !== '')) rows.push(row);
+    row = [];
+  }
+  return rows;
+};
+
+const csvDownload = (res, filename, headers, rows) => {
+  const esc = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+  const csv = [headers.map(esc).join(','), ...rows.map((r) => r.map(esc).join(','))].join('\n');
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}.csv"`);
+  res.send(csv);
+};
+
+exports.exportUsers = asyncHandler(async (req, res) => {
+  const comp = req.companyId ? { company: req.companyId } : {};
+  const users = await User.find(comp).populate('organization', 'name').sort({ name: 1 }).lean();
+  csvDownload(res, `users-${new Date().toISOString().slice(0, 10)}`, ['name', 'email', 'phone', 'organization', 'status', 'isRegistered', 'lastLogin'],
+    users.map((u) => [u.name, u.email, u.phone, u.organization?.name || '', u.status, u.isRegistered ? 'yes' : 'no', u.lastLogin ? new Date(u.lastLogin).toISOString() : '']));
+});
+
+exports.exportOrgs = asyncHandler(async (req, res) => {
+  const comp = req.companyId ? { company: req.companyId } : {};
+  const orgs = await Organization.find(comp).populate('accountManager', 'name').sort({ name: 1 }).lean();
+  csvDownload(res, `orgs-${new Date().toISOString().slice(0, 10)}`, ['name', 'address', 'phone', 'website', 'domain', 'status', 'accountManager', 'tier'],
+    orgs.map((o) => [o.name, o.address, o.phone, o.website, o.domain, o.status, o.accountManager?.name || '', o.tier]));
+});
+
+exports.exportAgents = asyncHandler(async (req, res) => {
+  const comp = req.companyId ? { company: req.companyId } : {};
+  const agents = await Agent.find(comp).populate('role', 'name').populate('departments.department', 'name').lean();
+  csvDownload(res, `agents-${new Date().toISOString().slice(0, 10)}`, ['name', 'email', 'role', 'departments', 'isAdmin', 'isActive', 'lastLogin'],
+    agents.map((a) => [a.name, a.email, a.role?.name || '', (a.departments || []).map((d) => d.department?.name).join('; '), a.isAdmin ? 'yes' : 'no', a.isActive ? 'yes' : 'no', a.lastLogin ? new Date(a.lastLogin).toISOString() : '']));
+});
+
+exports.exportTickets = asyncHandler(async (req, res) => {
+  const comp = req.companyId ? { company: req.companyId } : {};
+  const tickets = await Ticket.find(comp).sort({ updatedAt: -1 }).limit(5000)
+    .populate('user', 'name email').populate('dept', 'name').populate('agent', 'name').populate('topic', 'topic').lean();
+  csvDownload(res, `tickets-${new Date().toISOString().slice(0, 10)}`, ['number', 'status', 'priority', 'subject', 'customerName', 'customerEmail', 'department', 'agent', 'helpTopic', 'source', 'dueDate', 'createdAt', 'closedAt'],
+    tickets.map((t) => [t.number, t.status, t.priority, t.subject, t.user?.name, t.user?.email, t.dept?.name, t.agent?.name, t.topic?.topic, t.source,
+      t.dueDate ? new Date(t.dueDate).toISOString() : '', t.createdAt ? new Date(t.createdAt).toISOString() : '', t.closedAt ? new Date(t.closedAt).toISOString() : '']));
+});
+
+exports.importUsers = asyncHandler(async (req, res) => {
+  const { csv } = req.body;
+  if (!csv || !String(csv).trim()) throw new ApiError(422, 'CSV content is required');
+  const rows = parseCsv(csv);
+  if (!rows.length) throw new ApiError(422, 'CSV is empty');
+  const header = rows[0].map((h) => h.trim().toLowerCase());
+  const hasHeader = header.includes('email') || header.includes('name');
+  const dataRows = hasHeader ? rows.slice(1) : rows;
+  const idx = (k) => {
+    if (!hasHeader) return { name: 0, email: 1, phone: 2, organization: 3 }[k];
+    return header.indexOf(k);
+  };
+  let created = 0, skipped = 0;
+  const orgCache = {};
+  for (const r of dataRows) {
+    const name = r[idx('name')]?.trim() || '';
+    const email = (r[idx('email')]?.trim() || '').toLowerCase();
+    if (!email) { skipped++; continue; }
+    if (await User.findOne({ email })) { skipped++; continue; }
+    let organization = null;
+    const orgName = r[idx('organization')]?.trim();
+    if (orgName) {
+      if (!orgCache[orgName]) {
+        orgCache[orgName] = await Organization.findOne({ name: orgName, ...(req.companyId ? { company: req.companyId } : {}) }).lean();
+      }
+      organization = orgCache[orgName]?._id || null;
+    }
+    await User.create({
+      name: name || email.split('@')[0],
+      email,
+      phone: r[idx('phone')]?.trim() || '',
+      organization,
+      company: req.companyId,
+      isRegistered: false,
+      createdBy: req.agent?._id || req.admin?._id || null,
+    });
+    created++;
+  }
+  res.status(201).json({ success: true, created, skipped });
+});
+
+exports.importOrgs = asyncHandler(async (req, res) => {
+  const { csv } = req.body;
+  if (!csv || !String(csv).trim()) throw new ApiError(422, 'CSV content is required');
+  const rows = parseCsv(csv);
+  if (!rows.length) throw new ApiError(422, 'CSV is empty');
+  const header = rows[0].map((h) => h.trim().toLowerCase());
+  const hasHeader = header.includes('name');
+  const dataRows = hasHeader ? rows.slice(1) : rows;
+  const idx = (k) => {
+    if (!hasHeader) return { name: 0, address: 1, phone: 2, website: 3, domain: 4 }[k];
+    return header.indexOf(k);
+  };
+  let created = 0, skipped = 0;
+  for (const r of dataRows) {
+    const name = r[idx('name')]?.trim();
+    if (!name) { skipped++; continue; }
+    if (await Organization.findOne({ name, ...(req.companyId ? { company: req.companyId } : {}) })) { skipped++; continue; }
+    await Organization.create({
+      name,
+      company: req.companyId,
+      address: r[idx('address')]?.trim() || '',
+      phone: r[idx('phone')]?.trim() || '',
+      website: r[idx('website')]?.trim() || '',
+      domain: r[idx('domain')]?.trim() || '',
+    });
+    created++;
+  }
+  res.status(201).json({ success: true, created, skipped });
+});
+
+// ------------------------- Priorities -------------------------
+
+exports.listPriorities = asyncHandler(async (req, res) => {
+  const { listPriorities } = require('../services/priority.service');
+  const items = await listPriorities(req.companyId || null);
+  res.json({ success: true, items });
+});
+
+exports.createPriority = asyncHandler(async (req, res) => {
+  const Priority = require('../models/Priority');
+  const { name, level, color, isDefault, sla, notes } = req.body;
+  if (!name) throw new ApiError(422, 'Priority name is required');
+  const exists = await Priority.findOne({ name, company: req.companyId || null });
+  if (exists) throw new ApiError(409, 'A priority with this name already exists');
+  if (isDefault) {
+    await Priority.updateMany({ company: req.companyId || null }, { $set: { isDefault: false } });
+  }
+  const item = await Priority.create({
+    name,
+    company: req.companyId || null,
+    level: level || 2,
+    color: color || '#64748b',
+    isDefault: !!isDefault,
+    sla: sla || null,
+    notes: notes || '',
+    isActive: true,
+  });
+  res.status(201).json({ success: true, item });
+});
+
+exports.updatePriority = asyncHandler(async (req, res) => {
+  const Priority = require('../models/Priority');
+  const item = await Priority.findById(req.params.id);
+  if (!item) throw new ApiError(404, 'Priority not found');
+  if (req.companyId && String(item.company) !== String(req.companyId)) throw new ApiError(403, 'Access denied');
+  const { name, level, color, isDefault, sla, notes, isActive } = req.body;
+  if (name) item.name = name;
+  if (level !== undefined) item.level = level;
+  if (color !== undefined) item.color = color;
+  if (isDefault) {
+    await Priority.updateMany({ company: item.company }, { $set: { isDefault: false } });
+    item.isDefault = true;
+  } else if (isDefault === false) {
+    item.isDefault = false;
+  }
+  if (sla !== undefined) item.sla = sla || null;
+  if (notes !== undefined) item.notes = notes;
+  if (isActive !== undefined) item.isActive = isActive;
+  await item.save();
+  res.json({ success: true, item });
+});
+
+exports.deletePriority = asyncHandler(async (req, res) => {
+  const Priority = require('../models/Priority');
+  await Priority.deleteOne({ _id: req.params.id, ...(req.companyId ? { company: req.companyId } : {}) });
+  res.json({ success: true, message: 'Priority deleted' });
+});
 
 // ------------------------- Integrations / Plugins -------------------------
 
@@ -931,6 +1140,9 @@ exports.integrations = {
   }),
   create: asyncHandler(async (req, res) => {
     const body = { ...req.body, company: req.companyId || null };
+    if (!body.key && body.name) {
+      body.key = String(body.name).toLowerCase().trim().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+    }
     if (body.config && typeof body.config === 'string') {
       try { body.config = JSON.parse(body.config); } catch (err) { throw new ApiError(422, 'Invalid config JSON'); }
     }
@@ -959,3 +1171,50 @@ exports.integrations = {
     res.json({ success: true, message: 'Deleted' });
   }),
 };
+
+exports.importTickets = asyncHandler(async (req, res) => {
+  const { csv } = req.body;
+  if (!csv || !String(csv).trim()) throw new ApiError(422, 'CSV content is required');
+  const rows = parseCsv(csv);
+  if (!rows.length) throw new ApiError(422, 'CSV is empty');
+  const header = rows[0].map((h) => h.trim().toLowerCase());
+  const hasHeader = header.includes('email') || header.includes('subject');
+  const dataRows = hasHeader ? rows.slice(1) : rows;
+  const idx = (k) => {
+    if (!hasHeader) return { subject: 0, email: 1, status: 2, priority: 3, department: 4 }[k];
+    return header.indexOf(k);
+  };
+  let created = 0, skipped = 0;
+  const deptCache = {};
+  for (const r of dataRows) {
+    const subject = r[idx('subject')]?.trim() || '';
+    const email = (r[idx('email')]?.trim() || '').toLowerCase();
+    if (!subject || !email) { skipped++; continue; }
+    const deptName = r[idx('department')]?.trim();
+    let department = null;
+    if (deptName) {
+      if (!deptCache[deptName]) {
+        deptCache[deptName] = await Dept.findOne({ name: deptName, ...(req.companyId ? { company: req.companyId } : {}) }).lean();
+      }
+      department = deptCache[deptName]?._id || null;
+    }
+    const priority = r[idx('priority')]?.trim() || 'Normal';
+    const status = r[idx('status')]?.trim() || 'open';
+    if (!['open', 'pending', 'hold', 'closed', 'deleted'].includes(status)) { skipped++; continue; }
+    if (!['Low', 'Medium', 'High', 'Urgent'].includes(priority)) { skipped++; continue; }
+    const user = await User.findOne({ email, ...(req.companyId ? { company: req.companyId } : {}) });
+    if (!user) { skipped++; continue; }
+    await Ticket.create({
+      subject,
+      details: '',
+      priority,
+      status,
+      user: user._id,
+      department,
+      source: 'csv_import',
+      createdBy: req.admin?._id || null,
+    });
+    created++;
+  }
+  res.status(201).json({ success: true, created, skipped });
+});

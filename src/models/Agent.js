@@ -30,6 +30,19 @@ const agentSchema = new mongoose.Schema(
     lastLogin: { type: Date },
     avatar: { type: String, default: '' },
     lockedTickets: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Ticket' }],
+    // ---- Enterprise: Workforce management ----
+    skills: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Skill' }],
+    presence: {
+      type: String,
+      enum: ['online', 'away', 'busy', 'offline', 'on_break', 'in_meeting', 'dnd'],
+      default: 'offline',
+      index: true,
+    },
+    presenceChangedAt: { type: Date, default: Date.now },
+    capacity: { type: Number, default: 10 },
+    timezone: { type: String, default: '' },
+    qaScore: { type: Number, default: null },
+notificationPrefs: { type: mongoose.Schema.Types.Mixed, default: {} },
   },
   { timestamps: true }
 );

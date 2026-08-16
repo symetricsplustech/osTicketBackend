@@ -37,6 +37,9 @@ const notifyAgent = async ({ agentId, type, message, link, ticket, company }) =>
   if (!agentId) return;
   if (!(await isAlertEnabled(type))) return;
   try {
+    const pref = ((await Agent.findById(agentId).select('notificationPrefs email company').lean()) || {});
+    const mode = (pref.notificationPrefs || {})[type] || (pref.notificationPrefs || {})['*'] || 'both';
+    if (mode === 'off') return;
     await Notification.create({
       recipientType: 'agent',
       recipient: agentId,
@@ -48,6 +51,17 @@ const notifyAgent = async ({ agentId, type, message, link, ticket, company }) =>
     });
     const io = getIO();
     if (io) io.to(`agent:${agentId}`).emit('notification', { type, message, link, ticket });
+    if (mode === 'email' || mode === 'both') {
+      const emailService = require('./email.service');
+      emailService.sendFromTemplate({
+        key: 'notification',
+        to: pref.email,
+        data: { message, link, type, agent: { name: pref.name || '' }, ticketNumber: ticket && typeof ticket === 'object' && ticket.number ? ticket.number : '' },
+        event: 'notification',
+        ticket: ticket && typeof ticket === 'object' ? ticket._id || null : null,
+        company,
+      }).catch(() => {});
+    }
   } catch (err) {
     // swallow notification errors
   }

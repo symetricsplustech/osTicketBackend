@@ -20,6 +20,15 @@ const sendTokenResponse = (user, type, res, status = 200) => {
   });
 };
 
+const auditLogin = ({ actorType, actor, actorName, company, req, action }) => {
+  try {
+    const { audit } = require('../services/audit.service');
+    audit({ company, actorType, actor, actorName, action, entityType: actorType, entityId: actor, source: 'login', req }).catch(() => {});
+  } catch (err) {
+    // ignore
+  }
+};
+
 exports.register = asyncHandler(async (req, res) => {
   const { name, email, password, phone, company } = req.body;
   const companyId = company || req.companyId || null;
@@ -63,6 +72,7 @@ exports.login = asyncHandler(async (req, res) => {
   }
   user.lastLogin = new Date();
   await user.save();
+  auditLogin({ actorType: 'user', actor: user._id, actorName: user.name, company: user.company || null, req, action: 'auth.login' });
   sendTokenResponse(user, 'user', res);
 });
 
@@ -118,6 +128,7 @@ exports.portalLogin = asyncHandler(async (req, res) => {
     const isAdmin = agent.isAdmin || (agent.role && agent.role.isAdmin);
     agent.lastLogin = new Date();
     await agent.save();
+    auditLogin({ actorType: 'agent', actor: agent._id, actorName: agent.name, company: agent.company || null, req, action: 'auth.portal_login' });
     const token = signToken({ id: agent._id, type: 'agent' });
     return res.json({ success: true, token, user: agent, role: isAdmin ? 'admin' : 'agent' });
   }
@@ -148,6 +159,7 @@ exports.adminLogin = asyncHandler(async (req, res) => {
   }
   agent.lastLogin = new Date();
   await agent.save();
+  auditLogin({ actorType: 'agent', actor: agent._id, actorName: agent.name, company: agent.company || null, req, action: 'auth.admin_login' });
   const token = signToken({ id: agent._id, type: 'agent' });
   res.json({ success: true, token, user: agent });
 });
@@ -219,12 +231,13 @@ exports.updateProfile = asyncHandler(async (req, res) => {
 });
 
 exports.updateAgentProfile = asyncHandler(async (req, res) => {
-  const { name, phone, password, currentPassword, signature, avatar } = req.body;
+  const { name, phone, password, currentPassword, signature, avatar, notificationPrefs } = req.body;
   const agent = req.agent;
   if (name) agent.name = name;
   if (phone !== undefined) agent.phone = phone;
   if (signature !== undefined) agent.signature = signature;
   if (avatar !== undefined) agent.avatar = avatar;
+  if (notificationPrefs !== undefined && typeof notificationPrefs === 'object') agent.notificationPrefs = notificationPrefs;
   if (password) {
     if (currentPassword && !(await agent.matchPassword(currentPassword))) {
       throw new ApiError(400, 'Current password is incorrect');
@@ -233,4 +246,29 @@ exports.updateAgentProfile = asyncHandler(async (req, res) => {
   }
   await agent.save();
   res.json({ success: true, user: agent });
+});
+
+exports.enableTwoFactor = asyncHandler(async (req, res) => {
+  const { userId } = req;
+  const { method, phone, totpSecret, backupCodes } = req.body;
+  const user = await User.findById(userId);
+  if (!user) return res.status(404).json({ error: 'User not found' });
+  user.twoFactorEnabled = true;
+  user.twoFactorMethod = method;
+  if (method === 'sms') user.twoFactorPhone = phone;
+  if (totpSecret) user.twoFactorSecret = totpSecret;
+  if (backupCodes) user.twoFactorBackupCodes = backupCodes;
+  await user.save();
+  res.json({ success: true, message: 'Two-factor authentication enabled' });
+});
+
+exports.disableTwoFactor = asyncHandler(async (req, res) => {
+  const { userId } = req;
+  const user = await User.findById(userId);
+  if (!user) return res.status(404).json({ error: 'User not found' });
+  user.twoFactorEnabled = false;
+  user.twoFactorSecret = '';
+  user.twoFactorBackupCodes = [];
+  await user.save();
+  res.json({ success: true, message: 'Two-factor authentication disabled' });
 });

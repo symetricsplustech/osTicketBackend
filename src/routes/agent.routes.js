@@ -21,6 +21,7 @@ router.put('/notifications/:id/read', ctrl.markNotificationRead);
 // Tickets
 router.get('/tickets', ctrl.listTickets);
 router.post('/tickets', ctrl.create);
+router.get('/tickets/export', ctrl.exportTickets);
 router.get('/tickets/:number', ctrl.getTicket);
 router.post('/tickets/:number/reply', upload.array('files', 5), ctrl.reply);
 router.post('/tickets/:number/note', ctrl.addNote);
@@ -34,6 +35,15 @@ router.delete('/tickets/:number/collaborators/:userId', ctrl.removeCollaborator)
 router.post('/tickets/:number/lock', ctrl.lockTicket);
 router.post('/tickets/:number/unlock', ctrl.unlockTicket);
 router.post('/tickets/:number/delete', ctrl.deleteTicket);
+router.post('/tickets/:number/merge', ctrl.mergeTickets);
+router.post('/tickets/:number/split', ctrl.splitTicket);
+router.put('/tickets/:number/threads/:threadId', ctrl.updateThread);
+router.delete('/tickets/:number/threads/:threadId', ctrl.deleteThread);
+router.post('/tickets/:number/sla/pause', ctrl.pauseSla);
+router.post('/tickets/:number/sla/resume', ctrl.resumeSla);
+router.get('/queues/saved', ctrl.listSavedQueues);
+router.post('/queues/saved', ctrl.createSavedQueue);
+router.delete('/queues/saved/:id', ctrl.deleteSavedQueue);
 router.post('/tickets/:number/tasks', ctrl.addTask);
 router.put('/tickets/:number/tasks/:taskId', ctrl.updateTask);
 

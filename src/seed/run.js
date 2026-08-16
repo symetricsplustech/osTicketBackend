@@ -58,6 +58,32 @@ const MODELS = [
   Agent,
   Organization,
   User,
+  // Enterprise
+  require('../models/Skill'),
+  require('../models/Workflow'),
+  require('../models/Survey'),
+  require('../models/SurveyResponse'),
+  require('../models/StatusPage'),
+  require('../models/StatusIncident'),
+  require('../models/Webhook'),
+  require('../models/ApiKey'),
+  require('../models/Contract'),
+  require('../models/Entitlement'),
+  require('../models/Asset'),
+  require('../models/Dependency'),
+  require('../models/Incident'),
+  require('../models/Problem'),
+  require('../models/Change'),
+  require('../models/TicketLink'),
+  require('../models/Approval'),
+  require('../models/Conversation'),
+  require('../models/ChatMessage'),
+  require('../models/CallLog'),
+  require('../models/ServiceCatalogItem'),
+  require('../models/Integration'),
+  require('../models/AuditEvent'),
+  require('../models/AiSnapshot'),
+  require('../models/HealthScore'),
 ];
 
 const reset = process.argv.includes('--reset');
@@ -83,6 +109,13 @@ const run = async () => {
     await EmailTemplate.findOneAndUpdate({ key: t.key, company: null }, t, { upsert: true });
   }
   console.log('Email templates seeded.');
+
+  // ----- Priorities -----
+  const { defaultPriorities } = require('./seedData');
+  for (const p of defaultPriorities) {
+    await require('../models/Priority').findOneAndUpdate({ name: p.name, company: null }, p, { upsert: true });
+  }
+  console.log('Priorities seeded.');
 
   // ----- Ticket statuses -----
   const defaultStatuses = [
@@ -402,6 +435,230 @@ const run = async () => {
   });
   console.log('Ticket filters seeded.');
 
+  // ----- Enterprise: skills & agent skills -----
+  const Skill = require('../models/Skill');
+  const skillDefs = [
+    { name: 'Network', category: 'Technical', description: 'Connectivity, DNS, VPN, firewalls', level: 3 },
+    { name: 'Billing', category: 'Billing', description: 'Invoicing, payments, refunds', level: 4 },
+    { name: 'Hardware', category: 'Technical', description: 'Servers, desktops, peripherals', level: 3 },
+    { name: 'Software', category: 'Technical', description: 'Applications, OS, mobile', level: 4 },
+    { name: 'Security', category: 'Technical', description: 'Access, vulnerabilities, incidents', level: 4 },
+  ];
+  const skillIds = {};
+  for (const sd of skillDefs) {
+    const s = await Skill.create({ name: sd.name, company: demoCompany._id, category: sd.category, description: sd.description, isActive: true });
+    skillIds[sd.name] = s._id;
+  }
+  await Agent.updateOne({ email: 'agent@osticket.local' }, { $set: { skills: [skillIds.Network, skillIds.Software] } });
+  await Agent.updateOne({ email: 'jane@osticket.local' }, { $set: { skills: [skillIds.Hardware, skillIds.Security, skillIds.Network] } });
+  await Agent.updateOne({ email: 'billing@osticket.local' }, { $set: { skills: [skillIds.Billing] } });
+  await Agent.updateOne({ email: 'admin@osticket.local' }, { $set: { skills: [skillIds.Software, skillIds.Security] } });
+  console.log('Enterprise skills seeded.');
+
+  // ----- Enterprise: workflow sample -----
+  const Workflow = require('../models/Workflow');
+  await Workflow.create({
+    name: 'Emergency priority alert',
+    company: demoCompany._id,
+    description: 'When a ticket arrives as Emergency priority, notify the department manager and create a follow-up task.',
+    isActive: true,
+    event: 'ticket.created',
+    triggerFilters: { priority: ['Emergency'] },
+    actions: [
+      { type: 'notify_dept_manager', config: { message: 'Emergency ticket requires immediate attention' }, delayMinutes: 0 },
+      { type: 'create_task', config: { title: 'Escalation follow-up', description: 'Verify the emergency ticket was actioned within SLA' }, delayMinutes: 30 },
+      { type: 'add_tags', config: { tags: ['emergency'] }, delayMinutes: 0 },
+    ],
+  });
+  await Workflow.create({
+    name: 'Waiting customer reminder',
+    company: demoCompany._id,
+    description: 'When a ticket is set to waiting-on-customer, email them to follow up.',
+    isActive: true,
+    event: 'ticket.status_changed',
+    triggerFilters: { waitingOn: ['customer'] },
+    actions: [
+      { type: 'send_email', config: { templateKey: 'waiting_for_customer' }, delayMinutes: 1440 },
+    ],
+  });
+  console.log('Enterprise workflows seeded.');
+
+  // ----- Enterprise: CSAT survey + status page + webhooks + API key -----
+  const Survey = require('../models/Survey');
+  await Survey.create({
+    name: 'Default CSAT',
+    company: demoCompany._id,
+    type: 'csat',
+    question: 'How would you rate your support experience?',
+    scale: 5,
+    trigger: 'on_close',
+    isActive: true,
+    customMessage: 'We value your feedback!',
+  });
+
+  const StatusPage = require('../models/StatusPage');
+  await StatusPage.create({
+    name: 'System Status',
+    company: demoCompany._id,
+    slug: 'status',
+    description: 'Live status of our services',
+    isPublic: true,
+    branding: { primaryColor: '#2563eb' },
+    components: [
+      { name: 'API', group: 'Core', status: 'operational', order: 0 },
+      { name: 'Web Portal', group: 'Core', status: 'operational', order: 1 },
+      { name: 'Email', group: 'Core', status: 'operational', order: 2 },
+      { name: 'Payments', group: 'Billing', status: 'operational', order: 3 },
+    ],
+  });
+
+  const Webhook = require('../models/Webhook');
+  await Webhook.create({
+    name: 'Slack #support-alerts',
+    company: demoCompany._id,
+    url: 'https://hooks.slack.com/services/T0000/B0000/XXXX',
+    secret: '',
+    events: ['ticket.created', 'ticket.assigned', 'ticket.breached'],
+    isActive: true,
+  });
+
+  const ApiKey = require('../models/ApiKey');
+  const demoKeyRaw = 'ost_demo_dev_secret_key_0001';
+  await ApiKey.create({
+    name: 'Demo integration',
+    company: demoCompany._id,
+    keyHash: ApiKey.hashKey(demoKeyRaw),
+    keyPrefix: demoKeyRaw.slice(0, 12),
+    scopes: ['*'],
+    isActive: true,
+  });
+  console.log('Enterprise status page, survey, webhook, API key seeded.');
+
+  // ----- Enterprise: contract + entitlements for Acme Corp -----
+  const Contract = require('../models/Contract');
+  const Entitlement = require('../models/Entitlement');
+  const acmeContract = await Contract.create({
+    number: 'CTR-ACME-0001',
+    name: 'Acme Premier Support',
+    company: demoCompany._id,
+    organization: acme._id,
+    startDate: daysAgo(-60),
+    endDate: new Date(Date.now() + 305 * 24 * 60 * 60 * 1000),
+    status: 'active',
+    sla: slaCritical._id,
+    autoRenew: true,
+    renewalType: 'auto',
+  });
+  await Entitlement.create({ name: 'Ticket quota', contract: acmeContract._id, company: demoCompany._id, limitType: 'count', limitValue: 500, window: 'month' });
+  await Entitlement.create({ name: 'Priority access', contract: acmeContract._id, company: demoCompany._id, limitType: 'unlimited' });
+  console.log('Enterprise contracts & entitlements seeded.');
+
+  // ----- Enterprise: service catalog -----
+  const ServiceCatalogItem = require('../models/ServiceCatalogItem');
+  const catalogSeed = [
+    { name: 'Standard Support', description: 'Email and portal support for eligible users.', category: 'Support', sla: sla24._id, priority: 'Normal', estimatedTime: '~8 hours' },
+    { name: 'Priority Support', description: 'Priority queue with faster response SLAs.', category: 'Support', sla: slaCritical._id, priority: 'High', estimatedTime: '~2 hours' },
+    { name: 'Live Chat', description: 'Real-time chat with a support agent.', category: 'Support', priority: 'Normal', estimatedTime: 'Immediate' },
+    { name: 'Onboarding Consultation', description: '1:1 onboarding session with your account manager.', category: 'Services', priority: 'Normal', estimatedTime: '~48 hours', price: 250, needsPayment: true },
+    { name: 'Self-Service Knowledgebase', description: '24x7 access to guides and FAQs.', category: 'Support', priority: 'Normal', estimatedTime: '24x7' },
+  ];
+  for (const c of catalogSeed) {
+    await ServiceCatalogItem.create({ ...c, company: demoCompany._id, visibleInPortal: true, isActive: true, sortOrder: catalogSeed.indexOf(c) });
+  }
+  console.log('Enterprise service catalog seeded.');
+
+  // ----- Enterprise: CMDB assets with dependencies -----
+  const Asset = require('../models/Asset');
+  const Dependency = require('../models/Dependency');
+  const prodServer = await Asset.create({
+    name: 'prod-web-01',
+    company: demoCompany._id,
+    organization: acme._id,
+    type: 'server',
+    serial: 'SN-PROD-1001',
+    ip: '10.0.1.10',
+    hostname: 'prod-web-01.acme.internal',
+    environment: 'production',
+    criticality: 'critical',
+    status: 'active',
+    purchaseDate: daysAgo(400),
+  });
+  const dbServer = await Asset.create({
+    name: 'prod-db-01',
+    company: demoCompany._id,
+    organization: acme._id,
+    type: 'server',
+    serial: 'SN-PROD-1002',
+    ip: '10.0.1.11',
+    hostname: 'prod-db-01.acme.internal',
+    environment: 'production',
+    criticality: 'critical',
+    status: 'active',
+    purchaseDate: daysAgo(400),
+  });
+  const coreSwitch = await Asset.create({
+    name: 'core-sw-01',
+    company: demoCompany._id,
+    organization: acme._id,
+    type: 'network',
+    serial: 'SN-PROD-1003',
+    ip: '10.0.1.1',
+    environment: 'production',
+    criticality: 'critical',
+    status: 'active',
+    purchaseDate: daysAgo(700),
+  });
+  await Dependency.create({ company: demoCompany._id, from: prodServer._id, to: dbServer._id, relationshipType: 'connects_to' });
+  await Dependency.create({ company: demoCompany._id, from: prodServer._id, to: coreSwitch._id, relationshipType: 'connects_to' });
+  await Dependency.create({ company: demoCompany._id, from: dbServer._id, to: coreSwitch._id, relationshipType: 'connects_to' });
+  console.log('Enterprise CMDB seeded.');
+
+  // ----- Enterprise: incident + problem + change + ticket links -----
+  const Incident = require('../models/Incident');
+  const Problem = require('../models/Problem');
+  const Change = require('../models/Change');
+  const TicketLink = require('../models/TicketLink');
+  const outageTicket = await Ticket.findOne({ subject: 'Production server down - outage' });
+  const incident = await Incident.create({
+    number: 'INC-0001',
+    company: demoCompany._id,
+    title: 'Production server outage',
+    description: 'Production web server unreachable for 4+ hours, impacting all customers.',
+    priority: 'P1',
+    status: 'resolved',
+    startedAt: daysAgo(5),
+    resolvedAt: daysAgo(4.5),
+    affectedTickets: [outageTicket._id],
+    affectedServices: ['Web Portal', 'API'],
+  });
+  await Problem.create({
+    number: 'PRB-0001',
+    company: demoCompany._id,
+    title: 'Recurring core switch instability',
+    description: 'Intermittent packet loss on core-sw-01 causing periodic outages.',
+    priority: 'High',
+    status: 'investigation',
+    relatedTicket: outageTicket._id,
+    relatedIncident: incident._id,
+    relatedAsset: coreSwitch._id,
+  });
+  await Change.create({
+    number: 'CHG-0001',
+    company: demoCompany._id,
+    title: 'Upgrade core-sw-01 firmware',
+    description: 'Apply vendor firmware patch to resolve intermittent packet loss.',
+    type: 'standard',
+    priority: 'High',
+    status: 'scheduled',
+    windowStart: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000),
+    windowEnd: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000 + 2 * 60 * 60 * 1000),
+    risk: 'medium',
+    implementationPlan: 'Backup config, apply firmware, validate connectivity, rollback if degraded.',
+    rollbackPlan: 'Restore backed-up config via console access.',
+  });
+  await TicketLink.create({ company: demoCompany._id, from: outageTicket._id, to: firstTicket._id, type: 'related', createdBy: adminAgent._id });
+  console.log('Enterprise incident/problem/change/linked tickets seeded.');
+
   // ----- System settings -----
   await SystemSetting.setSetting('company.name', 'My Support Center');
   await SystemSetting.setSetting('company.email', 'support@osticket.local');
@@ -424,10 +681,14 @@ const run = async () => {
   await SystemSetting.setSetting('auth.allowGuestTickets', true);
   await SystemSetting.setSetting('auth.passwordMinLength', 8);
   await SystemSetting.setSetting('schedules.timezone', 'Asia/Kolkata');
+  await SystemSetting.setSetting('routing.algorithm', 'skill_based');
+  await SystemSetting.setSetting('csat.enabled', true);
+  await SystemSetting.setSetting('ai.enabled', true);
+  await SystemSetting.setSetting('ai.autoResolveEnabled', false);
   console.log('Settings seeded.');
 
   // ----- Assign all seeded data to the demo company -----
-  const companyScoped = [Agent, User, Ticket, TicketThread, Task, Organization, Department, HelpTopic, SlaPlan, Team, Role, CannedResponse, FaqCategory, Faq, Announcement, TicketFilter, Notification];
+  const companyScoped = [Agent, User, Ticket, TicketThread, Task, Organization, Department, HelpTopic, SlaPlan, Team, Role, CannedResponse, FaqCategory, Faq, Announcement, TicketFilter, Notification, require('../models/Skill'), require('../models/Workflow'), require('../models/Survey'), require('../models/StatusPage'), require('../models/StatusIncident'), require('../models/Webhook'), require('../models/ApiKey'), require('../models/Contract'), require('../models/Entitlement'), require('../models/Asset'), require('../models/Dependency'), require('../models/Incident'), require('../models/Problem'), require('../models/Change'), require('../models/TicketLink'), require('../models/Approval'), require('../models/Conversation'), require('../models/ChatMessage'), require('../models/CallLog'), require('../models/ServiceCatalogItem'), require('../models/Integration'), require('../models/AuditEvent'), require('../models/AiSnapshot'), require('../models/HealthScore')];
   for (const M of companyScoped) {
     await M.updateMany({ company: null }, { company: demoCompany._id });
   }

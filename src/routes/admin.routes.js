@@ -130,6 +130,19 @@ router.get('/holidays', ctrl.holidays.list);
 router.post('/holidays', ctrl.holidays.create);
 router.put('/holidays/:id', ctrl.holidays.update);
 router.delete('/holidays/:id', ctrl.holidays.remove);
+router.get('/priorities', ctrl.listPriorities);
+router.post('/priorities', ctrl.createPriority);
+router.put('/priorities/:id', ctrl.updatePriority);
+router.delete('/priorities/:id', ctrl.deletePriority);
+
+// CSV import / export
+router.get('/export/users', ctrl.exportUsers);
+router.get('/export/orgs', ctrl.exportOrgs);
+router.get('/export/agents', ctrl.exportAgents);
+router.get('/export/tickets', ctrl.exportTickets);
+router.post('/import/users', ctrl.importUsers);
+router.post('/import/orgs', ctrl.importOrgs);
+router.post('/import/tickets', ctrl.importTickets);
 
 // Integrations / Plugins
 router.get('/integrations', ctrl.integrations.list);

@@ -23,11 +23,23 @@ const userSchema = new mongoose.Schema(
     resetToken: { type: String },
     resetExpires: { type: Date },
     status: { type: String, enum: ['active', 'disabled'], default: 'active' },
+    twoFactorEnabled: { type: Boolean, default: false },
+    twoFactorSecret: { type: String },
+    twoFactorBackupCodes: { type: [String], default: [] },
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null, index: true },
     permissions: { type: [String], default: [] },
     lastLogin: { type: Date },
     notes: { type: String, default: '' },
     avatar: { type: String, default: '' },
+    // ---- Enterprise: Customer 360 ----
+    tier: { type: String, enum: ['standard', 'priority', 'enterprise'], default: 'standard' },
+    locale: { type: String, default: '' },
+    timezone: { type: String, default: '' },
+    health: {
+      score: { type: Number, default: null },
+      signals: { type: mongoose.Schema.Types.Mixed, default: {} },
+      lastComputed: { type: Date, default: null },
+    },
   },
   { timestamps: true }
 );

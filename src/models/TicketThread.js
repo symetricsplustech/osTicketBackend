@@ -32,6 +32,16 @@ const threadSchema = new mongoose.Schema(
     attachments: { type: [attachmentSchema], default: [] },
     isSystem: { type: Boolean, default: false },
     deletedAt: { type: Date, default: null },
+    deletedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Agent', default: null },
+    editedAt: { type: Date, default: null },
+    editedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Agent', default: null },
+    editHistory: [
+      {
+        at: { type: Date, default: Date.now },
+        by: { type: mongoose.Schema.Types.ObjectId, ref: 'Agent', default: null },
+        preview: { type: String, default: '' },
+      },
+    ],
   },
   { timestamps: true }
 );

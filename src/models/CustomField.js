@@ -12,6 +12,13 @@ const customFieldSchema = new mongoose.Schema(
     required: { type: Boolean, default: false },
     options: { type: [String], default: [] },
     placeholder: { type: String, default: '' },
+    conditions: [
+      {
+        field: { type: String, default: '' },
+        operator: { type: String, enum: ['equals', 'not_equals', 'contains', 'in'], default: 'equals' },
+        value: { type: String, default: '' },
+      },
+    ],
     helpTopic: { type: mongoose.Schema.Types.ObjectId, ref: 'HelpTopic', default: null },
     isActive: { type: Boolean, default: true },
     sortOrder: { type: Number, default: 0 },

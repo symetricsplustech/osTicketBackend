@@ -12,6 +12,14 @@ const departmentSchema = new mongoose.Schema(
     autoAssignAgent: { type: mongoose.Schema.Types.ObjectId, ref: 'Agent', default: null },
     autoAssignTeam: { type: mongoose.Schema.Types.ObjectId, ref: 'Team', default: null },
     signature: { type: String, default: '' },
+    schedule: {
+      timezone: { type: String, default: '' },
+      businessHoursEnabled: { type: Boolean, default: false },
+      days: {
+        type: mongoose.Schema.Types.Mixed,
+        default: {},
+      },
+    },
     status: { type: String, enum: ['active', 'disabled'], default: 'active' },
     notes: { type: String, default: '' },
   },

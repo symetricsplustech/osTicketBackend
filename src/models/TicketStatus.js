@@ -9,6 +9,8 @@ const ticketStatusSchema = new mongoose.Schema(
     isActive: { type: Boolean, default: true },
     sortOrder: { type: Number, default: 0 },
     description: { type: String, default: '' },
+    pauseSla: { type: Boolean, default: false },
+    isClosed: { type: Boolean, default: false },
     company: { type: mongoose.Schema.Types.ObjectId, ref: 'Company', default: null, index: true },
   },
   { timestamps: true }

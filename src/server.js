@@ -7,6 +7,7 @@ const { setIO } = require('./config/socket');
 const { scheduleOverdueCheck } = require('./services/sla.service');
 const { startInboundPoller } = require('./services/inboundEmail.service');
 const { startEscalationRunner } = require('./services/escalation.service');
+const { initWorkflowEngine } = require('./services/workflow.service');
 const logger = require('./utils/logger');
 const { ensureDefaults } = require('./bootstrap/ensureDefaults');
 
@@ -22,6 +23,12 @@ const start = async () => {
   scheduleOverdueCheck();
   startInboundPoller();
   startEscalationRunner();
+  initWorkflowEngine();
+  require('./services/integration.service');
+  const approvalService = require('./services/approval.service');
+  const realtime = require('./services/realtime.service');
+  setInterval(() => approvalService.runApprovalLifecycle().catch(() => {}), 5 * 60 * 1000);
+  setInterval(() => realtime.broadcastSnapshot({}).catch(() => {}), 60 * 1000);
 
   server.listen(config.port, () => {
     logger.info(`osTicket MERN API running on http://localhost:${config.port} (${config.env})`);

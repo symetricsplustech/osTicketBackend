@@ -73,4 +73,7 @@ router.put('/me', protectUser, ctrl.updateProfile);
 router.get('/agent/me', protectAgent, ctrl.getAgentMe);
 router.put('/agent/me', protectAgent, ctrl.updateAgentProfile);
 
+router.post('/enable-two-factor', protectUser, ctrl.enableTwoFactor);
+router.post('/disable-two-factor', protectUser, ctrl.disableTwoFactor);
+
 module.exports = router;

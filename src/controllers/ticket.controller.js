@@ -25,15 +25,19 @@ exports.openForm = asyncHandler(async (req, res) => {
   }
   const fieldQuery = companyId ? { isActive: true, $or: [{ company: companyId }, { company: null }] } : { isActive: true };
   const formQuery = companyId ? { isActive: true, $or: [{ company: companyId }, { company: null }] } : { isActive: true };
-  const [topics, departments, settings, customFields, forms] = await Promise.all([
+  const [topics, departments, settings, customFields, forms, priorities] = await Promise.all([
     HelpTopic.find(topicQuery).sort({ topic: 1 }).populate('department', 'name'),
     Department.find(deptQuery).sort({ name: 1 }),
     SystemSetting.getSettings(),
     CustomField.find(fieldQuery).sort({ sortOrder: 1 }).populate('helpTopic', 'topic'),
     TicketForm.find(formQuery).sort({ name: 1 }).populate('helpTopic', 'topic').populate('fields'),
+    (async () => {
+      const { listPriorities } = require('../services/priority.service');
+      return listPriorities(companyId);
+    })(),
   ]);
   const emailToTicket = settings.system?.emailToTicket || config.email.emailToTicket || '';
-  res.json({ success: true, topics, departments, settings, emailToTicket, customFields, forms });
+  res.json({ success: true, topics, departments, settings, emailToTicket, customFields, forms, priorities });
 });
 
 exports.getMyTickets = asyncHandler(async (req, res) => {
@@ -239,6 +243,7 @@ exports.closeTicket = asyncHandler(async (req, res) => {
   await ticket.save();
   await ticketService.addSystemEvent({ ticket, message: 'Ticket closed by user' });
   await notifyOwnerOfEmployeeAction({ ticket, user: req.user, type: 'status_change', action: 'closed' });
+  await ticketService.handleTicketClosed(ticket, { actor: req.user?._id || null });
   res.json({ success: true, message: 'Ticket closed' });
 });
 
@@ -258,7 +263,96 @@ exports.reopenTicket = asyncHandler(async (req, res) => {
   await ticket.save();
   await ticketService.addSystemEvent({ ticket, message: 'Ticket reopened by user' });
   await notifyOwnerOfEmployeeAction({ ticket, user: req.user, type: 'status_change', action: 'reopened' });
+  await ticketService.handleTicketReopened(ticket);
   res.json({ success: true, message: 'Ticket reopened' });
+});
+
+exports.mergeTickets = asyncHandler(async (req, res) => {
+  const { targetTicketId } = req.body;
+  const sourceTicketId = req.ticket._id;
+  if (!targetTicketId || targetTicketId === String(sourceTicketId)) {
+    throw new ApiError(400, 'Valid target ticket ID is required');
+  }
+  const targetTicket = await Ticket.findById(targetTicketId).lean();
+  if (!targetTicket) throw new ApiError(404, 'Target ticket not found');
+  const sourceTicket = await Ticket.findById(sourceTicketId).lean();
+  if (!sourceTicket) throw new ApiError(404, 'Source ticket not found');
+  if (sourceTicket.user._id.equals(targetTicket.user._id)) {
+    throw new ApiError(400, 'Cannot merge a ticket into itself or a ticket in the same user account');
+  }
+  const mergedTicket = await Ticket.findByIdAndUpdate(
+    targetTicket._id,
+    {
+      $push: { messages: { $each: sourceTicket.messages } },
+      $addToSet: { collaborators: { $each: sourceTicket.collaborators } },
+    },
+    { new: true, runValidators: true }
+  );
+  await Ticket.findByIdAndDelete(sourceTicket._id);
+  res.json({ success: true, message: 'Tickets merged successfully', ticket: mergedTicket });
+});
+
+exports.linkTickets = asyncHandler(async (req, res) => {
+  const { targetTicketId } = req.body;
+  const sourceTicketId = req.ticket._id;
+  if (!targetTicketId || targetTicketId === String(sourceTicketId)) {
+    throw new ApiError(400, 'Valid target ticket ID is required');
+  }
+  const targetTicket = await Ticket.findById(targetTicketId).lean();
+  if (!targetTicket) throw new ApiError(404, 'Target ticket not found');
+  const sourceTicket = await Ticket.findById(sourceTicketId).lean();
+  if (!sourceTicket) throw new ApiError(404, 'Source ticket not found');
+  const linked = sourceTicket.linkedTickets.includes(targetTicket._id);
+  if (linked) {
+    throw new ApiError(400, 'Tickets are already linked');
+  }
+  await Ticket.updateOne(
+    { _id: sourceTicket._id },
+    { $addToSet: { linkedTickets: targetTicket._id } }
+  );
+  await Ticket.updateOne(
+    { _id: targetTicket._id },
+    { $addToSet: { linkedTickets: sourceTicket._id } }
+  );
+  res.json({ success: true, message: 'Tickets linked successfully' });
+});
+
+exports.referTicket = asyncHandler(async (req, res) => {
+  const { targetUserId, targetTeamId, targetDeptId, reason } = req.body;
+  const sourceTicketId = req.ticket._id;
+  if (!targetUserId && !targetTeamId && !targetDeptId) {
+    throw new ApiError(400, 'At least one target (user, team, or department) is required');
+  }
+  const sourceTicket = await Ticket.findById(sourceTicketId);
+  if (!sourceTicket) throw new ApiError(404, 'Source ticket not found');
+  const referral = {
+    ticket: sourceTicket._id,
+    referredBy: sourceTicket.user._id,
+    reason,
+    createdAt: new Date(),
+  };
+  if (targetUserId) {
+    const targetUser = await User.findById(targetUserId);
+    if (!targetUser) throw new ApiError(404, 'Target user not found');
+    targetUser.referredTickets = targetUser.referredTickets || [];
+    targetUser.referredTickets.push(referral);
+    await targetUser.save();
+  }
+  if (targetTeamId) {
+    const targetTeam = await Team.findById(targetTeamId);
+    if (!targetTeam) throw new ApiError(404, 'Target team not found');
+    targetTeam.referredTickets = targetTeam.referredTickets || [];
+    targetTeam.referredTickets.push(referral);
+    await targetTeam.save();
+  }
+  if (targetDeptId) {
+    const targetDept = await Dept.findById(targetDeptId);
+    if (!targetDept) throw new ApiError(404, 'Target department not found');
+    targetDept.referredTickets = targetDept.referredTickets || [];
+    targetDept.referredTickets.push(referral);
+    await targetDept.save();
+  }
+  res.json({ success: true, message: 'Ticket referred successfully' });
 });
 
 exports.deleteTicket = asyncHandler(async (req, res) => {

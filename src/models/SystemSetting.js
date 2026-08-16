@@ -89,6 +89,27 @@ const defaultSettings = {
     friday: { enabled: true, open: '09:00', close: '17:00' },
     saturday: { enabled: false, open: '09:00', close: '17:00' },
     sunday: { enabled: false, open: '09:00', close: '17:00' },
+    enforceBusinessHours: false,
+  },
+  // ---- Enterprise: engines configuration ----
+  routing: {
+    algorithm: 'skill_based', // none | round_robin | least_workload | skill_based | availability
+  },
+  csat: {
+    enabled: true,
+    ratingScale: 5,
+    npsEnabled: true,
+  },
+  ai: {
+    enabled: true,
+    autoResolveEnabled: false,
+    autoResolveThreshold: 0.8,
+    qaEnabled: true,
+  },
+  automation: {
+    slaBreachNotify: true,
+    slaWarningNotify: false,
+    waitingForCustomerNotify: true,
   },
 };
 

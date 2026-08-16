@@ -8,12 +8,16 @@ const Agent = require('../models/Agent');
 const TicketFilter = require('../models/TicketFilter');
 const SystemSetting = require('../models/SystemSetting');
 const { generateTicketNumber, generateConfirmationToken } = require('../utils/generators');
-const { computeDueDate } = require('./sla.service');
+const { computeDueDate, resumeSla } = require('./sla.service');
 const emailService = require('./email.service');
 const { notifyAgent, notifyUser, notifyAdminRoom } = require('./notification.service');
 const { getIO } = require('../config/socket');
+const { emit } = require('./events');
 const config = require('../config/config');
 const logger = require('../utils/logger');
+const auditService = require('./audit.service');
+
+const audit = (args) => auditService.audit(args).catch(() => {});
 
 const resolveDepartment = async (helpTopic, companyId = null) => {
   const scope = { status: 'active' };
@@ -213,6 +217,10 @@ const createTicket = async ({ user, orgOwner, createdBy, subject, details, topic
 
   let targetSla = helpTopic?.sla || dept?.sla || null;
   if (filterActions.sla) targetSla = filterActions.sla;
+  if (!targetSla && user.organization) {
+    const org = await require('../models/Organization').findById(user.organization).lean();
+    if (org?.sla) targetSla = org.sla;
+  }
 
   let targetAgent = helpTopic?.autoAssignAgent || dept?.autoAssignAgent || null;
   if (filterActions.agent) targetAgent = filterActions.agent;
@@ -227,7 +235,51 @@ const createTicket = async ({ user, orgOwner, createdBy, subject, details, topic
     targetTeam = null;
   }
 
-  const dueDate = await computeDueDate(targetSla);
+  // ---- Enterprise: entitlement evaluation (soft gate; records coverage) ----
+  let entitlementStatus = 'unknown';
+  let contractId = null;
+  let slaOverride = null;
+  try {
+    const entitlementService = require('./entitlement.service');
+    const evalResult = await entitlementService.evaluateEntitlement({
+      company: companyId,
+      user,
+      helpTopicId: helpTopic?._id || null,
+      serviceType: 'help_topic',
+    });
+    entitlementStatus = evalResult.status;
+    contractId = evalResult.contract?._id || null;
+    slaOverride = evalResult.slaOverride || null;
+    if (slaOverride) targetSla = slaOverride;
+    if (contractId && entitlementStatus === 'covered') {
+      entitlementService.consumeEntitlement({ company: companyId, contractId, orgId: user.organization, helpTopicId: helpTopic?._id || null }).catch(() => {});
+    }
+  } catch (err) {
+    // entitlement engine must never block ticket creation
+  }
+
+  // ---- Enterprise: smart routing (skill-based / round-robin / least-workload) ----
+  const routingAlgorithm = settings.routing?.algorithm || 'skill_based';
+  if (autoAssign && !targetAgent && !targetTeam && routingAlgorithm !== 'none') {
+    try {
+      const routing = require('./routing.service');
+      const skills = await routing.skillsForTopic(helpTopic?._id);
+      const slaPlan = targetSla ? await require('../models/SlaPlan').findById(targetSla).lean() : null;
+      const best = await routing.findBestAgent({
+        company: companyId,
+        deptId: targetDept?._id,
+        requiredSkills: skills,
+        priority: targetPriority,
+        slaHours: slaPlan?.gracePeriod || 0,
+        algorithm: routingAlgorithm,
+      });
+      if (best) targetAgent = best._id;
+    } catch (err) {
+      // routing fallback: no assignment
+    }
+  }
+
+  const dueDate = await computeDueDate(targetSla, new Date(), { slaType: 'first_response' });
 
   const ticket = await Ticket.create({
     number: generateTicketNumber(),
@@ -243,9 +295,12 @@ const createTicket = async ({ user, orgOwner, createdBy, subject, details, topic
     subject,
     source,
     dueDate,
+    slaStartedAt: new Date(),
     lastActivity: new Date(),
     lastMessageAt: new Date(),
     customData: customData || {},
+    entitlementStatus,
+    contract: contractId,
   });
 
   await TicketThread.create({
@@ -311,14 +366,18 @@ const createTicket = async ({ user, orgOwner, createdBy, subject, details, topic
   // Emails
   const ctx = await buildTicketContext(ticket);
   const autoresp = settings.autoresponder || {};
+  const topicResp = helpTopic?.autoresponder || {};
+  const useTopicResp = topicResp.enabled === true && (topicResp.subject || topicResp.body);
+  const autoSubject = useTopicResp ? topicResp.subject : autoresp.subject;
+  const autoBody = useTopicResp ? topicResp.body : autoresp.body;
   try {
-    if ((autoresp.enabled !== false) && (settings.tickets?.autoResponder !== false)) {
-      if (autoresp.subject || autoresp.body) {
+    if ((autoresp.enabled !== false || useTopicResp) && (settings.tickets?.autoResponder !== false)) {
+      if (autoSubject || autoBody) {
         const render = (tpl) => tpl.replace(/\[([\w.]+)\]/g, (m, key) => key.split('.').reduce((o, k) => (o == null ? '' : o[k]), ctx) ?? '');
         await emailService.sendMail({
           to: user.email,
-          subject: autoresp.subject ? render(autoresp.subject) : ctx.subject,
-          body: autoresp.body ? render(autoresp.body) : '',
+          subject: autoSubject ? render(autoSubject) : ctx.subject,
+          body: autoBody ? render(autoBody) : '',
           event: 'new_ticket_confirmation',
           ticket: ticket._id,
           user: user._id,
@@ -362,6 +421,35 @@ const createTicket = async ({ user, orgOwner, createdBy, subject, details, topic
     logger.error(`Alert email failed: ${err.message}`);
   }
 
+  // ---- Enterprise: platform events + AI intelligence (async, non-blocking) ----
+  emit('ticket.created', {
+    company: companyId,
+    ticketId: ticket._id,
+    ticketNumber: ticket.number,
+    subject: ticket.subject,
+    priority: ticket.priority,
+    source: ticket.source,
+    userId: user._id,
+    actor: createdBy || null,
+  });
+  audit({
+    company: companyId,
+    actorType: createdBy ? 'agent' : 'user',
+    actor: createdBy || user._id || null,
+    actorName: createdBy ? String(createdBy) : `${user.name} <${user.email}>`,
+    action: 'ticket.created',
+    entityType: 'ticket',
+    entityId: ticket._id,
+    after: { number: ticket.number, subject: ticket.subject, priority: ticket.priority, source },
+  });
+  const aiEnabled = config.ai.provider !== 'none';
+  if (aiEnabled || true) {
+    const intelligence = require('./intelligence.service');
+    intelligence.computeIntelligence(ticket._id).catch(() => {});
+    const realtime = require('./realtime.service');
+    realtime.broadcastSnapshot({ company: companyId }).catch(() => {});
+  }
+
   return ticket;
 };
 
@@ -389,9 +477,15 @@ const addThreadEntry = async ({ ticket, type = 'message', posterType, user, agen
         ticket.status = Ticket.STATUSES.OPEN;
         ticket.isOverdue = false;
       }
+      // agent responded -> SLA resumes from pause
+      if (ticket.slaPaused) await resumeSla(ticket);
+      emit('ticket.replied', { company: ticket.company, ticketId: ticket._id, ticketNumber: ticket.number, actor: agent?._id || null });
     } else if (posterType === 'user') {
       ticket.stats.messages += 1;
       ticket.lastMessageAt = new Date();
+      // customer responded -> SLA resumes from pause
+      if (ticket.slaPaused) await resumeSla(ticket);
+      emit('customer.replied', { company: ticket.company, ticketId: ticket._id, ticketNumber: ticket.number });
     }
     await ticket.save();
   }
@@ -411,6 +505,54 @@ const addSystemEvent = async ({ ticket, message }) => {
   });
 };
 
+/**
+ * Fire post-close hooks: platform event + CSAT survey (if enabled).
+ */
+const handleTicketClosed = async (ticket, opts = {}) => {
+  emit('ticket.closed', {
+    company: ticket.company,
+    ticketId: ticket._id,
+    ticketNumber: ticket.number,
+    actor: opts.actor || null,
+    agentId: ticket.agent || null,
+  });
+  audit({
+    company: ticket.company,
+    actorType: opts.actor ? 'agent' : 'system',
+    actor: opts.agentId || opts.actor || null,
+    actorName: opts.actor ? String(opts.actor) : 'auto-close',
+    action: 'ticket.closed',
+    entityType: 'ticket',
+    entityId: ticket._id,
+    after: { number: ticket.number, status: 'closed' },
+  });
+  try {
+    const csat = require('./csat.service');
+    const settings = await SystemSetting.getSettings();
+    if (settings.csat?.enabled !== false) {
+      csat.sendSurveyForTicket(ticket, { trigger: 'on_close' }).catch(() => {});
+    }
+  } catch (err) {
+    // ignore
+  }
+  try {
+    const realtime = require('./realtime.service');
+    realtime.broadcastSnapshot({ company: ticket.company }).catch(() => {});
+  } catch (err) {
+    // ignore
+  }
+};
+
+/**
+ * Fire post-reopen hooks + CSAT reset.
+ */
+const handleTicketReopened = async (ticket) => {
+  emit('ticket.reopened', { company: ticket.company, ticketId: ticket._id, ticketNumber: ticket.number });
+  if (ticket.csatRating) {
+    await Ticket.updateOne({ _id: ticket._id }, { $set: { csatRating: null, csatComment: '', csatSentAt: null } }).catch(() => {});
+  }
+};
+
 module.exports = {
   createTicket,
   addThreadEntry,
@@ -419,4 +561,6 @@ module.exports = {
   findOrCreateUser,
   applyFilters,
   resolveDepartment,
+  handleTicketClosed,
+  handleTicketReopened,
 };

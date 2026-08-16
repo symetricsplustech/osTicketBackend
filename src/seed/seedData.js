@@ -245,6 +245,147 @@ Regards,
     isActive: true,
     context: 'account',
   },
+  // ---- Enterprise: communication automation ----
+  {
+    key: 'sla_warning',
+    name: 'SLA Warning',
+    description: 'Sent to the assigned agent when a ticket is at risk of breaching its SLA.',
+    subject: 'SLA at risk: %{ticket.number} — %{ticket.subject}',
+    body: `Dear %{recipient.name},
+
+Ticket %{ticket.number} (%{ticket.subject}) is at risk of breaching its SLA. The due time is %{ticket.due}.
+
+Please review this ticket as soon as possible.
+
+View ticket: %{urls.agent}
+
+Regards,
+%{company.name}`,
+    trigger: 'sla_warning',
+    recipient: 'agent',
+    isActive: true,
+    context: 'alert',
+  },
+  {
+    key: 'sla_breach',
+    name: 'SLA Breached',
+    description: 'Sent when a ticket has breached its SLA target.',
+    subject: 'SLA BREACHED: %{ticket.number} — %{ticket.subject}',
+    body: `Dear %{recipient.name},
+
+Ticket %{ticket.number} (%{ticket.subject}) has breached its SLA. Due time was %{ticket.due}.
+
+Immediate attention is required.
+
+View ticket: %{urls.agent}
+
+Regards,
+%{company.name}`,
+    trigger: 'sla_breach',
+    recipient: 'agent',
+    isActive: true,
+    context: 'alert',
+  },
+  {
+    key: 'waiting_for_customer',
+    name: 'Waiting for Customer',
+    description: 'Sent to the customer when a ticket is waiting on their input.',
+    subject: 'We need more information on %{ticket.number}',
+    body: `Dear %{user.name},
+
+Regarding ticket %{ticket.number}, we need a little more information from you before we can continue.
+
+Please reply to this email or visit %{urls.ticket} to add the details.
+
+Regards,
+%{company.name}`,
+    trigger: 'waiting_for_customer',
+    recipient: 'user',
+    isActive: true,
+    context: 'alert',
+  },
+  {
+    key: 'csat_survey',
+    name: 'CSAT Survey',
+    description: 'Sent after ticket resolution asking for a satisfaction rating.',
+    subject: 'How did we do? Rate your %{ticket.number} experience',
+    body: `Dear %{user.name},
+
+Your ticket %{ticket.number} has been resolved. We would love to hear how we did.
+
+Rate your experience (1-5): %{urls.ticket}?csat=1
+
+Regards,
+%{company.name}`,
+    trigger: 'csat_survey',
+    recipient: 'user',
+    isActive: true,
+    context: 'survey',
+  },
+  {
+    key: 'incident_created',
+    name: 'Service Incident Notification',
+    description: 'Sent to customers during a major incident (proactive support).',
+    subject: 'Service update: %{incident.title}',
+    body: `Dear %{user.name},
+
+We are currently investigating an incident affecting our services.
+
+%{incident.title}
+
+%{incident.body}
+
+Please track live status at: %{urls.home}/status
+
+We apologize for any inconvenience.
+
+Regards,
+%{company.name}`,
+    trigger: 'incident_created',
+    recipient: 'user',
+    isActive: true,
+    context: 'alert',
+  },
+  {
+    key: 'contract_expiring',
+    name: 'Contract Expiring',
+    description: 'Sent to the account manager when a contract is close to renewal.',
+    subject: 'Contract renewal: %{contract.name} expires soon',
+    body: `Dear %{recipient.name},
+
+The contract "%{contract.name}" for %{organization.name} expires on %{contract.endDate}.
+
+Please review the renewal options.
+
+Regards,
+%{company.name}`,
+    trigger: 'contract_expiring',
+    recipient: 'agent',
+    isActive: true,
+    context: 'billing',
+  },
+  {
+    key: 'notification',
+    name: 'Agent Notification',
+    description: 'Sent to agents when an in-app notification event occurs and email notifications are enabled.',
+    subject: 'osTicket: %{notification.type}',
+    body: `Hi %{agent.name},
+
+%{notification.message}
+
+%{notification.link ? ('View details: ' + notification.link) : ''}`,
+    trigger: 'notification',
+    recipient: 'agent',
+    isActive: true,
+    context: 'notification',
+  },
 ];
 
-module.exports = { emailTemplates };
+const defaultPriorities = [
+  { name: 'Low', level: 1, color: '#16a34a', isDefault: false, isActive: true },
+  { name: 'Normal', level: 2, color: '#64748b', isDefault: true, isActive: true },
+  { name: 'High', level: 3, color: '#d97706', isDefault: false, isActive: true },
+  { name: 'Emergency', level: 4, color: '#dc2626', isDefault: false, isActive: true },
+];
+
+module.exports = { emailTemplates, defaultPriorities };

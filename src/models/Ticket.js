@@ -22,7 +22,6 @@ const ticketSchema = new mongoose.Schema(
     status: { type: String, enum: Object.values(STATUSES), default: STATUSES.OPEN, index: true },
     priority: {
       type: String,
-      enum: ['Low', 'Normal', 'High', 'Emergency'],
       default: 'Normal',
       index: true,
     },
@@ -51,6 +50,42 @@ const ticketSchema = new mongoose.Schema(
       firstResponseAt: { type: Date, default: null },
       reopened: { type: Number, default: 0 },
     },
+    // ---- Enterprise: AI & intelligence ----
+    intent: { type: String, default: '' },
+    sentiment: { type: String, enum: ['positive', 'neutral', 'negative', 'frustrated'], default: 'neutral' },
+    urgency: { type: String, enum: ['low', 'normal', 'high', 'critical'], default: 'normal' },
+    language: { type: String, default: '' },
+    aiSummary: { type: String, default: '' },
+    tags: { type: [String], default: [], index: true },
+    aiRisk: { type: Number, default: null },
+    complexity: { type: String, enum: ['low', 'medium', 'high'], default: 'low' },
+    // ---- Enterprise: Advanced SLA ----
+    slaType: {
+      type: String,
+      enum: ['first_response', 'next_response', 'resolution', 'update', 'escalation', 'callback', 'approval'],
+      default: 'first_response',
+    },
+    slaStartedAt: { type: Date, default: null },
+    slaPaused: { type: Boolean, default: false },
+    slaPausedAt: { type: Date, default: null },
+    slaResumeAt: { type: Date, default: null },
+    waitingOn: { type: String, enum: ['customer', 'agent', 'none'], default: 'none' },
+    // ---- Enterprise: Entity links ----
+    asset: { type: mongoose.Schema.Types.ObjectId, ref: 'Asset', default: null },
+    contract: { type: mongoose.Schema.Types.ObjectId, ref: 'Contract', default: null },
+    entitlementStatus: {
+      type: String,
+      enum: ['covered', 'not_covered', 'pending_approval', 'waived', 'unknown'],
+      default: 'unknown',
+    },
+    incident: { type: mongoose.Schema.Types.ObjectId, ref: 'Incident', default: null },
+    problem: { type: mongoose.Schema.Types.ObjectId, ref: 'Problem', default: null },
+    change: { type: mongoose.Schema.Types.ObjectId, ref: 'Change', default: null },
+    conversation: { type: mongoose.Schema.Types.ObjectId, ref: 'Conversation', default: null },
+    // ---- Enterprise: CSAT ----
+    csatSentAt: { type: Date, default: null },
+    csatRating: { type: Number, default: null },
+    csatComment: { type: String, default: '' },
   },
   { timestamps: true }
 );
