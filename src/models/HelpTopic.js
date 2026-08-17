@@ -14,7 +14,6 @@ const helpTopicSchema = new mongoose.Schema(
     sla: { type: mongoose.Schema.Types.ObjectId, ref: 'SlaPlan', default: null },
     autoAssignAgent: { type: mongoose.Schema.Types.ObjectId, ref: 'Agent', default: null },
     autoAssignTeam: { type: mongoose.Schema.Types.ObjectId, ref: 'Team', default: null },
-    formId: { type: String, default: '' },
     autoresponder: {
       enabled: { type: Boolean, default: true },
       subject: { type: String, default: '' },
