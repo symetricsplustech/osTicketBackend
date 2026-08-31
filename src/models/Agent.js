@@ -48,10 +48,20 @@ notificationPrefs: { type: mongoose.Schema.Types.Mixed, default: {} },
 );
 
 agentSchema.pre('save', async function (next) {
-  if (!this.isModified('password')) return next();
-  const salt = await bcrypt.genSalt(10);
-  this.password = await bcrypt.hash(this.password, salt);
-  next();
+  try {
+    if (this.role && (this.isModified('role') || this.isModified('company'))) {
+      const Role = require('./Role');
+      const role = await Role.findById(this.role).select('scope company');
+      if (!role || role.scope !== 'tenant' || !role.company || String(role.company) !== String(this.company)) {
+        return next(new Error('Agents can only be assigned roles from their own tenant'));
+      }
+    }
+    if (this.isModified('password')) {
+      const salt = await bcrypt.genSalt(10);
+      this.password = await bcrypt.hash(this.password, salt);
+    }
+    next();
+  } catch (error) { next(error); }
 });
 
 agentSchema.methods.matchPassword = function (password) {

@@ -442,13 +442,8 @@ const createTicket = async ({ user, orgOwner, createdBy, subject, details, topic
     entityId: ticket._id,
     after: { number: ticket.number, subject: ticket.subject, priority: ticket.priority, source },
   });
-  const aiEnabled = config.ai.provider !== 'none';
-  if (aiEnabled || true) {
-    const intelligence = require('./intelligence.service');
-    intelligence.computeIntelligence(ticket._id).catch(() => {});
-    const realtime = require('./realtime.service');
-    realtime.broadcastSnapshot({ company: companyId }).catch(() => {});
-  }
+  const realtime = require('./realtime.service');
+  realtime.broadcastSnapshot({ company: companyId }).catch(() => {});
 
   return ticket;
 };

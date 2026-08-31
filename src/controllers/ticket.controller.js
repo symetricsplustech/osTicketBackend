@@ -3,6 +3,7 @@ const Ticket = require('../models/Ticket');
 const TicketThread = require('../models/TicketThread');
 const HelpTopic = require('../models/HelpTopic');
 const Department = require('../models/Department');
+const Team = require('../models/Team');
 const SystemSetting = require('../models/SystemSetting');
 const ApiError = require('../utils/ApiError');
 const asyncHandler = require('../utils/asyncHandler');
@@ -59,7 +60,7 @@ exports.getMyTickets = asyncHandler(async (req, res) => {
 
 exports.create = asyncHandler(async (req, res) => {
   const { subject, details, topic, priority, customData } = req.body;
-  if (!subject || !details) throw new ApiError(422, 'Subject and details are required');
+  if (!String(subject || '').trim() || !String(details || '').trim()) throw new ApiError(422, 'Subject and details are required');
   let parsedCustom = {};
   if (customData) {
     try {
@@ -69,13 +70,22 @@ exports.create = asyncHandler(async (req, res) => {
     }
   }
 
-  let user = req.user;
-  if (!user) {
-    const { name, email, phone } = req.body;
-    if (!name || !email) throw new ApiError(422, 'Name and email are required to open a ticket');
-    user = await ticketService.findOrCreateUser({ name, email, phone, company: req.companyId });
-  } else if (user.createdBy && !hasPermission(user, USER_PERMISSIONS.TICKET_CREATE)) {
+  const user = req.user;
+  if (!hasPermission(user, USER_PERMISSIONS.TICKET_CREATE)) {
     throw new ApiError(403, 'You do not have permission to create tickets');
+  }
+
+  const companyId = req.companyId;
+  if (topic) {
+    const topicQuery = { _id: topic, status: 'active', isPublic: true };
+    if (companyId) topicQuery.$or = [{ company: companyId }, { company: null }];
+    const selectedTopic = await HelpTopic.findOne(topicQuery).select('_id');
+    if (!selectedTopic) throw new ApiError(422, 'Invalid help topic');
+  }
+
+  if (priority) {
+    const { isValidPriority } = require('../services/priority.service');
+    if (!(await isValidPriority(priority, companyId))) throw new ApiError(422, 'Invalid ticket priority');
   }
 
   const ticketOwner = getOrgOwner(user) || user._id;
@@ -90,8 +100,8 @@ exports.create = asyncHandler(async (req, res) => {
     user,
     orgOwner: ticketOwner,
     createdBy: user._id,
-    subject,
-    details,
+    subject: subject.trim(),
+    details: details.trim(),
     topicId: topic || null,
     priority,
     source: 'web',
@@ -151,6 +161,9 @@ const loadTicketWithAccess = async (req, { requirePermission = null } = {}) => {
   if (!ownerId || String(ticket.user) !== String(ownerId)) {
     throw new ApiError(403, 'You do not have access to this ticket');
   }
+  if (req.companyId && ticket.company && String(ticket.company) !== String(req.companyId)) {
+    throw new ApiError(403, 'You do not have access to this ticket');
+  }
   if (requirePermission && !hasPermission(req.user, requirePermission)) {
     throw new ApiError(403, 'You do not have permission to perform this action');
   }
@@ -198,6 +211,7 @@ exports.reply = asyncHandler(async (req, res) => {
     attachments,
   });
 
+  require('../services/audit.service').audit({ company: ticket.company || req.companyId || null, actorType: 'user', actor: req.user._id, actorName: req.user.name, action: 'ticket.comment_added', entityType: 'ticket', entityId: ticket._id, after: { attachmentCount: attachments.length, hasAttachments: attachments.length > 0 }, req });
   await notifyOwnerOfEmployeeAction({ ticket, user: req.user, type: 'reply', action: 'replied' });
 
   const ctx = await ticketService.buildTicketContext(ticket);
@@ -346,7 +360,7 @@ exports.referTicket = asyncHandler(async (req, res) => {
     await targetTeam.save();
   }
   if (targetDeptId) {
-    const targetDept = await Dept.findById(targetDeptId);
+    const targetDept = await Department.findById(targetDeptId);
     if (!targetDept) throw new ApiError(404, 'Target department not found');
     targetDept.referredTickets = targetDept.referredTickets || [];
     targetDept.referredTickets.push(referral);

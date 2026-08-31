@@ -53,13 +53,24 @@ const notifyAgent = async ({ agentId, type, message, link, ticket, company }) =>
     if (io) io.to(`agent:${agentId}`).emit('notification', { type, message, link, ticket });
     if (mode === 'email' || mode === 'both') {
       const emailService = require('./email.service');
-      emailService.sendFromTemplate({
+      const quietHours = require('./quietHours.service');
+      const sendEmail = () => emailService.sendFromTemplate({
         key: 'notification',
         to: pref.email,
         data: { message, link, type, agent: { name: pref.name || '' }, ticketNumber: ticket && typeof ticket === 'object' && ticket.number ? ticket.number : '' },
         event: 'notification',
         ticket: ticket && typeof ticket === 'object' ? ticket._id || null : null,
         company,
+      }).catch(() => {});
+      // §2.36 quiet-hours: non-urgent agent emails are deferred during curfew
+      await quietHours.sendOrDefer({
+        channel: 'email',
+        type,
+        recipientType: 'agent',
+        recipient: agentId,
+        payload: { templateKey: 'notification', to: pref.email, data: { message, link, type } },
+        sendFn: sendEmail,
+        tenantId: company || null,
       }).catch(() => {});
     }
   } catch (err) {

@@ -2,7 +2,13 @@ const mongoose = require('mongoose');
 
 const notificationSchema = new mongoose.Schema(
   {
-    company: { type: mongoose.Schema.Types.ObjectId, ref: 'Company', default: null, index: true },
+    company: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Company',
+      default: null,
+      index: true,
+      set: (v) => (v && v !== 'undefined' && v !== 'null' ? v : null),
+    },
     recipientType: { type: String, enum: ['agent', 'user', 'superadmin'], required: true },
     recipient: { type: mongoose.Schema.Types.ObjectId, required: true, index: true },
     type: {

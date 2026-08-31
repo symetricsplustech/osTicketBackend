@@ -1,7 +1,9 @@
+// Load environment files before validating variables derived from them.
+const config = require('./config/config');
+require('./config/validateEnv').validateEnv();
 const http = require('http');
 const dns = require("dns");
 const app = require('./app');
-const config = require('./config/config');
 const connectDB = require('./config/db');
 const { setIO } = require('./config/socket');
 const { scheduleOverdueCheck } = require('./services/sla.service');
@@ -15,6 +17,8 @@ const DNS_SERVERS = config.dnsServers || ["8.8.8.8", "1.1.1.1"];
 dns.setServers(DNS_SERVERS);
 const start = async () => {
   await connectDB();
+  const { createIndexes } = require('./scripts/createIndexes');
+  await createIndexes().catch(err => logger.error('Index creation failed:', err.message));
   await ensureDefaults().catch((err) => logger.error(`ensureDefaults failed: ${err.message}`));
 
   const server = http.createServer(app);

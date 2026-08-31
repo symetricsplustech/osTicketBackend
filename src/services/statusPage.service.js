@@ -1,6 +1,7 @@
 const StatusPage = require('../models/StatusPage');
 const StatusIncident = require('../models/StatusIncident');
 const Incident = require('../models/Incident');
+const Ticket = require('../models/Ticket');
 const User = require('../models/User');
 const Organization = require('../models/Organization');
 const { notifyUser, notifyAgent } = require('./notification.service');
@@ -141,7 +142,6 @@ async function detectOutageSignals({ company, minTickets = 5, windowMinutes = 60
   const signals = [];
   for (const [intent, list] of Object.entries(groups)) {
     if (list.length >= minTickets) {
-      const Ticket = require('../models/Ticket');
       const subjects = list.slice(0, 8).map((t) => t.subject);
       const keyword = commonKeyword(subjects);
       const matched = list.filter((t) => !keyword || t.subject.toLowerCase().includes(keyword.toLowerCase()));

@@ -39,7 +39,7 @@ const config = {
     admin: process.env.ADMIN_URL || 'http://localhost:5175',
     superadmin: process.env.SUPERADMIN_URL || 'http://localhost:5176',
   },
-  corsOrigins: (process.env.CORS_ORIGINS || 'http://localhost:5173,http://localhost:5174,http://localhost:5175,http://localhost:5176')
+  corsOrigins: (process.env.CORS_ORIGINS || 'http://localhost:5173,http://localhost:5174,http://localhost:5175,http://localhost:5176,http://localhost:3001')
     .split(',')
     .map((s) => s.trim()),
   razorpay: {
@@ -56,18 +56,6 @@ const config = {
   escalation: {
     enabled: process.env.ESCALATION_ENABLED === 'true',
     intervalMinutes: parseInt(process.env.ESCALATION_INTERVAL_MINUTES, 10) || 5,
-  },
-  ai: {
-    // Provider-agnostic: any OpenAI-compatible chat completions endpoint
-    provider: process.env.AI_PROVIDER || (process.env.OPENAI_API_KEY ? 'openai' : 'none'),
-    apiUrl: process.env.AI_API_URL || 'https://api.openai.com/v1',
-    apiKey: process.env.AI_API_KEY || process.env.OPENAI_API_KEY || '',
-    model: process.env.AI_MODEL || 'gpt-4o-mini',
-    maxTokens: parseInt(process.env.AI_MAX_TOKENS, 10) || 500,
-    timeoutMs: parseInt(process.env.AI_TIMEOUT_MS, 10) || 15000,
-    // Auto-resolution: AI replies to simple tickets when confident
-    autoResolveEnabled: process.env.AI_AUTORESOLVE_ENABLED === 'true',
-    autoResolveThreshold: parseFloat(process.env.AI_AUTORESOLVE_THRESHOLD || '0.8'),
   },
   workflow: {
     timerIntervalMinutes: parseInt(process.env.WORKFLOW_TIMER_INTERVAL_MINUTES, 10) || 5,

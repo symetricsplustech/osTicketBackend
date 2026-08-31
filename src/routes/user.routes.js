@@ -1,10 +1,10 @@
 const express = require('express');
-const { protectUser } = require('../middleware/auth');
+const { protectTenantPrincipal } = require('../middleware/auth');
 const ctrl = require('../controllers/user.controller');
 
 const router = express.Router();
 
-router.use(protectUser);
+router.use(protectTenantPrincipal);
 
 router.get('/permissions-meta', ctrl.permissionsMeta);
 router.get('/employees', ctrl.listEmployees);

@@ -82,7 +82,6 @@ const MODELS = [
   require('../models/ServiceCatalogItem'),
   require('../models/Integration'),
   require('../models/AuditEvent'),
-  require('../models/AiSnapshot'),
   require('../models/HealthScore'),
 ];
 
@@ -139,7 +138,11 @@ const run = async () => {
       password: 'SuperAdmin@123',
       role: 'super_admin',
       isActive: true,
+      moduleKeys: ['helpdesk', 'crm', 'csm', 'itam', 'itom', 'projects', 'hr', 'field-service', 'workflow', 'analytics', 'settings'],
     });
+  } else {
+    superAdmin.moduleKeys = ['helpdesk', 'crm', 'csm', 'itam', 'itom', 'projects', 'hr', 'field-service', 'workflow', 'analytics', 'settings'];
+    await superAdmin.save();
   }
   console.log(`Super admin seeded: ${superAdmin.email} / SuperAdmin@123`);
 
@@ -683,12 +686,10 @@ const run = async () => {
   await SystemSetting.setSetting('schedules.timezone', 'Asia/Kolkata');
   await SystemSetting.setSetting('routing.algorithm', 'skill_based');
   await SystemSetting.setSetting('csat.enabled', true);
-  await SystemSetting.setSetting('ai.enabled', true);
-  await SystemSetting.setSetting('ai.autoResolveEnabled', false);
   console.log('Settings seeded.');
 
   // ----- Assign all seeded data to the demo company -----
-  const companyScoped = [Agent, User, Ticket, TicketThread, Task, Organization, Department, HelpTopic, SlaPlan, Team, Role, CannedResponse, FaqCategory, Faq, Announcement, TicketFilter, Notification, require('../models/Skill'), require('../models/Workflow'), require('../models/Survey'), require('../models/StatusPage'), require('../models/StatusIncident'), require('../models/Webhook'), require('../models/ApiKey'), require('../models/Contract'), require('../models/Entitlement'), require('../models/Asset'), require('../models/Dependency'), require('../models/Incident'), require('../models/Problem'), require('../models/Change'), require('../models/TicketLink'), require('../models/Approval'), require('../models/Conversation'), require('../models/ChatMessage'), require('../models/CallLog'), require('../models/ServiceCatalogItem'), require('../models/Integration'), require('../models/AuditEvent'), require('../models/AiSnapshot'), require('../models/HealthScore')];
+  const companyScoped = [Agent, User, Ticket, TicketThread, Task, Organization, Department, HelpTopic, SlaPlan, Team, Role, CannedResponse, FaqCategory, Faq, Announcement, TicketFilter, Notification, require('../models/Skill'), require('../models/Workflow'), require('../models/Survey'), require('../models/StatusPage'), require('../models/StatusIncident'), require('../models/Webhook'), require('../models/ApiKey'), require('../models/Contract'), require('../models/Entitlement'), require('../models/Asset'), require('../models/Dependency'), require('../models/Incident'), require('../models/Problem'), require('../models/Change'), require('../models/TicketLink'), require('../models/Approval'), require('../models/Conversation'), require('../models/ChatMessage'), require('../models/CallLog'), require('../models/ServiceCatalogItem'), require('../models/Integration'), require('../models/AuditEvent'), require('../models/HealthScore')];
   for (const M of companyScoped) {
     await M.updateMany({ company: null }, { company: demoCompany._id });
   }

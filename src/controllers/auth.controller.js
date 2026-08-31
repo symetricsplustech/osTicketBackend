@@ -10,6 +10,8 @@ const { findOrCreateUser, buildTicketContext } = require('../services/ticket.ser
 const emailService = require('../services/email.service');
 const { generateConfirmationToken } = require('../utils/generators');
 const config = require('../config/config');
+const Company = require('../models/Company');
+const mongoose = require('mongoose');
 
 const sendTokenResponse = (user, type, res, status = 200) => {
   const token = signToken({ id: user._id, type });
@@ -31,7 +33,10 @@ const auditLogin = ({ actorType, actor, actorName, company, req, action }) => {
 
 exports.register = asyncHandler(async (req, res) => {
   const { name, email, password, phone, company } = req.body;
-  const companyId = company || req.companyId || null;
+  const companyId = company || req.companyId;
+  if (!companyId || !mongoose.isValidObjectId(companyId)) throw new ApiError(422, 'A valid tenant invitation or company identifier is required');
+  const activeCompany = await Company.findById(companyId).select('_id status');
+  if (!activeCompany || !activeCompany.isActive()) throw new ApiError(422, 'The selected tenant is not active');
   const userQuery = { email: (email || '').toLowerCase() };
   if (companyId) userQuery.company = companyId;
   else userQuery.company = null;
@@ -120,7 +125,10 @@ exports.portalLogin = asyncHandler(async (req, res) => {
     superAdmin.lastLogin = new Date();
     await superAdmin.save();
     const token = signToken({ id: superAdmin._id, type: 'superadmin' });
-    return res.json({ success: true, token, user: superAdmin, role: 'superadmin' });
+    // Superadmin: if permissions array is empty, grant wildcard '*' (all permissions)
+    const permissions = (superAdmin.permissions && superAdmin.permissions.length > 0) ? superAdmin.permissions : ['*'];
+    const moduleKeys = superAdmin.moduleKeys || [];
+    return res.json({ success: true, token, user: superAdmin, role: 'superadmin', permissions, moduleKeys });
   }
 
   const agent = await Agent.findOne({ email: norm }).populate('role');
@@ -130,7 +138,19 @@ exports.portalLogin = asyncHandler(async (req, res) => {
     await agent.save();
     auditLogin({ actorType: 'agent', actor: agent._id, actorName: agent.name, company: agent.company || null, req, action: 'auth.portal_login' });
     const token = signToken({ id: agent._id, type: 'agent' });
-    return res.json({ success: true, token, user: agent, role: isAdmin ? 'admin' : 'agent' });
+    const rolePermissions = agent.role?.permissions || [];
+    const agentPermissions = agent.permissions || [];
+    const permissions = [...new Set([...rolePermissions, ...agentPermissions])];
+    // Get activated modules from tenant_modules collection (the source of truth)
+    let moduleKeys = [];
+    if (agent.company) {
+      const mongoose = require('mongoose');
+      const tenantModules = await mongoose.connection.db.collection('tenant_modules')
+        .find({ tenantId: new mongoose.Types.ObjectId(agent.company), status: 'active' })
+        .toArray();
+      moduleKeys = tenantModules.map(m => m.moduleKey);
+    }
+    return res.json({ success: true, token, user: agent, role: isAdmin ? 'admin' : 'agent', permissions, moduleKeys });
   }
 
   const user = await User.findOne({ email: norm });
@@ -138,7 +158,17 @@ exports.portalLogin = asyncHandler(async (req, res) => {
     user.lastLogin = new Date();
     await user.save();
     const token = signToken({ id: user._id, type: 'user' });
-    return res.json({ success: true, token, user, role: 'customer' });
+    const permissions = user.permissions || [];
+    // Get activated modules from tenant_modules collection
+    let moduleKeys = [];
+    if (user.company) {
+      const mongoose = require('mongoose');
+      const tenantModules = await mongoose.connection.db.collection('tenant_modules')
+        .find({ tenantId: new mongoose.Types.ObjectId(user.company), status: 'active' })
+        .toArray();
+      moduleKeys = tenantModules.map(m => m.moduleKey);
+    }
+    return res.json({ success: true, token, user, role: 'customer', permissions, moduleKeys });
   }
 
   throw new ApiError(401, 'Invalid email or password');
@@ -161,7 +191,16 @@ exports.adminLogin = asyncHandler(async (req, res) => {
   await agent.save();
   auditLogin({ actorType: 'agent', actor: agent._id, actorName: agent.name, company: agent.company || null, req, action: 'auth.admin_login' });
   const token = signToken({ id: agent._id, type: 'agent' });
-  res.json({ success: true, token, user: agent });
+  // Get activated modules from tenant_modules collection
+  let moduleKeys = [];
+  if (agent.company) {
+    const mongoose = require('mongoose');
+    const tenantModules = await mongoose.connection.db.collection('tenant_modules')
+      .find({ tenantId: new mongoose.Types.ObjectId(agent.company), status: 'active' })
+      .toArray();
+    moduleKeys = tenantModules.map(m => m.moduleKey);
+  }
+  res.json({ success: true, token, user: agent, moduleKeys });
 });
 
 exports.confirmEmail = asyncHandler(async (req, res) => {

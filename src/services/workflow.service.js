@@ -307,19 +307,81 @@ const executeAction = async (action, ctx) => {
   }
 };
 
+// Branch condition evaluation against workflow context (ticket-centric)
+const evalBranchCondition = (cond, ctx) => {
+  if (!cond || !cond.field) return true;
+  const raw = cond.source === 'payload' ? payloadGet(ctx, cond.field) : (ctx.ticket ? ctx.ticket[cond.field] : undefined);
+  const actual = Array.isArray(raw) ? raw.join(',') : raw;
+  const target = cond.value;
+  switch ((cond.operator || 'equals')) {
+    case 'equals': return String(actual ?? '') === String(target ?? '');
+    case 'not_equals': return String(actual ?? '') !== String(target ?? '');
+    case 'contains': return String(actual ?? '').toLowerCase().includes(String(target ?? '').toLowerCase());
+    case 'gt': return Number(actual) > Number(target);
+    case 'lt': return Number(actual) < Number(target);
+    case 'exists': return actual !== undefined && actual !== null && actual !== '';
+    default: return false;
+  }
+};
+function payloadGet(ctx, path) {
+  return path.split('.').reduce((o, k) => (o == null ? undefined : o[k]), ctx.payload || {});
+}
+
 // ---------------------------------------------------------------------------
 // Runner
 // ---------------------------------------------------------------------------
-async function runWorkflow(workflow, payload) {
+async function runWorkflow(workflow, payload, depth = 0) {
   const ctx = await loadContext({ ...payload, event: workflow.event });
   if (!ctx.ticket && workflow.conditions.some((c) => ['priority', 'status', 'dept', 'topic', 'source', 'subject', 'sentiment', 'language', 'entitlement', 'waiting_on', 'is_overdue'].includes(c.field))) {
     return false;
   }
   if (!(await evalConditions(workflow, ctx))) return false;
 
-  const actions = [...(workflow.actions || [])].sort((a, b) => (a.delayMinutes || 0) - (b.delayMinutes || 0));
-  for (const action of actions) {
+  const runList = async (list, depth = 0) => {
+    for (const sub of list || []) {
+      try {
+        if (sub.type === 'parallel') {
+          // Parallel branches: all branch arrays execute concurrently
+          const branches = sub.branches && sub.branches.length ? sub.branches : [sub.subActions || []];
+          await Promise.all(branches.map(branch => runList(branch, depth)));
+          continue;
+        }
+        if (sub.type === 'loop') {
+          // Guarded loop: max iterations hard-capped at 50
+          let i = 0;
+          const maxIter = Math.min(sub.maxIterations || 10, 50);
+          while (i < maxIter && evalBranchCondition(sub.loopCondition || sub.condition, ctx)) {
+            await runList(sub.subActions || [], depth);
+            i++;
+            if (sub.incrementField && ctx.ticket) { /* optional counter bump handled by actions themselves */ }
+          }
+          continue;
+        }
+        if (sub.type === 'subflow') {
+          if (depth >= 3) throw new Error('max subflow depth');
+          const SubWf = sub.workflowId
+            ? await Workflow.findById(sub.workflowId)
+            : await Workflow.findOne({ name: sub.workflowName });
+          if (SubWf) await runWorkflow(SubWf, { ...ctx.payload, ...(sub.payloadOverrides || {}) }, depth + 1);
+          continue;
+        }
+        if (sub.branchCondition && !evalBranchCondition(sub.branchCondition, ctx)) continue;
+        if (sub.delayMinutes && sub.delayMinutes > 0) scheduleDelayed(workflow, sub, ctx);
+        else await executeAction(sub, ctx);
+      } catch (err) { /* isolated */ }
+    }
+  };
+
+  for (const action of [...(workflow.actions || [])].sort((a, b) => (a.delayMinutes || 0) - (b.delayMinutes || 0))) {
     try {
+      if (['parallel', 'loop', 'subflow'].includes(action.type)) { await runList([action], 0); continue; }
+      if (action.type === 'condition' || action.thenActions || action.elseActions) {
+        // True if/else fork: only the matching branch executes
+        const taken = evalBranchCondition(action.condition || action.branchCondition, ctx);
+        await runList(taken ? (action.thenActions || []) : (action.elseActions || []));
+        continue;
+      }
+      if (action.branchCondition && !evalBranchCondition(action.branchCondition, ctx)) continue;
       if (action.delayMinutes && action.delayMinutes > 0) {
         scheduleDelayed(workflow, action, ctx);
       } else {
@@ -354,7 +416,14 @@ const handleEvent = async (eventName, payload) => {
     if (company) query.company = company;
     const workflows = await Workflow.find(query).sort({ createdAt: 1 });
     for (const wf of workflows) {
-      await runWorkflow(wf, payload);
+      try {
+        await runWorkflow(wf, payload);
+      } catch (wfErr) {
+        try {
+          const P6 = require('../models/Platform6');
+          await P6.OutboxEvent.create({ eventType: 'workflow.deadletter', payload: { workflowId: String(wf._id), error: wfErr.message }, tenantId: wf.tenantId || wf.company });
+        } catch (_) {}
+      }
     }
   } catch (err) {
     // ignore workflow errors

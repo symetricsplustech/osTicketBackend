@@ -1,7 +1,8 @@
 const express = require('express');
 const { body } = require('express-validator');
 const validate = require('../middleware/validate');
-const { protectUser, protectAgent } = require('../middleware/auth');
+const { protectAgent, protectTenantPrincipal } = require('../middleware/auth');
+const { getTenantModules, activateModules, deactivateModule } = require('../middleware/module');
 const ctrl = require('../controllers/auth.controller');
 
 const router = express.Router();
@@ -68,12 +69,17 @@ router.post(
   ctrl.resetPassword
 );
 
-router.get('/me', protectUser, ctrl.getMe);
-router.put('/me', protectUser, ctrl.updateProfile);
+router.get('/me', protectTenantPrincipal, ctrl.getMe);
+router.put('/me', protectTenantPrincipal, ctrl.updateProfile);
 router.get('/agent/me', protectAgent, ctrl.getAgentMe);
 router.put('/agent/me', protectAgent, ctrl.updateAgentProfile);
 
-router.post('/enable-two-factor', protectUser, ctrl.enableTwoFactor);
-router.post('/disable-two-factor', protectUser, ctrl.disableTwoFactor);
+router.post('/enable-two-factor', protectTenantPrincipal, ctrl.enableTwoFactor);
+router.post('/disable-two-factor', protectTenantPrincipal, ctrl.disableTwoFactor);
+
+// Module activation
+router.get('/modules', protectTenantPrincipal, getTenantModules);
+router.post('/modules', protectTenantPrincipal, activateModules);
+router.delete('/modules/:moduleKey', protectTenantPrincipal, deactivateModule);
 
 module.exports = router;

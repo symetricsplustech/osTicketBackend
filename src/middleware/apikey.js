@@ -19,7 +19,8 @@ const protectApiKey = asyncHandler(async (req, res, next) => {
   if (key.expiresAt && new Date(key.expiresAt) < new Date()) throw new ApiError(401, 'API key expired');
   await ApiKey.updateOne({ _id: key._id }, { $set: { lastUsedAt: new Date() } });
   req.apiKey = key;
-  req.companyId = key.company || null;
+  if (!key.company) throw new ApiError(403, 'API key is not assigned to a tenant');
+  req.companyId = key.company;
   req.apiScopes = key.scopes || [];
   next();
 });

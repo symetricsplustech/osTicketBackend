@@ -1,11 +1,31 @@
 const express = require('express');
-const { protectAgent } = require('../middleware/auth');
+const { protectTenantPrincipal } = require('../middleware/auth');
+const { moduleRequired } = require('../middleware/module');
 const { upload } = require('../config/multer');
 const ctrl = require('../controllers/agent.controller');
 
 const router = express.Router();
 
-router.use(protectAgent);
+router.use(protectTenantPrincipal);
+router.use((req, res, next) => {
+  if (!req.agent) {
+    const principal = req.user || req.superAdmin;
+    const isSuperAdmin = !!req.superAdmin;
+    req.agent = {
+      _id: principal._id,
+      name: principal.name,
+      email: principal.email,
+      isAdmin: true,
+      isSuperAdmin,
+      company: req.companyId || null,
+      departments: [],
+      teams: [],
+      permissions: isSuperAdmin ? ['*'] : [],
+      role: { isAdmin: true },
+    };
+  }
+  next();
+});
 
 // Dashboard & queues
 router.get('/dashboard', ctrl.dashboard);
@@ -18,9 +38,9 @@ router.get('/notifications', ctrl.notifications);
 router.put('/notifications/read', ctrl.markNotificationsRead);
 router.put('/notifications/:id/read', ctrl.markNotificationRead);
 
-// Tickets
-router.get('/tickets', ctrl.listTickets);
-router.post('/tickets', ctrl.create);
+// Tickets (guarded by helpdesk module)
+router.get('/tickets', moduleRequired('helpdesk'), ctrl.listTickets);
+router.post('/tickets', moduleRequired('helpdesk'), ctrl.create);
 router.get('/tickets/export', ctrl.exportTickets);
 router.get('/tickets/:number', ctrl.getTicket);
 router.post('/tickets/:number/reply', upload.array('files', 5), ctrl.reply);

@@ -11,7 +11,16 @@
     "seed:reset": "node src/seed/run.js --reset",
     "seed:emails": "node scripts/seed-test-users.js",
     "fetch:email": "node scripts/fetch-inbound-email.js",
-    "lint": "eslint src --ext .js"
+    "lint": "eslint src --ext .js",
+    "test:tenant-isolation": "node tests/tenant-isolation.test.js",
+    "test:platform-role-boundary": "node tests/platform-role-boundary.test.js",
+    "test:organization-hierarchy": "node tests/organization-hierarchy.test.js",
+    "test:organization-unit-labels": "node tests/organization-unit-labels.test.js",
+    "test:itsm-ticket-portal-intake": "node tests/itsm-ticket-portal-intake.test.js",
+    "test:itsm-ticket-read": "node tests/itsm-ticket-read.test.js",
+    "test:itsm-ticket-comment": "node tests/itsm-ticket-comment.test.js",
+    "test:itsm-ticket-assign": "node tests/itsm-ticket-assign.test.js",
+    "test:helpdesk-agent-contract": "node tests/helpdesk-agent-contract.test.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
@@ -21,6 +30,7 @@
     "express": "^4.19.2",
     "express-rate-limit": "^7.4.0",
     "express-validator": "^7.2.0",
+    "fast-xml-parser": "^5.11.0",
     "helmet": "^7.1.0",
     "imapflow": "^1.6.6",
     "jsonwebtoken": "^9.0.2",
@@ -29,11 +39,14 @@
     "morgan": "^1.10.0",
     "multer": "^1.4.5-lts.1",
     "nodemailer": "^6.9.14",
+    "qrcode": "^1.5.4",
     "razorpay": "^2.9.8",
-    "socket.io": "^4.7.5"
+    "socket.io": "^4.7.5",
+    "xml-crypto": "^6.1.2"
   },
   "devDependencies": {
     "@vercel/node": "^5.9.9",
+    "eslint": "^8.57.1",
     "nodemon": "^3.1.4"
   }
 }

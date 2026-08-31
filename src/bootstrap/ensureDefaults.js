@@ -1,4 +1,5 @@
 const SuperAdmin = require('../models/SuperAdmin');
+const Role = require('../models/Role');
 const logger = require('../utils/logger');
 
 let ensured = false;
@@ -22,10 +23,20 @@ const ensureSuperAdmin = async () => {
   return created;
 };
 
+const ensureRoleScopes = async () => {
+  const legacyRoles = await Role.find({ scope: { $exists: false } });
+  for (const role of legacyRoles) {
+    role.scope = role.company ? 'tenant' : 'platform';
+    if (role.scope === 'platform') role.category = 'platform';
+    await role.save();
+  }
+};
+
 const ensureDefaults = async () => {
   if (ensured) return;
+  await ensureRoleScopes();
   await ensureSuperAdmin();
   ensured = true;
 };
 
-module.exports = { ensureDefaults, ensureSuperAdmin };
+module.exports = { ensureDefaults, ensureSuperAdmin, ensureRoleScopes };

@@ -70,11 +70,21 @@ const scopeTicketQuery = (agent, query = {}) => {
   return query;
 };
 
+const toId = (value) => {
+  if (value == null) return null;
+  if (typeof value === 'object' && value._id) return String(value._id);
+  return String(value);
+};
+
 const canAccessTicket = async (agent, ticket) => {
   if (isAdminAgent(agent) || hasPerm(agent, 'tickets.view')) return true;
-  if (ticket.agent && String(ticket.agent) === String(agent._id)) return true;
-  if (ticket.dept && getAgentDeptIds(agent).includes(String(ticket.dept))) return true;
-  if (ticket.team && getAgentTeamIds(agent).includes(String(ticket.team))) return true;
+  const agentId = toId(agent?._id);
+  const ticketAgent = toId(ticket.agent);
+  const ticketDept = toId(ticket.dept);
+  const ticketTeam = toId(ticket.team);
+  if (ticketAgent && ticketAgent === agentId) return true;
+  if (ticketDept && getAgentDeptIds(agent).includes(ticketDept)) return true;
+  if (ticketTeam && getAgentTeamIds(agent).includes(ticketTeam)) return true;
   return false;
 };
 
@@ -236,6 +246,7 @@ exports.reply = asyncHandler(async (req, res) => {
     attachments,
   });
   await ticketService.addSystemEvent({ ticket, message: `Response posted by ${req.agent.name}` });
+  require('../services/audit.service').audit({ company: ticket.company, actorType: 'agent', actor: req.agent._id, actorName: req.agent.name, action: 'ticket.replied', entityType: 'ticket', entityId: ticket._id, after: { attachmentCount: attachments.length, hasAttachments: attachments.length > 0 }, req });
   await notifyMentionedAgents({ ticket, message, actor: req.agent, company: ticket.company });
   const ctx = await ticketService.buildTicketContext(ticket);
   try {
@@ -297,6 +308,7 @@ exports.addNote = asyncHandler(async (req, res) => {
     title: 'Internal Note',
     body: message,
   });
+  require('../services/audit.service').audit({ company: ticket.company, actorType: 'agent', actor: req.agent._id, actorName: req.agent.name, action: 'ticket.note_added', entityType: 'ticket', entityId: ticket._id, after: { note: true }, req });
   await notifyMentionedAgents({ ticket, message, actor: req.agent, company: ticket.company });
   const threads = await TicketThread.find({ ticket: ticket._id, deletedAt: null }).sort({ createdAt: 1 }).populate('user', 'name email').populate('agent', 'name');
   res.json({ success: true, message: 'Note added', threads });
@@ -308,10 +320,10 @@ exports.assign = asyncHandler(async (req, res) => {
   assertNotLocked(ticket, req.agent);
   const { agentId, teamId } = req.body;
   if (agentId === undefined && teamId === undefined) throw new ApiError(422, 'Select an agent or team to assign');
-  const assignedTo = agentId ? await Agent.findById(agentId) : null;
-  const assignedTeam = teamId ? await Team.findById(teamId) : null;
-  if (agentId && !assignedTo) throw new ApiError(404, 'Agent not found');
-  if (teamId && !assignedTeam) throw new ApiError(404, 'Team not found');
+  const assignedTo = agentId ? await Agent.findOne({ _id: agentId, company: ticket.company, isActive: true }) : null;
+  const assignedTeam = teamId ? await Team.findOne({ _id: teamId, company: ticket.company }) : null;
+  if (agentId && !assignedTo) throw new ApiError(404, 'Agent not found in this tenant');
+  if (teamId && !assignedTeam) throw new ApiError(404, 'Team not found in this tenant');
   ticket.agent = assignedTo?._id || null;
   ticket.team = assignedTeam?._id || null;
   if (assignedTo || assignedTeam) {
@@ -326,6 +338,7 @@ exports.assign = asyncHandler(async (req, res) => {
     ticket,
     message: `Ticket assigned to ${assignedTo ? assignedTo.name : assignedTeam ? assignedTeam.name : 'nobody'} by ${req.agent.name}`,
   });
+  require('../services/audit.service').audit({ company: ticket.company, actorType: 'agent', actor: req.agent._id, actorName: req.agent.name, action: 'ticket.assigned', entityType: 'ticket', entityId: ticket._id, after: { agentId: assignedTo?._id || null, teamId: assignedTeam?._id || null }, req });
   emit('ticket.assigned', { company: ticket.company, ticketId: ticket._id, ticketNumber: ticket.number, agentId: assignedTo?._id || null, teamId: assignedTeam?._id || null, actor: req.agent._id });
   if (assignedTo) {
     await notifyAgent({ agentId: assignedTo._id, company: ticket.company, type: 'assignment', message: `Ticket ${ticket.number} assigned to you`, link: `/tickets/${ticket.number}`, ticket: ticket._id });
@@ -343,11 +356,12 @@ exports.transfer = asyncHandler(async (req, res) => {
   assertNotLocked(ticket, req.agent);
   const { deptId } = req.body;
   if (!deptId) throw new ApiError(422, 'Select a department to transfer to');
-  const dept = await Department.findById(deptId);
-  if (!dept) throw new ApiError(404, 'Department not found');
+  const dept = await Department.findOne({ _id: deptId, company: ticket.company });
+  if (!dept) throw new ApiError(404, 'Department not found in this tenant');
   ticket.dept = dept._id;
   await ticket.save();
   await ticketService.addSystemEvent({ ticket, message: `Ticket transferred to ${dept.name} by ${req.agent.name}` });
+  require('../services/audit.service').audit({ company: ticket.company, actorType: 'agent', actor: req.agent._id, actorName: req.agent.name, action: 'ticket.transferred', entityType: 'ticket', entityId: ticket._id, after: { deptId: dept._id, deptName: dept.name }, req });
   emit('ticket.transferred', { company: ticket.company, ticketId: ticket._id, ticketNumber: ticket.number, deptId: dept._id, actor: req.agent._id });
   const deptAgents = await Agent.find({ 'departments.department': dept._id, isActive: true });
   for (const a of deptAgents) {
@@ -501,6 +515,7 @@ exports.claim = asyncHandler(async (req, res) => {
     ticket,
     message: `${req.agent.name} ${claimed ? 'claimed' : 'took over'} this ticket`,
   });
+  require('../services/audit.service').audit({ company: ticket.company, actorType: 'agent', actor: req.agent._id, actorName: req.agent.name, action: 'ticket.claimed', entityType: 'ticket', entityId: ticket._id, after: { agentId: req.agent._id, claimed }, req });
   emit('ticket.claimed', { company: ticket.company, ticketId: ticket._id, ticketNumber: ticket.number, agentId: req.agent._id, actor: req.agent._id });
   res.json({ success: true, message: 'Ticket claimed', ticket });
 });
