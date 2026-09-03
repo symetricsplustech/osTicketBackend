@@ -17,4 +17,6 @@ const emailLogSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+emailLogSchema.index({ 'meta.messageId': 1 }, { sparse: true });
+
 module.exports = mongoose.model('EmailLog', emailLogSchema);

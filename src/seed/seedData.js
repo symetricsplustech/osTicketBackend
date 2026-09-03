@@ -116,6 +116,30 @@ Please review and respond as soon as possible.
     context: 'ticket',
   },
   {
+    key: 'ticket_resolved',
+    name: 'Ticket Resolved',
+    description: 'Sent to the customer when an agent marks their ticket resolved, asking them to confirm.',
+    subject: 'Re: %{ticket.subject} [resolved #%{ticket.number}]',
+    body: `Dear %{user.name},
+
+Our team believes ticket #%{ticket.number} is now resolved.
+
+Subject: %{ticket.subject}
+
+If this fixes your issue, no action is needed — the ticket will close automatically.
+If the issue remains, simply reply to this email and the ticket will reopen.
+
+To view the full thread, please visit:
+%{urls.ticket}
+
+Regards,
+%{company.name}`,
+    trigger: 'ticket_resolved',
+    recipient: 'user',
+    isActive: true,
+    context: 'ticket',
+  },
+  {
     key: 'ticket_closed',
     name: 'Ticket Closed',
     description: 'Sent to the customer when their ticket is closed.',

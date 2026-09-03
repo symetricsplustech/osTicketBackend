@@ -6,6 +6,7 @@ const TRIGGERS = [
   { value: 'new_reply_alert', label: 'Customer replied — staff alert', recipient: 'staff' },
   { value: 'ticket_response', label: 'Staff responded to ticket', recipient: 'user' },
   { value: 'ticket_assigned', label: 'Ticket assigned to agent', recipient: 'agent' },
+  { value: 'ticket_resolved', label: 'Ticket resolved — awaiting customer confirmation', recipient: 'user' },
   { value: 'ticket_closed', label: 'Ticket closed', recipient: 'user' },
   { value: 'welcome_user', label: 'Customer account created', recipient: 'user' },
   { value: 'employee_welcome', label: 'Employee account created', recipient: 'user' },

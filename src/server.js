@@ -7,6 +7,7 @@ const app = require('./app');
 const connectDB = require('./config/db');
 const { setIO } = require('./config/socket');
 const { scheduleOverdueCheck } = require('./services/sla.service');
+const { scheduleAutoCloseCheck } = require('./services/ticket.service');
 const { startInboundPoller } = require('./services/inboundEmail.service');
 const { startEscalationRunner } = require('./services/escalation.service');
 const { initWorkflowEngine } = require('./services/workflow.service');
@@ -25,6 +26,7 @@ const start = async () => {
   setIO(server);
 
   scheduleOverdueCheck();
+  scheduleAutoCloseCheck();
   startInboundPoller();
   startEscalationRunner();
   initWorkflowEngine();

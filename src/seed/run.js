@@ -30,7 +30,7 @@ const Invoice = require('../models/Invoice');
 const AuditLog = require('../models/AuditLog');
 const TicketStatus = require('../models/TicketStatus');
 const { emailTemplates } = require('./seedData');
-const { generateTicketNumber } = require('../utils/generators');
+const { nextTicketNumber } = require('../services/numbering.service');
 const { computeDueDate } = require('../services/sla.service');
 
 const MODELS = [
@@ -121,8 +121,9 @@ const run = async () => {
     { name: 'Open', key: 'open', color: '#4a86b0', isDefault: true, sortOrder: 1 },
     { name: 'Assigned', key: 'assigned', color: '#8e6bb0', sortOrder: 2 },
     { name: 'Overdue', key: 'overdue', color: '#c0392b', sortOrder: 3 },
-    { name: 'Closed', key: 'closed', color: '#6c757d', sortOrder: 4 },
-    { name: 'Archived', key: 'archived', color: '#95a5a6', sortOrder: 5 },
+    { name: 'Resolved', key: 'resolved', color: '#16a34a', sortOrder: 4 },
+    { name: 'Closed', key: 'closed', color: '#6c757d', sortOrder: 5 },
+    { name: 'Archived', key: 'archived', color: '#95a5a6', sortOrder: 6 },
   ];
   for (const s of defaultStatuses) {
     await require('../models/TicketStatus').findOneAndUpdate({ key: s.key }, s, { upsert: true });
@@ -330,7 +331,7 @@ const run = async () => {
 
   // ----- Tickets -----
   const mkTicket = async ({ user, topic, dept, priority, subject, source, status, agent, team, sla, created, lastActivity, body, responses = 0 }) => {
-    const number = generateTicketNumber();
+    const number = await nextTicketNumber();
     const dueDate = await computeDueDate(sla, created);
     const t = await Ticket.create({
       number,

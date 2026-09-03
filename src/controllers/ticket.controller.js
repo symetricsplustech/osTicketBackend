@@ -52,7 +52,12 @@ exports.openForm = asyncHandler(async (req, res) => {
       }
     }
   } catch (_) { /* non-blocking */ }
-  res.json({ success: true, topics, departments, settings, emailToTicket, supportInbox, supportCompany, customFields, forms, priorities });
+  // Per-mailbox routing table: departments with an inbox email act as
+  // channels (billing@ -> Billing + Billing SLA). Portal shows this table.
+  const mailboxes = departments
+    .filter((d) => d.email)
+    .map((d) => ({ dept: d.name, deptId: d._id, inbox: d.email }));
+  res.json({ success: true, topics, departments, settings, emailToTicket, supportInbox, supportCompany, mailboxes, customFields, forms, priorities });
 });
 
 exports.getMyTickets = asyncHandler(async (req, res) => {
@@ -281,12 +286,14 @@ exports.reopenTicket = asyncHandler(async (req, res) => {
   if (settings.system.allowTicketReopen === false) {
     throw new ApiError(400, 'Ticket reopening is disabled');
   }
-  if (ticket.status !== Ticket.STATUSES.CLOSED) {
-    throw new ApiError(400, 'Ticket is not closed');
+  if (ticket.status !== Ticket.STATUSES.CLOSED && ticket.status !== Ticket.STATUSES.RESOLVED) {
+    throw new ApiError(400, 'Only resolved or closed tickets can be reopened');
   }
   ticket.status = Ticket.STATUSES.OPEN;
   ticket.closedAt = null;
   ticket.closedBy = null;
+  ticket.resolvedAt = null;
+  ticket.resolvedBy = null;
   ticket.stats.reopened += 1;
   await ticket.save();
   await ticketService.addSystemEvent({ ticket, message: 'Ticket reopened by user' });

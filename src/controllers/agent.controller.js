@@ -87,6 +87,7 @@ const canAccessTicket = async (agent, ticket) => {
   if (ticketTeam && getAgentTeamIds(agent).includes(ticketTeam)) return true;
   return false;
 };
+exports.canAccessTicket = canAccessTicket;
 
 const loadTicketForAgent = async (number, agent, opts = {}) => {
   const query = { number: String(number).trim().toUpperCase(), status: { $ne: Ticket.STATUSES.DELETED } };
@@ -112,12 +113,13 @@ exports.dashboard = asyncHandler(async (req, res) => {
   const todayStart = new Date();
   todayStart.setHours(0, 0, 0, 0);
 
-  const [open, assigned, overdue, closed, mine, today, total, unread, latest] = await Promise.all([
+  const [open, assigned, overdue, resolved, closed, mine, today, total, unread, latest] = await Promise.all([
     Ticket.countDocuments({ ...base, status: Ticket.STATUSES.OPEN }),
     Ticket.countDocuments({ ...base, status: Ticket.STATUSES.ASSIGNED }),
     Ticket.countDocuments({ ...base, status: Ticket.STATUSES.OVERDUE }),
+    Ticket.countDocuments({ ...base, status: Ticket.STATUSES.RESOLVED }),
     Ticket.countDocuments({ ...base, status: Ticket.STATUSES.CLOSED }),
-    Ticket.countDocuments({ ...base, $or: [{ agent: agent._id }, { team: { $in: getAgentTeamIds(agent) } }], status: { $nin: [Ticket.STATUSES.CLOSED, Ticket.STATUSES.DELETED] } }),
+    Ticket.countDocuments({ ...base, $or: [{ agent: agent._id }, { team: { $in: getAgentTeamIds(agent) } }], status: { $nin: [Ticket.STATUSES.RESOLVED, Ticket.STATUSES.CLOSED, Ticket.STATUSES.DELETED] } }),
     Ticket.countDocuments({ ...base, createdAt: { $gte: todayStart } }),
     Ticket.countDocuments(base),
     Notification.countDocuments({ recipient: agent._id, recipientType: 'agent', read: false }),
@@ -131,7 +133,7 @@ exports.dashboard = asyncHandler(async (req, res) => {
 
   res.json({
     success: true,
-    stats: { open, assigned, overdue, closed, mine, today, total, unread, byPriority },
+    stats: { open, assigned, overdue, resolved, closed, mine, today, total, unread, byPriority },
     latest,
   });
 });
@@ -140,20 +142,21 @@ exports.queues = asyncHandler(async (req, res) => {
   const agent = req.agent;
   const base = scopeTicketQuery(agent, { status: { $ne: Ticket.STATUSES.DELETED } });
   const count = async (status) => Ticket.countDocuments(status ? { ...base, status } : base);
-  const [all, open, assigned, overdue, closed, archived, mine] = await Promise.all([
+  const [all, open, assigned, overdue, resolved, closed, archived, mine] = await Promise.all([
     count(null),
     count(Ticket.STATUSES.OPEN),
     count(Ticket.STATUSES.ASSIGNED),
     count(Ticket.STATUSES.OVERDUE),
+    count(Ticket.STATUSES.RESOLVED),
     count(Ticket.STATUSES.CLOSED),
     count(Ticket.STATUSES.ARCHIVED),
     Ticket.countDocuments({
       ...base,
-      status: { $nin: [Ticket.STATUSES.CLOSED, Ticket.STATUSES.ARCHIVED, Ticket.STATUSES.DELETED] },
+      status: { $nin: [Ticket.STATUSES.RESOLVED, Ticket.STATUSES.CLOSED, Ticket.STATUSES.ARCHIVED, Ticket.STATUSES.DELETED] },
       $or: [{ agent: agent._id }, { team: { $in: getAgentTeamIds(agent) } }],
     }),
   ]);
-  res.json({ success: true, queues: { all, open, assigned, overdue, closed, archived, mine } });
+  res.json({ success: true, queues: { all, open, assigned, overdue, resolved, closed, archived, mine } });
 });
 
 exports.listTickets = asyncHandler(async (req, res) => {
@@ -374,63 +377,12 @@ exports.changeStatus = asyncHandler(async (req, res) => {
   const ticket = await loadTicketForAgent(req.params.number, req.agent);
   assertNotLocked(ticket, req.agent);
   const { status, closedReason } = req.body;
-  const builtIn = [
-    Ticket.STATUSES.OPEN,
-    Ticket.STATUSES.ASSIGNED,
-    Ticket.STATUSES.OVERDUE,
-    Ticket.STATUSES.CLOSED,
-    Ticket.STATUSES.ARCHIVED,
-  ];
-  const configured = await TicketStatus.find({ isActive: true }).select('key pauseSla isClosed');
-  const valid = new Set([...builtIn, ...configured.map((s) => s.key)]);
-  if (!valid.has(status)) throw new ApiError(422, 'Invalid status');
-  const prev = ticket.status;
-  // Controlled state transitions (MD §65): terminal states exit only via
-  // restore/reopen flows; custom statuses move freely otherwise.
-  require('../services/stateMachine.service').assertTransition(
-    'ticket', prev, status, configured.map((s) => s.key)
-  );
-  ticket.status = status;
-  if (status === Ticket.STATUSES.CLOSED) {
-    ticket.closedAt = new Date();
-    ticket.closedBy = req.agent._id;
-    ticket.lockedBy = null;
-    ticket.lockExpiresAt = null;
-  } else if (status !== Ticket.STATUSES.CLOSED && prev === Ticket.STATUSES.CLOSED) {
-    ticket.closedAt = null;
-    ticket.closedBy = null;
-    ticket.stats.reopened += 1;
-  }
-
-  // ---- Enterprise: SLA pause/resume on configurable statuses ----
-  const statusDef = configured.find((s) => s.key === status);
-  const { pauseSla, resumeSla } = require('../services/sla.service');
-  if (statusDef && statusDef.pauseSla) {
-    await pauseSla(ticket);
-  } else if (ticket.slaPaused) {
-    await resumeSla(ticket);
-  }
-  if (status === Ticket.STATUSES.CLOSED) {
-    if (ticket.slaPaused) await resumeSla(ticket);
-  }
-
-  await ticket.save();
-  await ticketService.addSystemEvent({
-    ticket,
-    message: `Status changed from ${prev} to ${status}${closedReason ? ` (${closedReason})` : ''} by ${req.agent.name}`,
+  await ticketService.applyStatusChange(ticket, status, {
+    actorType: 'agent',
+    actorId: req.agent._id,
+    actorName: req.agent.name,
+    reason: closedReason || '',
   });
-  emit('ticket.status_changed', { company: ticket.company, ticketId: ticket._id, ticketNumber: ticket.number, from: prev, to: status, actor: req.agent._id });
-  if (status === Ticket.STATUSES.CLOSED) {
-    const ctx = await ticketService.buildTicketContext(ticket);
-    try {
-      await emailService.sendFromTemplate({ key: 'ticket_closed', to: ticket.user.email, data: ctx, event: 'ticket_closed', ticket: ticket._id, user: ticket.user, company: ticket.company });
-    } catch (err) { /* non-blocking */ }
-    await notifyUser({ userId: ticket.user, company: ticket.company, type: 'status_change', message: `Your ticket ${ticket.number} has been closed`, link: `/ticket/${ticket.number}`, ticket: ticket._id });
-    await ticketService.handleTicketClosed(ticket, { actor: req.agent._id });
-  }
-  if (status !== Ticket.STATUSES.CLOSED && prev === Ticket.STATUSES.CLOSED) {
-    await ticketService.handleTicketReopened(ticket);
-  }
   res.json({ success: true, message: 'Status updated', ticket });
 });
 

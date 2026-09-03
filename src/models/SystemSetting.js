@@ -42,6 +42,10 @@ const defaultSettings = {
     notifyReplyToUser: true,
     closedTicketEmail: true,
     overdueNotice: true,
+    // Resolved → Closed waiting period: auto-close resolved tickets with no
+    // customer reply after this many hours (0/disabled = never auto-close).
+    autoCloseEnabled: true,
+    autoCloseAfterHours: 72,
   },
   emails: {
     banList: [],
