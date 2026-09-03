@@ -20,7 +20,8 @@
     "test:itsm-ticket-read": "node tests/itsm-ticket-read.test.js",
     "test:itsm-ticket-comment": "node tests/itsm-ticket-comment.test.js",
     "test:itsm-ticket-assign": "node tests/itsm-ticket-assign.test.js",
-    "test:helpdesk-agent-contract": "node tests/helpdesk-agent-contract.test.js"
+    "test:helpdesk-agent-contract": "node tests/helpdesk-agent-contract.test.js",
+    "test:authorization": "node tests/authorization.test.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

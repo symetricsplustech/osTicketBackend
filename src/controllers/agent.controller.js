@@ -23,11 +23,11 @@ const { notifyAgent, notifyUser } = require('../services/notification.service');
 const { emit } = require('../services/events');
 const config = require('../config/config');
 
-const isAdminAgent = (agent) => agent.isAdmin || (agent.role && agent.role.isAdmin);
-const hasPerm = (agent, perm) => {
-  if (isAdminAgent(agent)) return true;
-  return new Set([...(agent.permissions || []), ...(agent.role?.permissions || [])]).has(perm);
-};
+const { hasPermission: authzHasPermission, isAggregateAdmin } = require('../services/authorization.service');
+// Aggregate-admin bypass preserved (audited as admin_aggregate inside the
+// service); exact-match semantics unchanged, plus explicit '!' DENY support.
+const isAdminAgent = (agent) => isAggregateAdmin(agent);
+const hasPerm = (agent, perm) => authzHasPermission(agent, perm);
 
 const VALID_PRIORITIES = ['Low', 'Normal', 'High', 'Emergency'];
 const VALID_SOURCES = ['web', 'email', 'phone', 'api'];

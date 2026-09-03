@@ -166,13 +166,36 @@ const protectSuperAdmin = asyncHandler(async (req, res, next) => {
   next();
 });
 
-const requirePermission = (perm) =>
+/**
+ * requirePermission(perm, opts?) — route-level guard backed by the central
+ * authorization service. Same signature/behavior as before for existing
+ * callers (aggregate-admin bypass preserved as an audited aggregate), plus:
+ * explicit DENY precedence, module entitlement, record scope/condition
+ * checks. Internal decision reasons are audited, never sent to clients.
+ *
+ * opts: { module, record: (req)=>record|null, requiredScope, conditions,
+ *         fields, audit }
+ */
+const requirePermission = (perm, opts = {}) =>
   asyncHandler(async (req, res, next) => {
-    const agent = req.agent;
-    if (!agent) throw new ApiError(401, 'Not authorized');
-    if (agent.isAdmin || (agent.role && agent.role.isAdmin)) return next();
-    const perms = new Set([...(agent.permissions || []), ...(agent.role?.permissions || [])]);
-    if (!perms.has(perm)) throw new ApiError(403, 'You do not have permission for this action');
+    const principal = req.agent || req.user;
+    if (!principal) throw new ApiError(401, 'Not authorized');
+    const { authorize } = require('../services/authorization.service');
+    const record = typeof opts.record === 'function' ? await opts.record(req) : opts.record;
+    const result = await authorize({
+      principal,
+      permission: perm,
+      tenant: req.companyId,
+      module: opts.module,
+      resource: opts.resource,
+      record,
+      requiredScope: opts.requiredScope,
+      conditions: opts.conditions,
+      fields: opts.fields,
+      req,
+    });
+    if (result.decision !== 'ALLOW') throw new ApiError(403, 'You do not have permission for this action');
+    req.authz = result;
     next();
   });
 

@@ -1,5 +1,5 @@
 const express = require('express');
-const { protectTenantPrincipal } = require('../middleware/auth');
+const { protectTenantPrincipal, requirePermission } = require('../middleware/auth');
 const { moduleRequired } = require('../middleware/module');
 const { upload } = require('../config/multer');
 const ctrl = require('../controllers/agent.controller');
@@ -70,9 +70,9 @@ router.put('/tickets/:number/tasks/:taskId', ctrl.updateTask);
 // Supervision
 router.get('/workload', ctrl.workload);
 router.get('/escalations', ctrl.listEscalations);
-router.post('/escalations', ctrl.createEscalation);
-router.put('/escalations/:id', ctrl.updateEscalation);
-router.delete('/escalations/:id', ctrl.deleteEscalation);
+router.post('/escalations', requirePermission('escalations.manage'), ctrl.createEscalation);
+router.put('/escalations/:id', requirePermission('escalations.manage'), ctrl.updateEscalation);
+router.delete('/escalations/:id', requirePermission('escalations.manage'), ctrl.deleteEscalation);
 
 // Users & organizations
 router.get('/users', ctrl.listUsers);
