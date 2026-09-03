@@ -10,6 +10,7 @@
     "seed": "node src/seed/run.js",
     "seed:reset": "node src/seed/run.js --reset",
     "seed:emails": "node scripts/seed-test-users.js",
+    "seed:superadmin": "node scripts/ensure-admin.js",
     "fetch:email": "node scripts/fetch-inbound-email.js",
     "lint": "eslint src --ext .js",
     "test:tenant-isolation": "node tests/tenant-isolation.test.js",
