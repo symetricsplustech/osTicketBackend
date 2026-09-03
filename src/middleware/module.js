@@ -119,7 +119,7 @@ async function getTenantModules(req, res, next) {
   try {
     // Super admin has access to all modules
     if (req.user && (req.user.role === 'superadmin' || req.user.role === 'super_admin' || req.superAdmin)) {
-      const allModules = ['helpdesk', 'crm', 'csm', 'itam', 'itom', 'projects', 'hr', 'field-service', 'workflow', 'analytics', 'ai', 'settings', 'cmdb', 'secops', 'grc', 'workplace', 'legal', 'procurement', 'finance', 'esg'];
+      const allModules = ['helpdesk', 'crm', 'csm', 'itam', 'itom', 'projects', 'hr', 'field-service', 'workflow', 'analytics', 'ai', 'settings', 'cmdb', 'secops', 'grc', 'workplace', 'legal', 'procurement', 'finance', 'esg', 'fsm'];
       return res.json({ modules: allModules });
     }
     const tenantId = resolveTenantId(req);
@@ -162,11 +162,13 @@ async function activateModules(req, res, next) {
     const mongoose = require('mongoose');
     const db = mongoose.connection.db;
 
-    // Valid module keys
+    // Valid module keys (must match frontend Layout + superadmin branch below)
     const validModules = [
       'helpdesk', 'crm', 'csm', 'itam', 'itom',
       'projects', 'hr', 'field-service', 'workflow',
-      'analytics', 'ai', 'settings',
+      'analytics', 'ai', 'settings', 'cmdb', 'secops',
+      'grc', 'workplace', 'legal', 'procurement',
+      'finance', 'esg', 'fsm',
     ];
 
     const now = new Date();
