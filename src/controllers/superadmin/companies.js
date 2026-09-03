@@ -279,7 +279,7 @@ exports.getCompanyStructure = asyncHandler(async (req, res) => {
   });
 });
 exports.createCompany = asyncHandler(async (req, res) => {
-  const { name, email, domain, plan, billingCycle, trialDays, adminEmail, adminPassword, modules } = req.body;
+  const { name, email, supportEmail, domain, plan, billingCycle, trialDays, adminEmail, adminPassword, modules } = req.body;
   if (!name) throw new ApiError(400, 'Company name is required');
   const exists = await Company.findOne({ name: { $regex: `^${name}$`, $options: 'i' } });
   if (exists) throw new ApiError(409, 'A company with this name already exists');
@@ -290,7 +290,8 @@ exports.createCompany = asyncHandler(async (req, res) => {
   const company = await Company.create({
     name,
     email: email || '',
-    domain: domain || '',
+    supportEmail: (supportEmail || email || '').toLowerCase(),
+    domain: (domain || '').toLowerCase(),
     plan: activePlan?._id || null,
     billingCycle: billingCycle || 'monthly',
     status: 'trial',
@@ -414,9 +415,12 @@ exports.createCompany = asyncHandler(async (req, res) => {
 exports.updateCompany = asyncHandler(async (req, res) => {
   const company = await Company.findById(req.params.id);
   if (!company) throw new ApiError(404, 'Company not found');
-  const allowed = ['name', 'email', 'domain', 'logo', 'address', 'contactPerson', 'phone', 'billingCycle', 'autoRenew', 'settings'];
+  const allowed = ['name', 'email', 'supportEmail', 'domain', 'logo', 'address', 'contactPerson', 'phone', 'billingCycle', 'autoRenew', 'settings'];
+  const lowerKeys = new Set(['email', 'supportEmail', 'domain']);
   for (const key of allowed) {
-    if (req.body[key] !== undefined) company[key] = req.body[key];
+    if (req.body[key] !== undefined) {
+      company[key] = key === 'settings' ? req.body[key] : (lowerKeys.has(key) ? String(req.body[key] || '').toLowerCase().trim() : req.body[key]);
+    }
   }
   await company.save();
   await log(req, 'company.updated', 'Company', company._id, { name: company.name });

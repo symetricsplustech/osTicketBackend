@@ -38,7 +38,21 @@ exports.openForm = asyncHandler(async (req, res) => {
     })(),
   ]);
   const emailToTicket = settings.system?.emailToTicket || config.email.emailToTicket || '';
-  res.json({ success: true, topics, departments, settings, emailToTicket, customFields, forms, priorities });
+  // Per-organisation support inbox: the ONE mail the customer of this hired
+  // organisation must send to so tickets auto-create without portal login.
+  let supportInbox = emailToTicket;
+  let supportCompany = null;
+  try {
+    if (companyId) {
+      const Company = require('../models/Company');
+      const co = await Company.findById(companyId).select('name email supportEmail domain');
+      if (co) {
+        supportCompany = { _id: co._id, name: co.name };
+        supportInbox = co.supportEmail || co.email || emailToTicket;
+      }
+    }
+  } catch (_) { /* non-blocking */ }
+  res.json({ success: true, topics, departments, settings, emailToTicket, supportInbox, supportCompany, customFields, forms, priorities });
 });
 
 exports.getMyTickets = asyncHandler(async (req, res) => {

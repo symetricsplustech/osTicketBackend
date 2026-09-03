@@ -4,6 +4,9 @@ const companySchema = new mongoose.Schema(
   {
     name: { type: String, required: true, trim: true },
     email: { type: String, default: '', lowercase: true, trim: true },
+    // Per-organisation inbound support inbox. Customers mail THIS address to
+    // create/track tickets without logging in. Falls back to `email` when empty.
+    supportEmail: { type: String, default: '', lowercase: true, trim: true },
     domain: { type: String, default: '', lowercase: true, trim: true },
     logo: { type: String, default: '' },
     address: { type: String, default: '' },

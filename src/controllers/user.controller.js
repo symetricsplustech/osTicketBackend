@@ -173,3 +173,142 @@ exports.permissionsMeta = asyncHandler(async (req, res) => {
     permissions: USER_PERMISSION_LIST.map((key) => ({ key, label: USER_PERMISSION_LABELS[key] || key })),
   });
 });
+
+// ---- Self-service support-email (email-to-ticket sender address) ----
+// The customer mails the hired organisation's support inbox from THIS address
+// to create/track tickets without logging in. Changing it keeps the same
+// User _id so portal history (My Tickets + progress) stays linked.
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+exports.getSupportEmailStatus = asyncHandler(async (req, res) => {
+  const user = req.user;
+  let supportInbox = '';
+  let supportDomain = '';
+  let supportCompany = null;
+  try {
+    const companyId = req.companyId || user.company || null;
+    if (companyId) {
+      const Company = require('../models/Company');
+      const co = await Company.findById(companyId).select('name email supportEmail domain');
+      if (co) {
+        supportCompany = { _id: co._id, name: co.name };
+        supportInbox = co.supportEmail || co.email || '';
+        supportDomain = co.domain || '';
+      }
+    }
+    if (!supportInbox) {
+      const SystemSetting = require('../models/SystemSetting');
+      const settings = await SystemSetting.getSettings();
+      supportInbox = settings.system?.emailToTicket || config.email.emailToTicket || '';
+    }
+  } catch (_) { /* non-blocking */ }
+  // The company OWNER configures the inbox (not the platform admin):
+  // main customer account (no createdBy) or a company admin agent.
+  let canConfigure = false;
+  try {
+    if (req.agent) {
+      canConfigure = !!(req.agent.isAdmin || req.agent.role?.isAdmin);
+    } else if (user && !user.createdBy) {
+      canConfigure = true;
+    }
+  } catch (_) { canConfigure = false; }
+  res.json({
+    success: true,
+    currentEmail: user.email || '',
+    pendingEmail: user.pendingEmail || '',
+    pendingExpires: user.pendingEmailExpires || null,
+    verified: !!user.emailConfirmed,
+    supportInbox,
+    supportDomain,
+    supportCompany,
+    canConfigure,
+  });
+});
+
+// ---- Company-owner inbox configuration (NOT platform admin) ----
+// The owner of the hired organisation sets the ONE support address their
+// customers mail to create tickets. Tenant-scoped: owners can only touch
+// their own company (req.companyId).
+exports.updateSupportInbox = asyncHandler(async (req, res) => {
+  const companyId = req.companyId || req.user?.company || null;
+  if (!companyId) throw new ApiError(404, 'No company is associated with your account');
+  const isAgentAdmin = !!(req.agent && (req.agent.isAdmin || req.agent.role?.isAdmin));
+  const isOwner = !!(req.user && !req.user.createdBy && !req.agent);
+  if (!isAgentAdmin && !isOwner) {
+    throw new ApiError(403, 'Only the company owner can configure the support inbox');
+  }
+  const { supportEmail, domain } = req.body;
+  const inbox = String(supportEmail || '').toLowerCase().trim();
+  if (!EMAIL_RE.test(inbox)) throw new ApiError(422, 'Valid supportEmail is required');
+  if (domain !== undefined && String(domain).trim() && !/^[a-z0-9.-]+\.[a-z]{2,}$/i.test(String(domain).trim())) {
+    throw new ApiError(422, 'Domain is invalid');
+  }
+  const Company = require('../models/Company');
+  const co = await Company.findById(companyId);
+  if (!co) throw new ApiError(404, 'Company not found');
+  co.supportEmail = inbox;
+  if (domain !== undefined) co.domain = String(domain || '').toLowerCase().trim();
+  await co.save();
+  res.json({
+    success: true,
+    message: `Support inbox set to ${inbox}. Customers mailing this address auto-create tickets in ${co.name}.`,
+    company: { _id: co._id, name: co.name, supportEmail: co.supportEmail, email: co.email, domain: co.domain },
+  });
+});
+
+exports.requestEmailChange = asyncHandler(async (req, res) => {
+  if (req.agent) throw new ApiError(403, 'Agents update email via the agent profile, not here');
+  const { email } = req.body;
+  const next = String(email || '').toLowerCase().trim();
+  if (!EMAIL_RE.test(next)) throw new ApiError(422, 'Valid email is required');
+  if (next === req.user.email) throw new ApiError(422, 'This is already your support email');
+  const taken = await User.findOne({ email: next, _id: { $ne: req.user._id } }).select('_id');
+  if (taken) throw new ApiError(409, 'This email is already used by another account');
+  const { generateConfirmationToken } = require('../utils/generators');
+  const token = generateConfirmationToken();
+  req.user.pendingEmail = next;
+  req.user.pendingEmailToken = token;
+  req.user.pendingEmailExpires = new Date(Date.now() + 30 * 60 * 1000);
+  await req.user.save();
+  const verifyUrl = `${config.urls.client}/support-email?token=${token}`;
+  try {
+    await emailService.sendMail({
+      to: next,
+      subject: 'Confirm your support email',
+      body: `Dear ${req.user.name},\n\nConfirm ${next} as your support email so tickets you mail to your hired organisation appear in your portal.\n\nConfirm: ${verifyUrl}\nToken: ${token}\n\nThis link expires in 30 minutes. Your existing tickets stay linked to this same account.\n\nRegards,\nSupport Team`,
+      event: 'support_email_verify',
+      user: req.user._id,
+      company: req.user.company || null,
+    });
+  } catch (_) { /* non-blocking: verification stays usable via token */ }
+  res.json({
+    success: true,
+    message: 'Verification sent to your new address. Confirm within 30 minutes.',
+    pendingEmail: next,
+    // Exposed only when SMTP is off (dev) so the flow stays testable locally.
+    ...(config.email.enabled ? {} : { debugToken: token, verifyUrl }),
+  });
+});
+
+exports.confirmEmailChange = asyncHandler(async (req, res) => {
+  if (req.agent) throw new ApiError(403, 'Agents update email via the agent profile, not here');
+  const { token } = req.body;
+  if (!token) throw new ApiError(422, 'Token is required');
+  const user = await User.findOne({
+    _id: req.user._id,
+    pendingEmailToken: String(token),
+    pendingEmailExpires: { $gt: new Date() },
+  });
+  if (!user || !user.pendingEmail) throw new ApiError(400, 'Invalid or expired token');
+  const next = String(user.pendingEmail).toLowerCase().trim();
+  const taken = await User.findOne({ email: next, _id: { $ne: user._id } }).select('_id');
+  if (taken) throw new ApiError(409, 'This email was just taken by another account');
+  user.email = next;
+  user.emailConfirmed = true;
+  user.pendingEmail = '';
+  user.pendingEmailToken = null;
+  user.pendingEmailExpires = null;
+  await user.save();
+  res.json({ success: true, message: 'Support email updated. Mail from the new address to create tickets.', user });
+});

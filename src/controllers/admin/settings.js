@@ -412,9 +412,13 @@ exports.updateCompanySettings = asyncHandler(async (req, res) => {
   if (!req.companyId) throw new ApiError(404, 'No company is associated with your account');
   const company = await Company.findById(req.companyId);
   if (!company) throw new ApiError(404, 'Company not found');
-  const allowed = ['name', 'email', 'phone', 'domain', 'logo', 'address', 'contactPerson'];
+  const allowed = ['name', 'email', 'supportEmail', 'phone', 'domain', 'logo', 'address', 'contactPerson'];
+  const lowerKeys = new Set(['supportEmail', 'email', 'domain']);
   for (const key of allowed) {
-    if (req.body[key] !== undefined) company[key] = String(req.body[key]).trim();
+    if (req.body[key] !== undefined) {
+      const v = String(req.body[key] || '').trim();
+      company[key] = lowerKeys.has(key) ? v.toLowerCase() : v;
+    }
   }
   await company.save();
   res.json({ success: true, data: company });

@@ -7,6 +7,10 @@ const router = express.Router();
 router.use(protectTenantPrincipal);
 
 router.get('/permissions-meta', ctrl.permissionsMeta);
+router.get('/me/email', ctrl.getSupportEmailStatus);
+router.post('/me/email', ctrl.requestEmailChange);
+router.post('/me/email/confirm', ctrl.confirmEmailChange);
+router.put('/company/support-inbox', ctrl.updateSupportInbox);
 router.get('/employees', ctrl.listEmployees);
 router.post('/employees', ctrl.createEmployee);
 router.put('/employees/:id', ctrl.updateEmployee);
