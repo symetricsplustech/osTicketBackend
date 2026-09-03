@@ -39,8 +39,39 @@ const extractTicketNumber = (subject = '', text = '') => {
 
 const safeFilename = (name) => (name || 'attachment').replace(/[^a-zA-Z0-9._-]/g, '_');
 
-const resolveInboundCompany = async () => {
+const normalizeAddr = (a) => String(a || '').toLowerCase().trim();
+
+/**
+ * Per-organisation inbound routing.
+ * Each hired organisation (Company) has its own support inbox
+ * (`supportEmail`, fallback `email`). Customers mail THAT address;
+ * we map To/Cc -> Company so the ticket lands in the right tenant
+ * without the customer logging in.
+ *
+ * Order: EMAIL_DEFAULT_COMPANY override -> exact inbox match
+ * (supportEmail/email) -> domain match -> first active (legacy fallback).
+ */
+const resolveInboundCompany = async (opts) => {
+  const toAddresses = (opts && opts.toAddresses) || [];
   if (process.env.EMAIL_DEFAULT_COMPANY) return process.env.EMAIL_DEFAULT_COMPANY || null;
+  const to = (toAddresses || []).map(normalizeAddr).filter(Boolean);
+  if (to.length) {
+    // 1. Exact inbox match (supportEmail first, then legacy email).
+    const exact = await Company.findOne({
+      status: { $in: ['active', 'trial'] },
+      $or: [{ supportEmail: { $in: to } }, { email: { $in: to } }],
+    }).select('_id');
+    if (exact) return exact._id;
+    // 2. Domain match: mailed to anything@hired-org-domain.
+    const domains = [...new Set(to.map((a) => a.split('@')[1]).filter(Boolean))];
+    if (domains.length) {
+      const byDomain = await Company.findOne({
+        status: { $in: ['active', 'trial'] },
+        domain: { $in: domains },
+      }).select('_id');
+      if (byDomain) return byDomain._id;
+    }
+  }
   const company = await Company.findOne({ status: 'active' }).sort({ createdAt: 1 });
   return company ? company._id : null;
 };
@@ -151,8 +182,20 @@ const notifyAgentsForReply = async (ticket, sender) => {
 };
 
 const handleNewTicket = async ({ senderName, senderEmail, subject, text, attachments, companyId }) => {
-  const sender = await ticketService.findOrCreateUser({ name: senderName, email: senderEmail, company: companyId });
-  const helpTopic = await findHelpTopic(companyId);
+  // Reuse the existing account by email (any tenant) so portal history stays
+  // linked when the customer later logs in. User.email is globally unique,
+  // so creating a second record for the same address would throw E11000.
+  const User = require('../models/User');
+  const existing = await User.findOne({ email: normalizeAddr(senderEmail) });
+  const effectiveCompanyId = existing?.company || companyId;
+  const sender = existing || (await ticketService.findOrCreateUser({ name: senderName, email: senderEmail, company: companyId, userType: 'external' }));
+  // Backfill tenant for email-created accounts that had none (else portal
+  // auth denies tenant-less users). Never move an already-tenanted account.
+  if (!sender.company && companyId) {
+    sender.company = companyId;
+    await sender.save().catch(() => {});
+  }
+  const helpTopic = await findHelpTopic(effectiveCompanyId || companyId);
   const ticket = await ticketService.createTicket({
     user: sender,
     orgOwner: sender._id,
@@ -180,7 +223,7 @@ const handleReply = async ({ sender, ticket, text, attachments }) => {
   return ticket;
 };
 
-const processParsedEmail = async ({ messageId, senderName, senderEmail, subject, text, attachments, companyId }) => {
+const processParsedEmail = async ({ messageId, senderName, senderEmail, subject, text, attachments, companyId, toAddresses = [] }) => {
   if (!senderEmail) return { action: 'skipped', reason: 'no sender' };
   if (await isProcessed(messageId)) return { action: 'skipped', reason: 'duplicate' };
   if (await isSystemSent(messageId)) return { action: 'skipped', reason: 'system generated' };
@@ -190,20 +233,40 @@ const processParsedEmail = async ({ messageId, senderName, senderEmail, subject,
   }
 
   const savedAttachments = await saveEmailAttachments(attachments);
+  // Resolve per-message so each hired organisation's inbox routes to its own
+  // tenant even when one IMAP poller serves multiple inboxes/aliases.
+  let effectiveCompanyId = companyId;
+  if (!effectiveCompanyId) {
+    try {
+      effectiveCompanyId = await resolveInboundCompany({ toAddresses });
+    } catch (err) {
+      logger.error(`Inbound company resolution failed: ${err.message}`);
+    }
+  }
   const number = extractTicketNumber(subject, text);
   let ticket = null;
 
   if (number) {
-    ticket = await Ticket.findOne({ number, status: { $ne: Ticket.STATUSES.DELETED }, ...(companyId ? { company: companyId } : {}) });
+    // Ticket numbers are globally unique: look up without tenant filter so a
+    // reply always sticks to its original ticket/company, even if the
+    // customer mailed a slightly different alias.
+    ticket = await Ticket.findOne({ number, status: { $ne: Ticket.STATUSES.DELETED } });
   }
   if (ticket) {
-    const sender = await ticketService.findOrCreateUser({ name: senderName, email: senderEmail, company: companyId });
+    const replyCompanyId = ticket.company || effectiveCompanyId;
+    const User = require('../models/User');
+    const existingSender = await User.findOne({ email: normalizeAddr(senderEmail) });
+    const sender = existingSender || (await ticketService.findOrCreateUser({ name: senderName, email: senderEmail, company: replyCompanyId, userType: 'external' }));
+    if (!sender.company && replyCompanyId) {
+      sender.company = replyCompanyId;
+      await sender.save().catch(() => {});
+    }
     await handleReply({ sender, ticket, text, attachments: savedAttachments });
     await markProcessed({ messageId, subject, from: senderEmail, action: 'reply', ticket: ticket._id });
     return { action: 'reply', ticketNumber: ticket.number };
   }
 
-  const created = await handleNewTicket({ senderName, senderEmail, subject, text, attachments: savedAttachments, companyId });
+  const created = await handleNewTicket({ senderName, senderEmail, subject, text, attachments: savedAttachments, companyId: effectiveCompanyId });
   await markProcessed({ messageId, subject, from: senderEmail, action: 'new_ticket', ticket: created._id });
   return { action: 'new_ticket', ticketNumber: created.number };
 };
@@ -213,6 +276,25 @@ const parseMessage = async (message) => {
   if (!raw) return null;
   const parsed = await simpleParser(raw);
   const from = parsed.from?.value?.[0] || {};
+  const collect = (v) => {
+    if (!v) return [];
+    const arr = Array.isArray(v) ? v : [v];
+    const out = [];
+    for (const item of arr) {
+      if (typeof item === 'string') out.push(item);
+      else if (item?.address) out.push(item.address);
+      else if (Array.isArray(item?.value)) {
+        for (const sub of item.value) {
+          if (sub?.address) out.push(sub.address);
+        }
+      }
+    }
+    return out;
+  };
+  const toAddresses = [
+    ...collect(parsed.to),
+    ...collect(parsed.cc),
+  ].map((a) => String(a).toLowerCase().trim()).filter(Boolean);
   return {
     messageId: parsed.messageId || message.envelope?.messageId || null,
     senderName: from.name || parsed.from?.text?.split('<')[0]?.trim() || 'Email Sender',
@@ -220,6 +302,7 @@ const parseMessage = async (message) => {
     subject: parsed.subject || '(No Subject)',
     text: (parsed.text || '').slice(0, MAX_TEXT_LENGTH),
     attachments: parsed.attachments || [],
+    toAddresses: [...new Set(toAddresses)],
   };
 };
 
@@ -240,7 +323,6 @@ const pollInbox = async ({ sinceDays } = {}) => {
     await client.connect();
     const lock = await client.getMailboxLock(config.email.imapMailbox);
     try {
-      const companyId = await resolveInboundCompany();
       const search = await client.search({ seen: false, since }, { uid: true });
       for (const uid of search) {
         try {
@@ -250,6 +332,9 @@ const pollInbox = async ({ sinceDays } = {}) => {
             summary.skipped += 1;
             continue;
           }
+          // Per-message tenant routing: each hired org's support inbox maps
+          // to its own Company even under a single shared IMAP poller.
+          const companyId = await resolveInboundCompany({ toAddresses: parsed.toAddresses }).catch(() => null);
           const result = await processParsedEmail({ ...parsed, companyId });
           summary.processed += 1;
           if (result.action === 'new_ticket') summary.newTickets += 1;

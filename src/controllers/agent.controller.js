@@ -623,9 +623,18 @@ exports.workload = asyncHandler(async (req, res) => {
     },
   ]);
   const byAgent = new Map(counts.map((c) => [String(c._id), c]));
+  // Hierarchy: which teams each agent leads (team-lead visibility).
+  const Team = require('../models/Team');
+  const ledTeams = await Team.find({ lead: { $ne: null }, ...(req.companyId ? { company: req.companyId } : {}) }).select('name lead').lean().catch(() => []);
+  const ledBy = new Map();
+  for (const t of ledTeams) {
+    const key = String(t.lead);
+    if (!ledBy.has(key)) ledBy.set(key, []);
+    ledBy.get(key).push(t.name);
+  }
   const rows = agents.map((a) => {
     const c = byAgent.get(String(a._id)) || { total: 0, open: 0, assigned: 0, overdue: 0 };
-    return { agent: a, total: c.total, open: c.open, assigned: c.assigned, overdue: c.overdue };
+    return { agent: a, total: c.total, open: c.open, assigned: c.assigned, overdue: c.overdue, leadsTeams: ledBy.get(String(a._id)) || [] };
   });
   res.json({ success: true, items: rows });
 });

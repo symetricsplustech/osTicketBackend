@@ -32,34 +32,47 @@ const auditLogin = ({ actorType, actor, actorName, company, req, action }) => {
 };
 
 exports.register = asyncHandler(async (req, res) => {
-  const { name, email, password, phone, company } = req.body;
+  const { name, email, password, phone, company, userType } = req.body;
   const companyId = company || req.companyId;
   if (!companyId || !mongoose.isValidObjectId(companyId)) throw new ApiError(422, 'A valid tenant invitation or company identifier is required');
   const activeCompany = await Company.findById(companyId).select('_id status');
   if (!activeCompany || !activeCompany.isActive()) throw new ApiError(422, 'The selected tenant is not active');
-  const userQuery = { email: (email || '').toLowerCase() };
-  if (companyId) userQuery.company = companyId;
-  else userQuery.company = null;
-  let user = await User.findOne(userQuery);
-  if (user && user.isRegistered) {
+  const normalizedEmail = String(email || '').toLowerCase().trim();
+  // Claim flow: an email-to-ticket sender already has an unregistered User
+  // record (same address, maybe different/null tenant). Adopt THAT record so
+  // mailed tickets stay linked in the portal instead of throwing E11000.
+  const globalExisting = await User.findOne({ email: normalizedEmail });
+  if (globalExisting && globalExisting.isRegistered) {
     throw new ApiError(409, 'An account with this email already exists. Please login.');
   }
-  user = await findOrCreateUser({
-    name,
-    email,
-    phone,
-    registerPassword: password,
-    company: companyId,
-  });
+  let user;
+  if (globalExisting && !globalExisting.isRegistered) {
+    user = globalExisting;
+    if (name) user.name = name;
+    if (phone && !user.phone) user.phone = phone;
+    if (password) user.password = password;
+    // Keep the original tenant that owns the mailed tickets; only backfill
+    // when the email-created account had none.
+    if (!user.company) user.company = companyId;
+  } else {
+    user = await findOrCreateUser({
+      name,
+      email,
+      phone,
+      registerPassword: password,
+      company: companyId,
+    });
+  }
   user.isRegistered = true;
   user.emailConfirmed = true;
   user.status = 'active';
+  if (userType === 'external' || userType === 'employee') user.userType = userType;
   await user.save();
 
   const companyCtx = await emailService.getCompanyContext();
   const ctx = { user: { name: user.name, email: user.email, first: user.name?.split(' ')[0] }, urls: { home: config.urls.client }, ...companyCtx };
   try {
-    await emailService.sendFromTemplate({ key: 'welcome_user', to: user.email, data: ctx, event: 'welcome', user: user._id, company: companyId });
+    await emailService.sendFromTemplate({ key: 'welcome_user', to: user.email, data: ctx, event: 'welcome', user: user._id, company: user.company || companyId });
   } catch (err) {
     // non-blocking
   }

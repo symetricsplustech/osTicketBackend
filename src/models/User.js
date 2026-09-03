@@ -16,10 +16,19 @@ const userSchema = new mongoose.Schema(
     company: { type: mongoose.Schema.Types.ObjectId, ref: 'Company', default: null, index: true },
     password: { type: String },
     organization: { type: mongoose.Schema.Types.ObjectId, ref: 'Organization', default: null },
+    // Hierarchy: company employees vs external customers (MD hierarchy).
+    // External org managers approve their org's requests (org_manager steps).
+    userType: { type: String, enum: ['employee', 'external'], default: 'employee', index: true },
+    orgRole: { type: String, enum: ['member', 'manager'], default: 'member' },
     isRegistered: { type: Boolean, default: false },
     emailConfirmed: { type: Boolean, default: false },
     confirmationToken: { type: String },
     confirmationExpires: { type: Date },
+    // ---- Self-service support-email change (email-to-ticket sender address) ----
+    // Keeps the same User _id so historic tickets stay linked in the portal.
+    pendingEmail: { type: String, default: '', lowercase: true, trim: true },
+    pendingEmailToken: { type: String, default: null },
+    pendingEmailExpires: { type: Date, default: null },
     resetToken: { type: String },
     resetExpires: { type: Date },
     status: { type: String, enum: ['active', 'disabled'], default: 'active' },
@@ -63,6 +72,7 @@ userSchema.methods.toJSON = function () {
   delete obj.confirmationExpires;
   delete obj.resetToken;
   delete obj.resetExpires;
+  delete obj.pendingEmailToken;
   return obj;
 };
 

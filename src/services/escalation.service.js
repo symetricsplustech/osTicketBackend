@@ -38,11 +38,31 @@ const applyRule = async ({ rule, ticket }) => {
     ticket.status = Ticket.STATUSES.ASSIGNED;
     ticket.isOverdue = false;
   } else if (rule.action.reassignTeam && String(ticket.team || '') !== String(rule.action.reassignTeam)) {
-    const team = await Team.findById(rule.action.reassignTeam).select('name');
+    const team = await Team.findById(rule.action.reassignTeam).select('name lead');
     ticket.team = rule.action.reassignTeam;
     actions.push(`reassigned to team ${team?.name || 'team'}`);
     ticket.status = Ticket.STATUSES.ASSIGNED;
     ticket.isOverdue = false;
+    // Hierarchy: team-routed escalations land on the team lead when the
+    // ticket has no owner, so escalated work always has a named human.
+    // The lead is always notified.
+    if (team && team.lead) {
+      if (!ticket.agent) {
+        const lead = await Agent.findOne({ _id: team.lead, isActive: true }).select('name').lean();
+        if (lead) {
+          ticket.agent = lead._id;
+          actions.push(`owner set to team lead ${lead.name}`);
+        }
+      }
+      await notifyAgent({
+        agentId: team.lead,
+        company: ticket.company,
+        type: 'escalation',
+        message: `Escalated ticket ${ticket.number} routed to your team (${team.name})`,
+        link: `/tickets/${ticket.number}`,
+        ticket: ticket._id,
+      }).catch(() => {});
+    }
   }
 
   if (!actions.length) return 0;

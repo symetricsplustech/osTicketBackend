@@ -114,6 +114,23 @@ const agent = (over = {}) => ({
   const okRes = await assertPermission({ principal: agent({ permissions: ['tickets.delete'] }), permission: 'tickets.delete', audit: false });
   assert(okRes.decision === 'ALLOW', 'assertPermission resolves on allow');
 
+  // 9. hierarchy: team-lead fallback sees team records without membership
+  const TEAM = '507f1f77bcf86cd799439021';
+  const LEAD = '507f1f77bcf86cd799439022';
+  const teamTicket = { _id: 't9', company: T, team: TEAM, status: 'open' };
+  const leadNoMember = await authorize({
+    principal: agent({ _id: LEAD, permissions: ['tickets.view'], role: { permissions: [], recordScopes: ['team'] }, teams: [] }),
+    permission: 'tickets.view', record: teamTicket,
+    scopeContext: { teamLeads: { [TEAM]: LEAD } }, audit: false,
+  });
+  assert(leadNoMember.decision === 'ALLOW' && leadNoMember.scope === 'TEAM', 'team lead sees team ticket via lead fallback');
+  const leadWrongTeam = await authorize({
+    principal: agent({ _id: LEAD, permissions: ['tickets.view'], role: { permissions: [], recordScopes: ['team'] }, teams: [] }),
+    permission: 'tickets.view', record: teamTicket,
+    scopeContext: { teamLeads: { [TEAM]: OTHER } }, audit: false,
+  });
+  assert(leadWrongTeam.reason === 'SCOPE_REJECTED', 'non-lead without membership is still rejected');
+
   console.log('\nAll authorization tests passed.');
   process.exit(0);
 })().catch((e) => { console.error(e.message || e); process.exit(1); });

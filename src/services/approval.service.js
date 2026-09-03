@@ -3,6 +3,10 @@ const Agent = require('../models/Agent');
 const Role = require('../models/Role');
 const Team = require('../models/Team');
 const Department = require('../models/Department');
+const User = require('../models/User');
+const Organization = require('../models/Organization');
+const Ticket = require('../models/Ticket');
+const Change = require('../models/Change');
 const { notifyAgent, notifyAdminRoom } = require('./notification.service');
 const { emit } = require('./events');
 const { sendFromTemplate } = require('./email.service');
@@ -11,8 +15,11 @@ const DEFAULT_STEP_DEFAULTS = { assigneeType: 'agent', assignee: null, mode: 'ap
 
 /**
  * Resolve a step's actual assignee (agent ids) for its assigneeType.
+ * context: { requesterId, departmentId } — lets org_manager resolve through
+ * the hierarchy: requester's Organization.accountManager, else the
+ * department manager. Without context it resolves to [] (documented).
  */
-async function resolveStepAssignees(step, company) {
+async function resolveStepAssignees(step, company, context = {}) {
   if (step.assigneeType === 'agent') return step.assignee ? [step.assignee] : [];
   if (step.assigneeType === 'role') {
     const role = await Role.findById(step.assignee).lean();
@@ -30,7 +37,32 @@ async function resolveStepAssignees(step, company) {
     const mgr = await Agent.findById(dept.manager).lean();
     return mgr ? [mgr._id] : [];
   }
-  if (step.assigneeType === 'org_manager') return []; // resolved by caller
+  if (step.assigneeType === 'org_manager') {
+    // 1. Requester's organisation account manager (external hierarchy).
+    if (context.requesterId) {
+      try {
+        const requester = await User.findById(context.requesterId).select('organization').lean();
+        if (requester && requester.organization) {
+          const org = await Organization.findById(requester.organization).select('accountManager').lean();
+          if (org && org.accountManager) {
+            const mgr = await Agent.findOne({ _id: org.accountManager, isActive: true }).select('_id').lean();
+            if (mgr) return [mgr._id];
+          }
+        }
+      } catch (_) { /* fall through to department fallback */ }
+    }
+    // 2. Fallback: department manager for the referenced record.
+    if (context.departmentId) {
+      try {
+        const dept = await Department.findById(context.departmentId).select('manager').lean();
+        if (dept && dept.manager) {
+          const mgr = await Agent.findOne({ _id: dept.manager, isActive: true }).select('_id').lean();
+          if (mgr) return [mgr._id];
+        }
+      } catch (_) { /* no fallback left */ }
+    }
+    return [];
+  }
   if (step.assigneeType === 'any_admin') {
     const admins = await Agent.find({ company, isAdmin: true, isActive: true }).lean();
     return admins.map((a) => a._id);
@@ -42,7 +74,7 @@ async function resolveStepAssignees(step, company) {
  * Create an approval flow with sequential or parallel steps.
  * steps: [{assigneeType, assignee, mode}]
  */
-async function createApproval({ company, title, description, refType, refId, steps = [], mode = 'sequential', timeoutHours = 24, autoApproveAfterHours = 0, escalationAfterHours = 0, escalateTo = null, initiatedBy = null, initiatedByName = '' }) {
+async function createApproval({ company, title, description, refType, refId, steps = [], mode = 'sequential', timeoutHours = 24, autoApproveAfterHours = 0, escalationAfterHours = 0, escalateTo = null, initiatedBy = null, initiatedByName = '', context = null }) {
   if (!steps.length) throw new Error('Approval requires at least one step');
   const approval = await Approval.create({
     company,
@@ -59,15 +91,34 @@ async function createApproval({ company, title, description, refType, refId, ste
     initiatedBy,
     initiatedByName,
   });
-  await notifyPending(approval);
+  await notifyPending(approval, context);
   emit('approval.created', { company, approvalId: approval._id, title, refType, refId });
   return approval;
 }
 
-async function notifyPending(approval) {
+/**
+ * Derive hierarchy context (requester + department) from the approval's
+ * referenced record so org_manager steps resolve without caller help.
+ */
+async function contextForApproval(approval) {
+  try {
+    if (approval.refType === 'ticket' && approval.refId) {
+      const t = await Ticket.findById(approval.refId).select('user dept').lean();
+      if (t) return { requesterId: t.user, departmentId: t.dept };
+    }
+    if (approval.refType === 'change' && approval.refId) {
+      const c = await Change.findById(approval.refId).select('requestedBy').lean();
+      if (c && c.requestedBy) return { requesterId: c.requestedBy };
+    }
+  } catch (_) { /* context stays empty */ }
+  return {};
+}
+
+async function notifyPending(approval, context) {
   const step = pendingStep(approval);
   if (!step) return;
-  const assignees = await resolveStepAssignees(step, approval.company);
+  const ctx = context || (await contextForApproval(approval));
+  const assignees = await resolveStepAssignees(step, approval.company, ctx);
   for (const agentId of assignees) {
     await notifyAgent({
       agentId,

@@ -399,8 +399,10 @@ exports.listUsers = asyncHandler(async (req, res) => {
   res.json({ success: true, items, total, page, limit, pages: Math.ceil(total / limit) });
 });
 exports.createUser = asyncHandler(async (req, res) => {
-  const { name, email, password, phone, organization, status } = req.body;
+  const { name, email, password, phone, organization, status, userType, orgRole } = req.body;
   if (!name || !email) throw new ApiError(422, 'Name and email are required');
+  if (userType && !['employee', 'external'].includes(userType)) throw new ApiError(422, 'Invalid user type');
+  if (orgRole && !['member', 'manager'].includes(orgRole)) throw new ApiError(422, 'Invalid organization role');
   const exists = await User.findOne({ email: String(email).toLowerCase().trim(), ...(req.companyId ? { company: req.companyId } : {}) });
   if (exists) throw new ApiError(409, 'A user with this email already exists');
   let orgId = null;
@@ -420,6 +422,8 @@ exports.createUser = asyncHandler(async (req, res) => {
     status: status || 'active',
     isRegistered: !!password,
     emailConfirmed: !!password,
+    userType: userType || 'employee',
+    orgRole: orgRole || 'member',
   });
   res.status(201).json({ success: true, user });
 });

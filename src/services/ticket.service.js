@@ -103,7 +103,7 @@ const matchRule = (rule, ctx) => {
   }
 };
 
-const findOrCreateUser = async ({ name, email, phone, registerPassword, organization, company }) => {
+const findOrCreateUser = async ({ name, email, phone, registerPassword, organization, company, userType }) => {
   email = (email || '').toLowerCase().trim();
   let user = company
     ? await User.findOne({ email, company })
@@ -131,6 +131,7 @@ const findOrCreateUser = async ({ name, email, phone, registerPassword, organiza
     confirmationToken: isRegistered ? null : generateConfirmationToken(),
     organization: organization || null,
     company: company || null,
+    userType: userType === 'external' ? 'external' : 'employee',
   });
   return user;
 };

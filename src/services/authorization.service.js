@@ -164,8 +164,10 @@ function recordTenant(record) {
 /**
  * Evaluate ONE scope against a record. No record => true (permission-level
  * check only; row filtering happens via buildScopeFilter / query scoping).
+ * scopeContext.teamLeads ({ teamId: agentId }) lets TEAM match a team lead
+ * who is not a member — callers supply it from the Team collection.
  */
-function evaluateScope(principal, scope, record, tenant) {
+function evaluateScope(principal, scope, record, tenant, scopeContext) {
   if (!record) return true;
   const me = principalId(principal);
   switch (scope) {
@@ -186,7 +188,11 @@ function evaluateScope(principal, scope, record, tenant) {
         ...idList((principal.role && principal.role.teams) || []),
       ]);
       const theirs = [...idList(record.team), ...idList(record.teams), ...idList(record.assignmentGroup)];
-      return theirs.some((t) => mine.has(t));
+      if (theirs.some((t) => mine.has(t))) return true;
+      // Hierarchy fallback: a team lead sees their team's records even when
+      // they are not listed as a member.
+      const leads = (scopeContext && scopeContext.teamLeads) || {};
+      return theirs.some((t) => String(leads[t] || '') === me);
     }
     case 'DEPARTMENT': {
       const mine = new Set([
@@ -230,11 +236,11 @@ function grantedScopes(principal, extraRoles) {
  * scope matches the record. `requiredScope` narrows to one scope (e.g. an
  * action that must be ASSIGNED_TO_ME even for team-visible agents).
  */
-function checkScope(principal, record, tenant, requiredScope, extraRoles) {
+function checkScope(principal, record, tenant, requiredScope, extraRoles, scopeContext) {
   if (!record) return { ok: true, scope: requiredScope || 'ANY' };
   const scopes = requiredScope ? [requiredScope] : grantedScopes(principal, extraRoles);
   for (const scope of scopes) {
-    if (evaluateScope(principal, scope, record, tenant)) return { ok: true, scope };
+    if (evaluateScope(principal, scope, record, tenant, scopeContext)) return { ok: true, scope };
   }
   return { ok: false, scope: requiredScope || 'NONE_MATCHED' };
 }
@@ -349,6 +355,7 @@ function auditDecision({ req, principal, tenant, permission, decision, reason, r
  *   enforcement stays in middleware/module.js)
  * - resource: { type, id } for audit context
  * - record: the target row for scope/condition checks (omit for collection-level)
+ * - scopeContext: { teamLeads } map for the TEAM lead fallback
  * - requiredScope: narrow to one scope for sensitive actions
  * - conditions: array of { field, op, value } record conditions
  * - fields: sensitive fields being read/written (filtered, not fatal)
@@ -364,6 +371,7 @@ async function authorize({
   moduleKeys,
   resource,
   record,
+  scopeContext,
   requiredScope,
   conditions,
   fields,
@@ -415,7 +423,7 @@ async function authorize({
 
   // 8. scope gate (skipped when no record — collection-level check)
   if (record) {
-    const scopeCheck = checkScope(principal, record, tenantId, requiredScope, extraRoles);
+    const scopeCheck = checkScope(principal, record, tenantId, requiredScope, extraRoles, scopeContext);
     if (!scopeCheck.ok) return fail('SCOPE_REJECTED', { scope: scopeCheck.scope });
     // 9. record conditions
     const cond = matchConditions(principal, record, conditions, tenantId);
