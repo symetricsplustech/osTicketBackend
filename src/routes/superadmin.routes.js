@@ -67,8 +67,11 @@ router.get('/invoices', ctrl.listInvoices);
 router.post('/checkout', ctrl.createCheckoutOrder);
 router.post('/payments/verify', ctrl.verifyPayment);
 
-// Impersonation
+// Impersonation + break-glass (audited privileged sessions, MD §8/§83)
 router.post('/impersonate', ctrl.impersonateCompanyAdmin);
+router.post('/break-glass', ctrl.breakGlassAccess);
+router.get('/privileged-sessions', ctrl.listPrivilegedSessions);
+router.post('/privileged-sessions/:sessionId/revoke', ctrl.revokePrivilegedSession);
 
 // Super admin management
 router.get('/admins', ctrl.listSuperAdmins);

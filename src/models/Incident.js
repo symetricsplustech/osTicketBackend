@@ -13,6 +13,7 @@ const incidentSchema = new mongoose.Schema(
       default: 'investigating',
     },
     commander: { type: mongoose.Schema.Types.ObjectId, ref: 'Agent', default: null },
+    isMajor: { type: Boolean, default: false, index: true },
     team: { type: mongoose.Schema.Types.ObjectId, ref: 'Team', default: null },
     affectedTickets: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Ticket' }],
     affectedServices: { type: [String], default: [] },

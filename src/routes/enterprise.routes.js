@@ -30,32 +30,105 @@ router.delete('/workflows/:id', async (req, res) => {
   try { await Wkf.deleteOne({ _id: req.params.id, ...T(req) }); res.json({ success: true }); } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ITSM records are tenant-isolated via `company` (the canonical tenant key on
+// these models) with atomic per-tenant numbering (MD §68) and state-machine
+// guarded status writes (MD §65). Never mass-assign req.body.
+const companyOf = (req) => ({ company: T(req).tenantId });
+const { nextNumber } = require('../services/numbering.service');
+const { assertTransition } = require('../services/stateMachine.service');
+const SEVERITY_MAP = { critical: 'Sev1', high: 'Sev2', medium: 'Sev3', low: 'Sev4', Sev1: 'Sev1', Sev2: 'Sev2', Sev3: 'Sev3', Sev4: 'Sev4' };
+const pick = (src, keys) => { const out = {}; for (const k of keys) if (src[k] !== undefined) out[k] = src[k]; return out; };
+
 router.get('/incidents', async (req, res) => {
-  try { res.json({ incidents: await Inc.find(T(req)).sort({ createdAt: -1 }).limit(300) }); } catch (e) { res.status(500).json({ error: e.message }); }
+  try { res.json({ incidents: await Inc.find(companyOf(req)).sort({ createdAt: -1 }).limit(300) }); } catch (e) { res.status(500).json({ error: e.message }); }
 });
 router.post('/incidents', async (req, res) => {
-  try { const inc = await Inc.create({ title: req.body.title, description: req.body.description, severity: req.body.severity || 'medium', status: 'open', commander: req.user.id, timeline: [{ at: new Date(), entry: 'Incident created', by: req.user.name }], tenantId: T(req).tenantId });
-    res.json({ incident: inc }); } catch (e) { res.status(400).json({ error: e.message }); }
+  try {
+    const inc = await Inc.create({
+      number: await nextNumber(T(req).tenantId, 'INC'),
+      title: req.body.title,
+      description: req.body.description,
+      severity: SEVERITY_MAP[req.body.severity] || SEVERITY_MAP[req.body.priority] || 'Sev3',
+      status: 'investigating',
+      isMajor: !!req.body.isMajor,
+      commander: req.user.id,
+      timeline: [{ at: new Date(), by: req.user.name || '', message: 'Incident created' }],
+      ...companyOf(req),
+    });
+    res.json({ incident: inc });
+  } catch (e) { res.status(400).json({ error: e.message }); }
 });
 router.put('/incidents/:id', async (req, res) => {
-  try { const inc = await Inc.findOneAndUpdate({ _id: req.params.id, ...T(req) }, req.body, { new: true });
-    if (!inc) return res.status(404).json({}); res.json({ incident: inc }); } catch (e) { res.status(400).json({ error: e.message }); }
+  try {
+    const inc = await Inc.findOne({ _id: req.params.id, ...companyOf(req) });
+    if (!inc) return res.status(404).json({});
+    if (req.body.status && req.body.status !== inc.status) assertTransition('incident', inc.status, req.body.status);
+    Object.assign(inc, pick(req.body, ['title', 'description', 'summary', 'severity', 'status', 'commander', 'team', 'affectedServices', 'isMajor']));
+    if (req.body.status === 'resolved' && !inc.resolvedAt) inc.resolvedAt = new Date();
+    await inc.save();
+    res.json({ incident: inc });
+  } catch (e) { res.status(e.statusCode === 422 ? 422 : 400).json({ error: e.message }); }
 });
 
 router.get('/changes', async (req, res) => {
-  try { res.json({ changes: await Chg.find(T(req)).sort({ createdAt: -1 }).limit(300) }); } catch (e) { res.status(500).json({ error: e.message }); }
+  try { res.json({ changes: await Chg.find(companyOf(req)).sort({ createdAt: -1 }).limit(300) }); } catch (e) { res.status(500).json({ error: e.message }); }
 });
 router.post('/changes', async (req, res) => {
-  try { const chg = await Chg.create({ title: req.body.title, description: req.body.description, type: req.body.type || 'normal', riskLevel: req.body.riskLevel || 'medium', status: 'pending_approval', implementationPlan: req.body.implementationPlan, rollbackPlan: req.body.rollbackPlan, windowStart: req.body.windowStart, windowEnd: req.body.windowEnd, requestedBy: req.user.id, tenantId: T(req).tenantId });
-    res.json({ change: chg }); } catch (e) { res.status(400).json({ error: e.message }); }
+  try {
+    const chg = await Chg.create({
+      number: await nextNumber(T(req).tenantId, 'CHG'),
+      title: req.body.title,
+      description: req.body.description,
+      type: req.body.type || 'normal',
+      risk: req.body.risk || req.body.riskLevel || 'medium',
+      status: 'for_approval',
+      implementationPlan: req.body.implementationPlan,
+      rollbackPlan: req.body.rollbackPlan,
+      windowStart: req.body.windowStart,
+      windowEnd: req.body.windowEnd,
+      ...companyOf(req),
+    });
+    res.json({ change: chg });
+  } catch (e) { res.status(400).json({ error: e.message }); }
+});
+router.put('/changes/:id', async (req, res) => {
+  try {
+    const chg = await Chg.findOne({ _id: req.params.id, ...companyOf(req) });
+    if (!chg) return res.status(404).json({});
+    if (req.body.status && req.body.status !== chg.status) assertTransition('change', chg.status, req.body.status);
+    Object.assign(chg, pick(req.body, ['title', 'description', 'status', 'type', 'risk', 'implementationPlan', 'rollbackPlan', 'windowStart', 'windowEnd']));
+    await chg.save();
+    res.json({ change: chg });
+  } catch (e) { res.status(e.statusCode === 422 ? 422 : 400).json({ error: e.message }); }
 });
 
 router.get('/problems', async (req, res) => {
-  try { res.json({ problems: await Prb.find(T(req)).sort({ createdAt: -1 }).limit(300) }); } catch (e) { res.status(500).json({ error: e.message }); }
+  try { res.json({ problems: await Prb.find(companyOf(req)).sort({ createdAt: -1 }).limit(300) }); } catch (e) { res.status(500).json({ error: e.message }); }
 });
 router.post('/problems', async (req, res) => {
-  try { const prb = await Prb.create({ title: req.body.title, description: req.body.description, rootCause: req.body.rootCause, workaround: req.body.workaround, knownError: !!req.body.knownError, status: 'open', tenantId: T(req).tenantId });
-    res.json({ problem: prb }); } catch (e) { res.status(400).json({ error: e.message }); }
+  try {
+    const prb = await Prb.create({
+      number: await nextNumber(T(req).tenantId, 'PRB'),
+      title: req.body.title,
+      description: req.body.description,
+      rootCause: req.body.rootCause,
+      workaround: req.body.workaround,
+      knownError: !!req.body.knownError,
+      status: 'open',
+      ...companyOf(req),
+    });
+    res.json({ problem: prb });
+  } catch (e) { res.status(400).json({ error: e.message }); }
+});
+router.put('/problems/:id', async (req, res) => {
+  try {
+    const prb = await Prb.findOne({ _id: req.params.id, ...companyOf(req) });
+    if (!prb) return res.status(404).json({});
+    if (req.body.status && req.body.status !== prb.status) assertTransition('problem', prb.status, req.body.status);
+    Object.assign(prb, pick(req.body, ['title', 'description', 'status', 'rootCause', 'workaround', 'permanentSolution', 'postmortem', 'knownError', 'linkedIncidents', 'linkedChanges', 'linkedTickets']));
+    await prb.save();
+    res.json({ problem: prb });
+  } catch (e) { res.status(e.statusCode === 422 ? 422 : 400).json({ error: e.message }); }
 });
 
 router.get('/assets', async (req, res) => {

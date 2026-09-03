@@ -261,6 +261,43 @@ const scheduleOverdueCheck = () => {
   }, minutes * 60 * 1000);
 };
 
+/**
+ * Per-plan calendar check (MD ITSM-09): is `date` inside this SLA plan's
+ * business hours? Pure function — no DB. Plans with schedule '24/7' (or no
+ * businessHours) always return true; otherwise the plan's days/start/end
+ * are evaluated in the plan's timezone via Intl.
+ */
+const toMinutes = (hhmm) => {
+  const [h = 0, m = 0] = String(hhmm || '0:0').split(':').map(Number);
+  return h * 60 + (m || 0);
+};
+
+const partsInTz = (date, timezone) => {
+  try {
+    const fmt = new Intl.DateTimeFormat('en-US', {
+      timeZone: timezone || 'UTC',
+      weekday: 'short',
+      hour: '2-digit',
+      minute: '2-digit',
+      hourCycle: 'h23',
+    });
+    const parts = Object.fromEntries(fmt.formatToParts(date).map((p) => [p.type, p.value]));
+    const dow = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 }[parts.weekday];
+    return { dow, minutes: Number(parts.hour) * 60 + Number(parts.minute) };
+  } catch (_) {
+    return { dow: date.getDay(), minutes: date.getHours() * 60 + date.getMinutes() };
+  }
+};
+
+const isWithinPlanHours = (date, plan) => {
+  if (!plan || plan.schedule === '24/7' || !plan.businessHours) return true;
+  const tz = plan.timezone || 'UTC';
+  const { dow, minutes } = partsInTz(date instanceof Date ? date : new Date(date), tz);
+  const days = plan.businessHours.days || [];
+  if (!days.includes(dow)) return false;
+  return minutes >= toMinutes(plan.businessHours.start) && minutes < toMinutes(plan.businessHours.end);
+};
+
 module.exports = {
   computeDueDate,
   pauseSla,
@@ -271,5 +308,6 @@ module.exports = {
   scheduleOverdueCheck,
   getSlaHours,
   isWorkingMoment,
+  isWithinPlanHours,
   SLA_TYPES,
 };

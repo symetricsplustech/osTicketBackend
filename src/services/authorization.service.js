@@ -105,12 +105,19 @@ function splitPermissions(list) {
 function collectPermissions(principal, extraRoles) {
   const direct = splitPermissions(principal && principal.permissions);
   const roleAllow = new Set();
+  const roleDeny = new Set();
   for (const role of roleListOf(principal, extraRoles)) {
     for (const p of role.permissions || []) {
       if (typeof p === 'string' && p && !p.startsWith('!')) roleAllow.add(p);
     }
+    // Role-level explicit DENYs (Role.deniedPermissions, no enum by design).
+    for (const p of role.deniedPermissions || []) {
+      if (typeof p !== 'string' || !p) continue;
+      roleDeny.add(p.startsWith('!') ? p.slice(1) : p);
+    }
   }
-  return { directAllow: direct.allow, deny: direct.deny, roleAllow };
+  const deny = new Set([...direct.deny, ...roleDeny]);
+  return { directAllow: direct.allow, deny, roleAllow };
 }
 
 /**

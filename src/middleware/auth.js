@@ -85,6 +85,20 @@ const protectAgent = asyncHandler(async (req, res, next) => {
   if (decoded.type !== 'agent') throw new ApiError(403, 'Staff access only');
   const agent = await Agent.findById(decoded.id).populate('role');
   if (!agent || !agent.isActive) throw new ApiError(401, 'Account not found or disabled');
+  // Privileged-session tokens (impersonation / break-glass) are only valid
+  // while the session is active and unexpired — revocation takes effect now.
+  if (decoded.sid) {
+    const PrivilegedSession = require('../models/PrivilegedSession');
+    const session = await PrivilegedSession.findOne({ sessionId: decoded.sid });
+    if (!session || session.status !== 'active' || session.expiresAt < new Date()) {
+      if (session && session.status === 'active') {
+        session.status = 'expired';
+        await session.save().catch(() => {});
+      }
+      throw new ApiError(401, 'Privileged session expired or revoked');
+    }
+    req.privilegedSession = session;
+  }
   req.agent = agent;
   await attachActiveCompany(agent, req);
   runWithTenant(req.companyId, next);

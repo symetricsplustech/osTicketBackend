@@ -6,6 +6,12 @@ const slaPlanSchema = new mongoose.Schema(
     company: { type: mongoose.Schema.Types.ObjectId, ref: 'Company', default: null, index: true },
     gracePeriod: { type: Number, required: true, default: 24 }, // hours to first response
     schedule: { type: String, enum: ['24/7', 'Business Hours'], default: '24/7' },
+    timezone: { type: String, default: 'UTC' },
+    businessHours: {
+      days: { type: [Number], default: [1, 2, 3, 4, 5] }, // 0=Sun..6=Sat
+      start: { type: String, default: '09:00' }, // HH:mm local to timezone
+      end: { type: String, default: '17:00' },
+    },
     status: { type: String, enum: ['active', 'disabled'], default: 'active' },
     notes: { type: String, default: '' },
     // ---- Enterprise: Advanced SLA (per-type targets, hours) ----

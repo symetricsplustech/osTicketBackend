@@ -385,6 +385,11 @@ exports.changeStatus = asyncHandler(async (req, res) => {
   const valid = new Set([...builtIn, ...configured.map((s) => s.key)]);
   if (!valid.has(status)) throw new ApiError(422, 'Invalid status');
   const prev = ticket.status;
+  // Controlled state transitions (MD §65): terminal states exit only via
+  // restore/reopen flows; custom statuses move freely otherwise.
+  require('../services/stateMachine.service').assertTransition(
+    'ticket', prev, status, configured.map((s) => s.key)
+  );
   ticket.status = status;
   if (status === Ticket.STATUSES.CLOSED) {
     ticket.closedAt = new Date();
@@ -899,6 +904,23 @@ exports.updateFaq = asyncHandler(async (req, res) => {
 exports.deleteFaq = asyncHandler(async (req, res) => {
   await Faq.deleteOne({ _id: req.params.id, ...(req.companyId ? { company: req.companyId } : {}) });
   res.json({ success: true, message: 'FAQ deleted' });
+});
+
+// Knowledge lifecycle transition (MD ITSM-08): draft -> review -> approved
+// -> published, with expiry/retire/archive paths. Keeps the legacy
+// isPublished flag in sync so older readers keep working.
+exports.transitionFaq = asyncHandler(async (req, res) => {
+  if (!hasPerm(req.agent, 'kb.manage')) throw new ApiError(403, 'Permission denied');
+  const faq = await Faq.findById(req.params.id);
+  if (!faq) throw new ApiError(404, 'FAQ not found');
+  if (req.companyId && faq.company && String(faq.company) !== String(req.companyId)) throw new ApiError(403, 'Access denied');
+  const { to } = req.body;
+  const from = faq.status || 'published';
+  require('../services/stateMachine.service').assertTransition('faq', from, to);
+  faq.status = to;
+  faq.isPublished = to === 'published';
+  await faq.save();
+  res.json({ success: true, faq });
 });
 
 exports.listAnnouncements = asyncHandler(async (req, res) => {

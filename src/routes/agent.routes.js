@@ -92,6 +92,7 @@ router.post('/faq-categories', ctrl.createFaqCategory);
 router.get('/faqs', ctrl.listFaqs);
 router.post('/faqs', ctrl.createFaq);
 router.put('/faqs/:id', ctrl.updateFaq);
+router.post('/faqs/:id/transition', ctrl.transitionFaq);
 router.delete('/faqs/:id', ctrl.deleteFaq);
 
 // Announcements
