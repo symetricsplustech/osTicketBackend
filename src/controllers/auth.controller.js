@@ -9,12 +9,34 @@ const { signToken } = require('../middleware/auth');
 const { findOrCreateUser, buildTicketContext } = require('../services/ticket.service');
 const emailService = require('../services/email.service');
 const { generateConfirmationToken } = require('../utils/generators');
+const { verifyTotp } = require('../utils/totp');
+const { assertPasswordPolicy } = require('../utils/passwordPolicy');
+
+/**
+ * Second-factor gate (§47): accounts with twoFactorEnabled must present a
+ * valid TOTP code or an unused backup code (consumed on use).
+ */
+const verifySecondFactor = async (principal, code) => {
+  if (!principal.twoFactorEnabled) return;
+  const clean = String(code || '').trim();
+  if (!clean) {
+    throw new ApiError(403, 'Two-factor code required', { twoFactorRequired: true });
+  }
+  if (principal.twoFactorSecret && verifyTotp(principal.twoFactorSecret, clean)) return;
+  const idx = (principal.twoFactorBackupCodes || []).findIndex((c) => String(c) === clean);
+  if (idx !== -1) {
+    principal.twoFactorBackupCodes.splice(idx, 1);
+    await principal.save();
+    return;
+  }
+  throw new ApiError(401, 'Invalid two-factor code');
+};
 const config = require('../config/config');
 const Company = require('../models/Company');
 const mongoose = require('mongoose');
 
 const sendTokenResponse = (user, type, res, status = 200) => {
-  const token = signToken({ id: user._id, type });
+  const token = signToken({ id: user._id, type, sv: Number(user.sessionVersion || 0) });
   return res.status(status).json({
     success: true,
     token,
@@ -50,7 +72,10 @@ exports.register = asyncHandler(async (req, res) => {
     user = globalExisting;
     if (name) user.name = name;
     if (phone && !user.phone) user.phone = phone;
-    if (password) user.password = password;
+    if (password) {
+      await assertPasswordPolicy(password, user.company || companyId);
+      user.password = password;
+    }
     // Keep the original tenant that owns the mailed tickets; only backfill
     // when the email-created account had none.
     if (!user.company) user.company = companyId;
@@ -80,14 +105,15 @@ exports.register = asyncHandler(async (req, res) => {
 });
 
 exports.login = asyncHandler(async (req, res) => {
-  const { email, password } = req.body;
-  const user = await User.findOne({ email: (email || '').toLowerCase() });
+  const { email, password, totpCode } = req.body;
+  const user = await User.findOne({ email: (email || '').toLowerCase() }).select('+sessionVersion');
   if (!user || user.status !== 'active') {
     throw new ApiError(401, 'Invalid email or password');
   }
   if (!user.password || !(await user.matchPassword(password))) {
     throw new ApiError(401, 'Invalid email or password');
   }
+  await verifySecondFactor(user, totpCode);
   user.lastLogin = new Date();
   await user.save();
   auditLogin({ actorType: 'user', actor: user._id, actorName: user.name, company: user.company || null, req, action: 'auth.login' });
@@ -109,7 +135,7 @@ exports.ticketAccess = asyncHandler(async (req, res) => {
 
 exports.agentLogin = asyncHandler(async (req, res) => {
   const { email, password } = req.body;
-  const agent = await Agent.findOne({ email: (email || '').toLowerCase() }).populate('role');
+  const agent = await Agent.findOne({ email: (email || '').toLowerCase() }).select('+sessionVersion').populate('role');
   if (!agent || !agent.isActive) {
     throw new ApiError(401, 'Invalid email or password');
   }
@@ -118,16 +144,16 @@ exports.agentLogin = asyncHandler(async (req, res) => {
   }
   agent.lastLogin = new Date();
   await agent.save();
-  const token = signToken({ id: agent._id, type: 'agent' });
+  const token = signToken({ id: agent._id, type: 'agent', sv: Number(agent.sessionVersion || 0) });
   res.json({ success: true, token, user: agent });
 });
 
 exports.portalLogin = asyncHandler(async (req, res) => {
-  const { email, password } = req.body;
+  const { email, password, totpCode } = req.body;
   const norm = String(email || '').toLowerCase().trim();
   if (!norm || !password) throw new ApiError(422, 'Email and password are required');
 
-  const superAdmin = await SuperAdmin.findOne({ email: norm });
+  const superAdmin = await SuperAdmin.findOne({ email: norm }).select('+sessionVersion');
   if (superAdmin && superAdmin.isActive && (await superAdmin.matchPassword(password))) {
     if (superAdmin.allowedIps && superAdmin.allowedIps.length) {
       const ip = req.ip || req.connection?.remoteAddress || '';
@@ -135,22 +161,25 @@ exports.portalLogin = asyncHandler(async (req, res) => {
         throw new ApiError(403, 'Access denied for this IP address');
       }
     }
+    await verifySecondFactor(superAdmin, totpCode);
     superAdmin.lastLogin = new Date();
     await superAdmin.save();
-    const token = signToken({ id: superAdmin._id, type: 'superadmin' });
-    // Superadmin: if permissions array is empty, grant wildcard '*' (all permissions)
-    const permissions = (superAdmin.permissions && superAdmin.permissions.length > 0) ? superAdmin.permissions : ['*'];
+    const token = signToken({ id: superAdmin._id, type: 'superadmin', sv: Number(superAdmin.sessionVersion || 0) });
+    const { ROLE_PERMISSIONS } = require('../config/platformPermissions');
+    const permissions = superAdmin.platformRole === 'platform_owner'
+      ? ['*']
+      : ((superAdmin.permissions && superAdmin.permissions.length > 0) ? superAdmin.permissions : (ROLE_PERMISSIONS[superAdmin.platformRole] || []));
     const moduleKeys = superAdmin.moduleKeys || [];
     return res.json({ success: true, token, user: superAdmin, role: 'superadmin', permissions, moduleKeys });
   }
 
-  const agent = await Agent.findOne({ email: norm }).populate('role');
+  const agent = await Agent.findOne({ email: norm }).select('+sessionVersion').populate('role');
   if (agent && agent.isActive && (await agent.matchPassword(password))) {
     const isAdmin = agent.isAdmin || (agent.role && agent.role.isAdmin);
     agent.lastLogin = new Date();
     await agent.save();
     auditLogin({ actorType: 'agent', actor: agent._id, actorName: agent.name, company: agent.company || null, req, action: 'auth.portal_login' });
-    const token = signToken({ id: agent._id, type: 'agent' });
+    const token = signToken({ id: agent._id, type: 'agent', sv: Number(agent.sessionVersion || 0) });
     const rolePermissions = agent.role?.permissions || [];
     const agentPermissions = agent.permissions || [];
     const permissions = [...new Set([...rolePermissions, ...agentPermissions])];
@@ -166,11 +195,12 @@ exports.portalLogin = asyncHandler(async (req, res) => {
     return res.json({ success: true, token, user: agent, role: isAdmin ? 'admin' : 'agent', permissions, moduleKeys });
   }
 
-  const user = await User.findOne({ email: norm });
+  const user = await User.findOne({ email: norm }).select('+sessionVersion');
   if (user && user.status === 'active' && user.password && (await user.matchPassword(password))) {
+    await verifySecondFactor(user, totpCode);
     user.lastLogin = new Date();
     await user.save();
-    const token = signToken({ id: user._id, type: 'user' });
+    const token = signToken({ id: user._id, type: 'user', sv: Number(user.sessionVersion || 0) });
     const permissions = user.permissions || [];
     // Get activated modules from tenant_modules collection
     let moduleKeys = [];
@@ -189,7 +219,7 @@ exports.portalLogin = asyncHandler(async (req, res) => {
 
 exports.adminLogin = asyncHandler(async (req, res) => {
   const { email, password } = req.body;
-  const agent = await Agent.findOne({ email: (email || '').toLowerCase() }).populate('role');
+  const agent = await Agent.findOne({ email: (email || '').toLowerCase() }).select('+sessionVersion').populate('role');
   if (!agent || !agent.isActive) {
     throw new ApiError(401, 'Invalid email or password');
   }
@@ -203,7 +233,7 @@ exports.adminLogin = asyncHandler(async (req, res) => {
   agent.lastLogin = new Date();
   await agent.save();
   auditLogin({ actorType: 'agent', actor: agent._id, actorName: agent.name, company: agent.company || null, req, action: 'auth.admin_login' });
-  const token = signToken({ id: agent._id, type: 'agent' });
+  const token = signToken({ id: agent._id, type: 'agent', sv: Number(agent.sessionVersion || 0) });
   // Get activated modules from tenant_modules collection
   let moduleKeys = [];
   if (agent.company) {
@@ -251,6 +281,7 @@ exports.resetPassword = asyncHandler(async (req, res) => {
   const { token, password } = req.body;
   const user = await User.findOne({ resetToken: token, resetExpires: { $gt: new Date() } });
   if (!user) throw new ApiError(400, 'Invalid or expired reset token');
+  await assertPasswordPolicy(password, user.company || null);
   user.password = password;
   user.resetToken = null;
   user.resetExpires = null;
@@ -276,6 +307,7 @@ exports.updateProfile = asyncHandler(async (req, res) => {
     if (currentPassword && !(await user.matchPassword(currentPassword))) {
       throw new ApiError(400, 'Current password is incorrect');
     }
+    await assertPasswordPolicy(password, user.company || null);
     user.password = password;
   }
   await user.save();
@@ -294,6 +326,7 @@ exports.updateAgentProfile = asyncHandler(async (req, res) => {
     if (currentPassword && !(await agent.matchPassword(currentPassword))) {
       throw new ApiError(400, 'Current password is incorrect');
     }
+    await assertPasswordPolicy(password, agent.company || null);
     agent.password = password;
   }
   await agent.save();
@@ -301,15 +334,18 @@ exports.updateAgentProfile = asyncHandler(async (req, res) => {
 });
 
 exports.enableTwoFactor = asyncHandler(async (req, res) => {
-  const { userId } = req;
-  const { method, phone, totpSecret, backupCodes } = req.body;
-  const user = await User.findById(userId);
+  const { method, phone, totpSecret, backupCodes, code } = req.body;
+  const user = await User.findById(req.user?._id || req.userId);
   if (!user) return res.status(404).json({ error: 'User not found' });
+  if (totpSecret) {
+    // Prove possession of the secret before it becomes trusted.
+    if (!verifyTotp(totpSecret, code)) throw new ApiError(422, 'Invalid authenticator code for this secret');
+    user.twoFactorSecret = totpSecret;
+  }
   user.twoFactorEnabled = true;
   user.twoFactorMethod = method;
   if (method === 'sms') user.twoFactorPhone = phone;
-  if (totpSecret) user.twoFactorSecret = totpSecret;
-  if (backupCodes) user.twoFactorBackupCodes = backupCodes;
+  if (Array.isArray(backupCodes)) user.twoFactorBackupCodes = backupCodes;
   await user.save();
   res.json({ success: true, message: 'Two-factor authentication enabled' });
 });

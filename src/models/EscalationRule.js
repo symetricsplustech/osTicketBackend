@@ -13,7 +13,24 @@ const ruleSchema = new mongoose.Schema(
       reassignAgent: { type: mongoose.Schema.Types.ObjectId, ref: 'Agent', default: null },
       reassignTeam: { type: mongoose.Schema.Types.ObjectId, ref: 'Team', default: null },
       notifyAgent: { type: mongoose.Schema.Types.ObjectId, ref: 'Agent', default: null },
+      setStatus: { type: String, default: '' },
     },
+    // Tiered timeline (§16): evaluated against minutes since SLA start
+    // (slaStartedAt, else createdAt). Each tier fires once per ticket.
+    // Example: [{ afterMinutes: 30, notifyAgent }, { afterMinutes: 60,
+    // reassignTeam, setStatus: 'escalated' }, { afterMinutes: 90,
+    // raisePriorityTo: 'Emergency', webhookUrl }].
+    tiers: [
+      {
+        afterMinutes: { type: Number, required: true, min: 0 },
+        raisePriorityTo: { type: String, enum: ['Low', 'Normal', 'High', 'Emergency'], default: null },
+        reassignAgent: { type: mongoose.Schema.Types.ObjectId, ref: 'Agent', default: null },
+        reassignTeam: { type: mongoose.Schema.Types.ObjectId, ref: 'Team', default: null },
+        notifyAgent: { type: mongoose.Schema.Types.ObjectId, ref: 'Agent', default: null },
+        setStatus: { type: String, default: '' },
+        webhookUrl: { type: String, default: '' },
+      },
+    ],
     isActive: { type: Boolean, default: true },
     lastRunAt: { type: Date, default: null },
   },

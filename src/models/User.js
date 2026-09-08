@@ -38,6 +38,8 @@ const userSchema = new mongoose.Schema(
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null, index: true },
     permissions: { type: [String], default: [] },
     lastLogin: { type: Date },
+    lastSeenAt: { type: Date, default: null },
+    sessionVersion: { type: Number, default: 0, select: false },
     notes: { type: String, default: '' },
     avatar: { type: String, default: '' },
     // ---- Enterprise: Customer 360 ----

@@ -152,7 +152,9 @@ const getCompanyMeta = async (companyId) => {
 
 
 exports.dashboard = asyncHandler(async (req, res) => {
-  const [companies, activeCompanies, revenueAgg, plans, pendingInvoices, tickets, users, agents] =
+  const startOfDay = new Date(); startOfDay.setHours(0, 0, 0, 0);
+  const startOfMonth = new Date(startOfDay.getFullYear(), startOfDay.getMonth(), 1);
+  const [companies, activeCompanies, revenueAgg, plans, pendingInvoices, tickets, users, agents, tenantStatuses, newToday, newThisMonth, openTickets, slaBreaches, failedInvoices, subscribedCompanies] =
     await Promise.all([
       Company.countDocuments(),
       Company.countDocuments({ status: 'active' }),
@@ -165,6 +167,13 @@ exports.dashboard = asyncHandler(async (req, res) => {
       Ticket.countDocuments(),
       User.countDocuments(),
       Agent.countDocuments(),
+      Company.aggregate([{ $group: { _id: '$status', count: { $sum: 1 } } }]),
+      Company.countDocuments({ createdAt: { $gte: startOfDay } }),
+      Company.countDocuments({ createdAt: { $gte: startOfMonth } }),
+      Ticket.countDocuments({ status: { $nin: ['closed', 'resolved', 'deleted', 'archived'] } }),
+      Ticket.countDocuments({ isOverdue: true }),
+      Invoice.countDocuments({ status: 'failed' }),
+      Company.find({ status: { $in: ['active', 'trial', 'grace'] }, plan: { $ne: null } }).populate('plan', 'priceMonthly priceYearly').select('plan billingCycle').lean(),
     ]);
 
   const recentCompanies = await Company.find()
@@ -198,7 +207,15 @@ exports.dashboard = asyncHandler(async (req, res) => {
         tickets,
         users,
         agents,
+        newToday,
+        newThisMonth,
+        openTickets,
+        slaBreaches,
+        failedInvoices,
+        mrr: subscribedCompanies.reduce((sum, company) => sum + (company.billingCycle === 'yearly' ? Number(company.plan?.priceYearly || 0) / 12 : Number(company.plan?.priceMonthly || 0)), 0),
+        arr: subscribedCompanies.reduce((sum, company) => sum + (company.billingCycle === 'yearly' ? Number(company.plan?.priceYearly || 0) : Number(company.plan?.priceMonthly || 0) * 12), 0),
       },
+      tenantStatuses: Object.fromEntries(tenantStatuses.map((row) => [row._id, row.count])),
       companyDistribution,
       recentCompanies,
       recentInvoices,

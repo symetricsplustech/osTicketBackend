@@ -315,3 +315,39 @@ exports.updateCallLog = asyncHandler(async (req, res) => {
   await call.save();
   res.json({ success: true, item: call });
 });
+
+/**
+ * Phone channel (§8): log a call onto a ticket thread. The transcription /
+ * AI summary becomes an internal note by default, or a public agent reply
+ * when `publicReply: true` (emailed to the customer like any reply).
+ */
+exports.logCallToTicket = asyncHandler(async (req, res) => {
+  const call = await CallLog.findOne({ _id: req.params.id, ...scope(req) });
+  if (!call) throw new ApiError(404, 'Call not found');
+  const { ticketNumber, publicReply } = req.body;
+  if (!ticketNumber) throw new ApiError(422, 'ticketNumber is required');
+  const ticket = await Ticket.findOne({ number: String(ticketNumber).trim().toUpperCase(), ...scope(req) });
+  if (!ticket) throw new ApiError(404, 'Ticket not found');
+  const ticketService = require('../../services/ticket.service');
+  const body = [
+    `Phone call (${call.direction || 'inbound'}) ${call.callerNumber ? `from ${call.callerNumber}` : ''} — ${call.durationSec || 0}s.`,
+    call.aiSummary ? `Summary: ${call.aiSummary}` : '',
+    call.transcription ? `Transcript: ${String(call.transcription).slice(0, 3000)}` : '',
+  ].filter(Boolean).join('\n');
+  const agent = req.agent || { _id: call.agent || null, name: 'Phone system' };
+  if (publicReply) {
+    await ticketService.addThreadEntry({ ticket, type: 'message', posterType: 'agent', agent: agent._id ? agent : null, body });
+    try {
+      const ctx = await ticketService.buildTicketContext(ticket);
+      const emailService = require('../../services/email.service');
+      if (ctx.user.email) {
+        await emailService.sendFromTemplate({ key: 'ticket_response', to: ctx.user.email, data: ctx, event: 'ticket_response', ticket: ticket._id, user: ticket.user, company: ticket.company });
+      }
+    } catch (_) { /* non-blocking */ }
+  } else {
+    await ticketService.addThreadEntry({ ticket, type: 'note', posterType: 'agent', agent: agent._id ? agent : null, title: 'Call note', body });
+  }
+  call.ticket = ticket._id;
+  await call.save();
+  res.json({ success: true, ticketNumber: ticket.number, public: !!publicReply });
+});

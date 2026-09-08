@@ -118,6 +118,12 @@ router.get('/pitr/verify/:filename', protectAdmin, async (req, res) => {
     res.json(result);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
+router.post('/pitr/restore/:filename', protectAdmin, async (req, res) => {
+  try {
+    const result = await pitr.restoreBackup(req.companyId, req.params.filename, req.body.confirmation);
+    res.json(result);
+  } catch (e) { res.status(400).json({ error: e.message }); }
+});
 router.get('/pitr/history', async (req, res) => {
   try {
     const { BackupTest } = require('../models/Platform5');

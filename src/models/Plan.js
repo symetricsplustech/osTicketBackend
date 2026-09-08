@@ -23,6 +23,7 @@ const planSchema = new mongoose.Schema(
     trialDays: { type: Number, default: 14 },
     gracePeriodDays: { type: Number, default: 7 },
     subscriptionRestrictions: { type: mongoose.Schema.Types.Mixed, default: {} },
+    platformSlaPolicy: { type: mongoose.Schema.Types.ObjectId, ref: 'PlatformSlaPolicy', default: null },
     isActive: { type: Boolean, default: true },
     isDefault: { type: Boolean, default: false },
   },

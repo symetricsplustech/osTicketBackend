@@ -155,21 +155,36 @@ exports.listSuperAdmins = asyncHandler(async (req, res) => {
   const admins = await SuperAdmin.find().select('-password -twoFactorSecret');
   res.json({ success: true, data: admins });
 });
+const PLATFORM_ROLES = ['platform_owner', 'platform_administrator', 'platform_operations_administrator', 'platform_support_administrator', 'platform_customer_success_administrator', 'platform_billing_administrator', 'platform_security_administrator', 'platform_developer_administrator', 'platform_auditor'];
+
+const assertAnotherOwnerRemains = async (target, nextRole, nextActive = target.isActive) => {
+  if (target.platformRole !== 'platform_owner' || (nextRole === 'platform_owner' && nextActive)) return;
+  const others = await SuperAdmin.countDocuments({ _id: { $ne: target._id }, platformRole: 'platform_owner', isActive: true });
+  if (!others) throw new ApiError(409, 'At least one active Platform Owner must remain');
+};
+
 exports.createSuperAdmin = asyncHandler(async (req, res) => {
-  const { name, email, password, role } = req.body;
+  const { name, email, password, role, platformRole, permissions, moduleKeys } = req.body;
   if (!name || !email || !password) throw new ApiError(400, 'Name, email and password are required');
+  if (platformRole !== undefined && !PLATFORM_ROLES.includes(platformRole)) throw new ApiError(422, 'Invalid platform role');
   const exists = await SuperAdmin.findOne({ email: email.toLowerCase() });
   if (exists) throw new ApiError(409, 'A super admin with this email already exists');
-  const sa = await SuperAdmin.create({ name, email, password, role: role || 'super_admin' });
+  const sa = await SuperAdmin.create({ name, email, password, role: role || 'super_admin', platformRole: platformRole || 'platform_support_administrator', permissions: permissions || [], moduleKeys: moduleKeys || [] });
   await log(req, 'superadmin.created', 'SuperAdmin', sa._id, { name, email });
   res.status(201).json({ success: true, data: sa });
 });
 exports.updateSuperAdmin = asyncHandler(async (req, res) => {
   const sa = await SuperAdmin.findById(req.params.id);
   if (!sa) throw new ApiError(404, 'Super admin not found');
-  const { name, role, isActive, permissions, allowedIps } = req.body;
+  const { name, role, platformRole, isActive, permissions, moduleKeys, allowedIps } = req.body;
+  await assertAnotherOwnerRemains(sa, platformRole ?? sa.platformRole, isActive ?? sa.isActive);
   if (name) sa.name = name;
   if (role) sa.role = role;
+  if (platformRole !== undefined) {
+    if (!PLATFORM_ROLES.includes(platformRole)) throw new ApiError(422, 'Invalid platform role');
+    sa.platformRole = platformRole;
+  }
+  if (moduleKeys !== undefined) sa.moduleKeys = moduleKeys;
   if (isActive !== undefined) sa.isActive = isActive;
   if (permissions !== undefined) sa.permissions = permissions;
   if (allowedIps !== undefined) sa.allowedIps = allowedIps;
@@ -183,6 +198,7 @@ exports.deleteSuperAdmin = asyncHandler(async (req, res) => {
   }
   const sa = await SuperAdmin.findById(req.params.id);
   if (!sa) throw new ApiError(404, 'Super admin not found');
+  await assertAnotherOwnerRemains(sa, null, false);
   await sa.deleteOne();
   await log(req, 'superadmin.deleted', 'SuperAdmin', req.params.id, { name: sa.name });
   res.json({ success: true, message: 'Super admin deleted' });

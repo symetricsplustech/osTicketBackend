@@ -7,6 +7,9 @@ const webhookSchema = new mongoose.Schema(
     url: { type: String, required: true },
     secret: { type: String, default: '' },
     events: { type: [String], default: ['ticket.created'] },
+    // Payload format: generic JSON, Slack incoming-webhook ({text}) or
+    // Teams workflow/card ({text}) — same events fan out to chat tools.
+    format: { type: String, enum: ['generic', 'slack', 'teams'], default: 'generic' },
     isActive: { type: Boolean, default: true },
     lastDeliveryAt: { type: Date, default: null },
     lastStatus: { type: String, default: '' },

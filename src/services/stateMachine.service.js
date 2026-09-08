@@ -16,11 +16,27 @@ const ApiError = require('../utils/ApiError');
 
 const TICKET_TERMINAL = ['closed', 'archived', 'deleted'];
 
+const TICKET_WORKING = ['triaged', 'in_progress', 'pending_customer', 'pending_vendor', 'pending_approval', 'on_hold', 'escalated'];
+
 const TICKET_TRANSITIONS = {
-  open: ['assigned', 'overdue', 'closed'],
-  assigned: ['open', 'overdue', 'closed'],
-  overdue: ['open', 'assigned', 'closed'],
+  new: ['open', 'triaged', 'assigned', 'cancelled', 'rejected', 'duplicate', 'spam'],
+  open: ['triaged', 'assigned', 'in_progress', 'pending_customer', 'pending_vendor', 'pending_approval', 'on_hold', 'escalated', 'overdue', 'resolved', 'closed', 'cancelled', 'rejected', 'duplicate', 'spam'],
+  triaged: ['open', 'assigned', 'in_progress', 'resolved', 'closed', 'cancelled', 'rejected', 'duplicate', 'spam'],
+  assigned: ['open', 'triaged', 'in_progress', 'pending_customer', 'pending_vendor', 'pending_approval', 'on_hold', 'escalated', 'overdue', 'resolved', 'closed', 'cancelled', 'rejected', 'duplicate', 'spam'],
+  in_progress: ['pending_customer', 'pending_vendor', 'pending_approval', 'on_hold', 'escalated', 'resolved', 'open', 'assigned', 'cancelled'],
+  pending_customer: ['open', 'assigned', 'in_progress', 'resolved', 'cancelled'],
+  pending_vendor: ['open', 'assigned', 'in_progress', 'resolved', 'cancelled'],
+  pending_approval: ['open', 'assigned', 'in_progress', 'resolved', 'cancelled', 'rejected'],
+  on_hold: ['open', 'assigned', 'in_progress', 'resolved', 'cancelled'],
+  escalated: ['open', 'assigned', 'in_progress', 'resolved', 'closed'],
+  overdue: ['open', 'assigned', 'in_progress', 'pending_customer', 'pending_vendor', 'pending_approval', 'on_hold', 'escalated', 'resolved', 'closed'],
+  resolved: ['verification', 'open', 'assigned', 'closed'],
+  verification: ['closed', 'open', 'assigned'],
   closed: ['open', 'assigned'], // reopen
+  cancelled: ['open', 'assigned'],
+  rejected: ['open', 'assigned'],
+  duplicate: ['open', 'assigned'],
+  spam: ['open', 'assigned'],
   archived: [], // exit only via restore flow
   deleted: [], // exit only via restore flow
 };
@@ -61,7 +77,7 @@ const FAQ_TRANSITIONS = {
   draft: ['review', 'archived'],
   review: ['approved', 'draft'],
   approved: ['published', 'review'],
-  published: ['expired', 'archived', 'review'],
+  published: ['expired', 'archived', 'review', 'draft'],
   expired: ['review', 'archived'],
   archived: ['draft'],
 };

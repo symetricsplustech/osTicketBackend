@@ -15,6 +15,7 @@ const config = require('../../config/config');
 const Notification = require('../../models/Notification');
 const { notifySuperAdmin } = require('../../services/notification.service');
 const emailService = require('../../services/email.service');
+const Subscription = require('../../models/Subscription');
 
 const notifySA = async ({ superAdminId, type, message, link, companyId }) => {
   try {
@@ -316,6 +317,11 @@ exports.createCompany = asyncHandler(async (req, res) => {
         createdBy: req.superAdmin._id,
       });
     }
+    await Subscription.findOneAndUpdate(
+      { company: company._id },
+      { $set: { plan: activePlan._id, status: 'trialing', billingCycle: company.billingCycle, currentPeriodStart: company.planStartedAt, currentPeriodEnd: company.planExpiresAt, trialEndsAt: company.trialEndsAt } },
+      { upsert: true, new: true, setDefaultsOnInsert: true }
+    );
   }
 
   let createdAdmin = null;
@@ -330,6 +336,8 @@ exports.createCompany = asyncHandler(async (req, res) => {
     isActive: true,
     permissions: ['admin.manage', 'access.manage', 'tickets.manage', 'users.manage', 'settings.manage', 'reports.manage'],
   });
+  company.ownerId = createdAdmin._id;
+  await company.save();
 
   if (createdAdmin) {
     const ctx = {
@@ -415,12 +423,16 @@ exports.createCompany = asyncHandler(async (req, res) => {
 exports.updateCompany = asyncHandler(async (req, res) => {
   const company = await Company.findById(req.params.id);
   if (!company) throw new ApiError(404, 'Company not found');
-  const allowed = ['name', 'email', 'supportEmail', 'domain', 'logo', 'address', 'contactPerson', 'phone', 'billingCycle', 'autoRenew', 'settings'];
+  const allowed = ['name', 'email', 'supportEmail', 'domain', 'logo', 'address', 'contactPerson', 'phone', 'billingCycle', 'autoRenew', 'settings', 'ownerId'];
   const lowerKeys = new Set(['email', 'supportEmail', 'domain']);
   for (const key of allowed) {
     if (req.body[key] !== undefined) {
       company[key] = key === 'settings' ? req.body[key] : (lowerKeys.has(key) ? String(req.body[key] || '').toLowerCase().trim() : req.body[key]);
     }
+  }
+  if (req.body.ownerId !== undefined && req.body.ownerId) {
+    const owner = await Agent.findOne({ _id: req.body.ownerId, company: company._id, isActive: true });
+    if (!owner) throw new ApiError(422, 'Owner must be an active agent of this company');
   }
   await company.save();
   await log(req, 'company.updated', 'Company', company._id, { name: company.name });
@@ -436,53 +448,42 @@ exports.updateCompany = asyncHandler(async (req, res) => {
 exports.deleteCompany = asyncHandler(async (req, res) => {
   const company = await Company.findById(req.params.id);
   if (!company) throw new ApiError(404, 'Company not found');
-
-  const companyId = company._id;
-  const mongoose = require('mongoose');
-  const db = mongoose.connection.db;
-
-  // Clean up all tenant-related data
-  const Agent = require('../../models/Agent');
-  const User = require('../../models/User');
-  const Department = require('../../models/Department');
-  const Team = require('../../models/Team');
-  const Role = require('../../models/Role');
-  const Organization = require('../../models/Organization');
-  const Ticket = require('../../models/Ticket');
-  const Notification = require('../../models/Notification');
-  const Invoice = require('../../models/Invoice');
-
-  await Promise.all([
-    Agent.deleteMany({ company: companyId }),
-    User.deleteMany({ company: companyId }),
-    Department.deleteMany({ company: companyId }),
-    Team.deleteMany({ company: companyId }),
-    Role.deleteMany({ company: companyId }),
-    Organization.deleteMany({ company: companyId }),
-    Ticket.deleteMany({ company: companyId }),
-    Notification.deleteMany({ company: companyId }),
-    Invoice.deleteMany({ company: companyId }),
-    db.collection('tenant_modules').deleteMany({ tenantId: new mongoose.Types.ObjectId(companyId) }),
-    db.collection('audit_events').deleteMany({ companyId: new mongoose.Types.ObjectId(companyId) }),
-  ]);
-
-  await company.deleteOne();
-  await log(req, 'company.deleted', 'Company', companyId, { name: company.name });
+  if (company.legalHold) throw new ApiError(409, 'Tenant is under legal hold and cannot be terminated');
+  const reason = String(req.body?.reason || '').trim();
+  if (!reason) throw new ApiError(422, 'A termination reason is required');
+  const retentionDays = Math.max(1, Math.min(Number(req.body?.retentionDays) || 30, 3650));
+  company.status = 'terminated';
+  company.statusReason = reason;
+  company.terminatedAt = new Date();
+  company.purgeScheduledAt = new Date(Date.now() + retentionDays * 86400000);
+  company.lifecycleHistory.push({ status: 'terminated', reason, actor: req.superAdmin._id });
+  await company.save();
+  await log(req, 'company.terminated', 'Company', company._id, { name: company.name, reason, purgeScheduledAt: company.purgeScheduledAt });
   await notifyAllSAs({
-    type: 'company_deleted',
-    message: `Company "${company.name}" deleted`,
+    type: 'company_terminated',
+    message: `Company "${company.name}" terminated; purge scheduled after retention period`,
     link: '/companies',
   });
-  res.json({ success: true, message: 'Company deleted' });
+  res.json({ success: true, data: company, message: 'Tenant terminated and retained for recovery' });
 });
 exports.changeCompanyStatus = asyncHandler(async (req, res) => {
   const company = await Company.findById(req.params.id);
   if (!company) throw new ApiError(404, 'Company not found');
   const { status } = req.body;
-  if (!['active', 'suspended', 'expired', 'archived', 'trial'].includes(status)) {
+  if (!['active', 'grace', 'restricted', 'suspended', 'expired', 'archived', 'trial'].includes(status)) {
     throw new ApiError(400, 'Invalid status');
   }
+  const reason = String(req.body.reason || '').trim();
+  if (status !== 'active' && !reason) throw new ApiError(422, 'A reason is required for this status change');
   company.status = status;
+  company.statusReason = reason;
+  if (status === 'archived') company.archivedAt = new Date();
+  if (status === 'active') {
+    company.archivedAt = null;
+    company.terminatedAt = null;
+    company.purgeScheduledAt = null;
+  }
+  company.lifecycleHistory.push({ status, reason, actor: req.superAdmin._id });
   await company.save();
   await log(req, `company.${status}`, 'Company', company._id, { name: company.name });
   await notifySA({
@@ -511,6 +512,13 @@ exports.changeCompanyPlan = asyncHandler(async (req, res) => {
   if (billingCycle) company.billingCycle = billingCycle;
   if (autoRenew !== undefined) company.autoRenew = autoRenew;
   await company.save();
+  if (planDoc) {
+    await Subscription.findOneAndUpdate(
+      { company: company._id },
+      { $set: { plan: planDoc._id, status: 'active', billingCycle: company.billingCycle, currentPeriodStart: company.planStartedAt, currentPeriodEnd: company.planExpiresAt, cancelAtPeriodEnd: false, scheduledPlan: null, scheduledChangeAt: null } },
+      { upsert: true, new: true, setDefaultsOnInsert: true }
+    );
+  }
   await log(req, 'company.plan_changed', 'Company', company._id, {
     name: company.name,
     plan: planDoc?.name || null,
@@ -533,6 +541,50 @@ exports.listCompanyAdmins = asyncHandler(async (req, res) => {
     .select('name email isAdmin isActive role lastLogin')
     .sort({ name: 1 });
   res.json({ success: true, data: admins });
+});
+
+exports.createCompanyAdmin = asyncHandler(async (req, res) => {
+  const company = await Company.findById(req.params.id);
+  if (!company) throw new ApiError(404, 'Company not found');
+  const { name, email, password, makeOwner } = req.body;
+  if (!name || !email) throw new ApiError(422, 'name and email are required');
+  const normalizedEmail = String(email).trim().toLowerCase();
+  if (await Agent.exists({ email: normalizedEmail })) throw new ApiError(409, 'An agent with this email already exists');
+  const generatedPassword = password || require('crypto').randomBytes(15).toString('base64url');
+  const admin = await Agent.create({
+    name, email: normalizedEmail, password: generatedPassword, company: company._id,
+    isAdmin: true, isActive: true,
+    permissions: ['admin.manage', 'access.manage', 'tickets.manage', 'users.manage', 'settings.manage', 'reports.manage'],
+  });
+  if (makeOwner) { company.ownerId = admin._id; await company.save(); }
+  await log(req, 'company.admin_created', 'Agent', admin._id, { companyId: company._id, email: normalizedEmail, makeOwner: !!makeOwner });
+  res.status(201).json({ success: true, data: admin, temporaryPassword: password ? undefined : generatedPassword });
+});
+
+exports.updateCompanyAdmin = asyncHandler(async (req, res) => {
+  const admin = await Agent.findOne({ _id: req.params.adminId, company: req.params.id, isAdmin: true }).select('+sessionVersion');
+  if (!admin) throw new ApiError(404, 'Tenant administrator not found');
+  const { isActive, name, makeOwner } = req.body;
+  if (name) admin.name = name;
+  if (isActive !== undefined && admin.isActive !== isActive) {
+    admin.isActive = !!isActive;
+    admin.sessionVersion = Number(admin.sessionVersion || 0) + 1;
+  }
+  await admin.save();
+  if (makeOwner) await Company.updateOne({ _id: req.params.id }, { $set: { ownerId: admin._id } });
+  await log(req, 'company.admin_updated', 'Agent', admin._id, { isActive: admin.isActive, makeOwner: !!makeOwner });
+  res.json({ success: true, data: admin });
+});
+
+exports.resetCompanyAdminPassword = asyncHandler(async (req, res) => {
+  const admin = await Agent.findOne({ _id: req.params.adminId, company: req.params.id, isAdmin: true }).select('+sessionVersion');
+  if (!admin) throw new ApiError(404, 'Tenant administrator not found');
+  const temporaryPassword = req.body.password || require('crypto').randomBytes(15).toString('base64url');
+  admin.password = temporaryPassword;
+  admin.sessionVersion = Number(admin.sessionVersion || 0) + 1;
+  await admin.save();
+  await log(req, 'company.admin_password_reset', 'Agent', admin._id, { email: admin.email });
+  res.json({ success: true, temporaryPassword: req.body.password ? undefined : temporaryPassword, message: 'Password reset and existing sessions revoked' });
 });
 
 exports.updateCompanyModules = asyncHandler(async (req, res) => {

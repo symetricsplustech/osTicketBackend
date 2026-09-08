@@ -18,6 +18,13 @@ router.post('/chat/:id/close', ctrl.chatClose);
 router.post('/csat/submit', ctrl.submitCsat);
 router.get('/csat/ticket/:ticketNumber', ctrl.surveysForTicket);
 
+// Company self-registration + inbox verification (no auth)
+router.post('/companies/register', ctrl.registerCompany);
+router.get('/companies/verify', ctrl.verifyCompany);
+
+// Embeddable website form config (public, per tenant)
+router.get('/form-config', ctrl.formConfig);
+
 // Customer-facing service catalog (optional auth for tenant scoping)
 router.get('/service-catalog', optionalUser, ctrl.serviceCatalog);
 

@@ -3,10 +3,25 @@ const { protectTenantPrincipal } = require('../middleware/auth');
 const P7 = require('../models/Platform7');
 const mongoose = require('mongoose');
 const P5 = require('../models/Platform5');
+const config = require('../config/config');
 
 const router = express.Router();
 router.use(protectTenantPrincipal);
 const T = req => ({ tenantId: req.user.tenantId || req.user.companyId });
+
+// This router contains administrative platform features as well as a small
+// number of authenticated self-service actions. Keep customer access explicit.
+const CUSTOMER_ROUTES = [
+  /^\/my-organizations$/,
+  /^\/select-organization$/,
+  /^\/notifications(?:\/[^/]+\/read|\/read-all)?$/,
+  /^\/my-approvals$/,
+  /^\/auth\/oidc\/(?:authorize-url|callback)$/,
+];
+router.use((req, res, next) => {
+  if (req.agent || req.superAdmin || CUSTOMER_ROUTES.some((pattern) => pattern.test(req.path))) return next();
+  return res.status(403).json({ error: 'Staff access required' });
+});
 function crud(path, Model) {
   router.get(path, async (req, res) => { try { res.json(await Model.find(T(req)).sort({ createdAt: -1 }).limit(300)); } catch (e) { res.status(500).json({ error: e.message }); } });
   router.post(path, async (req, res) => { try { res.status(201).json(await Model.create({ ...req.body, ...T(req) })); } catch (e) { res.status(400).json({ error: e.message }); } });
@@ -15,7 +30,35 @@ function crud(path, Model) {
 }
 // Field-level AES-256-GCM encryption
 const crypto = require('crypto');
-const encKey = crypto.createHash('sha256').update(process.env.FIELD_ENC_KEY || 'field-enc-dev-key').digest();
+const encKey = crypto.createHash('sha256').update(process.env.FIELD_ENC_KEY || config.jwt.secret).digest();
+
+const signOidcState = (tenantId, nonce) => {
+  const payload = Buffer.from(JSON.stringify({ tenantId: String(tenantId), nonce, exp: Date.now() + 10 * 60 * 1000 })).toString('base64url');
+  const signature = crypto.createHmac('sha256', encKey).update(payload).digest('base64url');
+  return `${payload}.${signature}`;
+};
+
+const verifyOidcState = (state, tenantId) => {
+  const [payload, signature] = String(state || '').split('.');
+  if (!payload || !signature) throw new Error('Missing or invalid OIDC state');
+  const expected = crypto.createHmac('sha256', encKey).update(payload).digest();
+  const supplied = Buffer.from(signature, 'base64url');
+  if (expected.length !== supplied.length || !crypto.timingSafeEqual(expected, supplied)) throw new Error('Invalid OIDC state');
+  const decoded = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
+  if (decoded.exp < Date.now() || decoded.tenantId !== String(tenantId)) throw new Error('Expired or mismatched OIDC state');
+  return decoded;
+};
+
+const loadOidcMetadata = async (issuerUrl) => {
+  const issuer = issuerUrl.replace(/\/$/, '');
+  const response = await fetch(`${issuer}/.well-known/openid-configuration`, { signal: AbortSignal.timeout(10000) });
+  if (!response.ok) throw new Error('Unable to load OIDC provider metadata');
+  const metadata = await response.json();
+  if (metadata.issuer !== issuer || !metadata.authorization_endpoint || !metadata.token_endpoint || !metadata.jwks_uri) {
+    throw new Error('OIDC provider metadata is incomplete or issuer does not match');
+  }
+  return metadata;
+};
 function encryptField(plain) {
   const iv = crypto.randomBytes(12);
   const c = crypto.createCipheriv('aes-256-gcm', encKey, iv);
@@ -68,14 +111,21 @@ function idemGuard() {
 // ---- §1.13 usage-limit hard enforcement helper ----
 async function enforceLimit(req, metric) {
   const Plan = require('../models/Plan');
-  const plan = (await Plan.find({}).limit(1))[0];
+  const Company = require('../models/Company');
+  const Subscription = require('../models/Subscription');
+  const tenantId = req.companyId || T(req).tenantId;
+  const subscription = await Subscription.findOne({ company: tenantId, status: { $in: ['trialing', 'active', 'past_due', 'grace'] } }).select('plan').lean();
+  const company = await Company.findById(tenantId).select('plan').lean();
+  const planId = subscription?.plan || company?.plan;
+  const plan = planId ? await Plan.findById(planId).lean() : null;
+  if (!plan) return null;
   const capMap = { agents: plan?.maxAgents, contacts: plan?.maxContacts, ticketsPerMonth: plan?.maxTickets };
   const cap = capMap[metric];
   if (cap == null) return null;
   let used;
-  if (metric === 'agents') used = await require('../models/Agent').countDocuments(T(req));
-  else if (metric === 'contacts') used = await require('../models/User').countDocuments({ ...T(req), role: 'client' }).catch(() => 0);
-  else { const ms = new Date(); ms.setDate(1); used = await require('../models/Ticket').countDocuments({ ...T(req), createdAt: { $gte: ms } }); }
+  if (metric === 'agents') used = await require('../models/Agent').countDocuments({ company: tenantId });
+  else if (metric === 'contacts') used = await require('../models/User').countDocuments({ company: tenantId, role: 'client' }).catch(() => 0);
+  else { const ms = new Date(); ms.setUTCDate(1); ms.setUTCHours(0, 0, 0, 0); used = await require('../models/Ticket').countDocuments({ company: tenantId, createdAt: { $gte: ms } }); }
   if (used >= cap) { const err = new Error(`Plan limit reached for ${metric} (${used}/${cap})`); err.status = 402; throw err; }
   return { used, cap };
 }
@@ -94,8 +144,11 @@ router.get('/auth/oidc/authorize-url', async (req, res) => {
   try {
     const c = await P7.OidcConfig.findOne({ ...T(req), enabled: true });
     if (!c) return res.status(400).json({ error: 'OIDC not configured' });
-    const state = crypto.randomBytes(12).toString('hex');
-    const url = `${c.issuerUrl.replace(/\/$/, '')}/authorize?response_type=code&client_id=${encodeURIComponent(c.clientId)}&redirect_uri=${encodeURIComponent(c.redirectUri)}&scope=${encodeURIComponent(c.scopes.join(' '))}&state=${state}`;
+    const metadata = await loadOidcMetadata(c.issuerUrl);
+    const nonce = crypto.randomBytes(24).toString('base64url');
+    const state = signOidcState(T(req).tenantId, nonce);
+    const params = new URLSearchParams({ response_type: 'code', client_id: c.clientId, redirect_uri: c.redirectUri, scope: c.scopes.join(' '), state, nonce });
+    const url = `${metadata.authorization_endpoint}?${params}`;
     res.json({ url, state });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -103,18 +156,30 @@ router.post('/auth/oidc/callback', async (req, res) => {
   try {
     const c = await P7.OidcConfig.findOne({ ...T(req), enabled: true });
     if (!c) return res.status(400).json({ error: 'OIDC not configured' });
-    const tokenRes = await fetch(`${c.issuerUrl.replace(/\/$/, '')}/token`, {
+    if (!req.body.code) return res.status(422).json({ error: 'Authorization code is required' });
+    const state = verifyOidcState(req.body.state, T(req).tenantId);
+    const metadata = await loadOidcMetadata(c.issuerUrl);
+    const tokenRes = await fetch(metadata.token_endpoint, {
       method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({ grant_type: 'authorization_code', code: req.body.code, redirect_uri: c.redirectUri, client_id: c.clientId, client_secret: decryptField(c.clientSecretEnc) }),
     });
     if (!tokenRes.ok) return res.status(401).json({ error: 'token exchange failed' });
     const tok = await tokenRes.json();
-    const claims = JSON.parse(Buffer.from((tok.id_token || '').split('.')[1] || 'e30=', 'base64').toString());
+    if (!tok.id_token) return res.status(401).json({ error: 'OIDC provider did not return an ID token' });
+    const { createRemoteJWKSet, jwtVerify } = await import('jose');
+    const jwks = createRemoteJWKSet(new URL(metadata.jwks_uri));
+    const verified = await jwtVerify(tok.id_token, jwks, {
+      issuer: metadata.issuer,
+      audience: c.clientId,
+      algorithms: metadata.id_token_signing_alg_values_supported || undefined,
+    });
+    const claims = verified.payload;
+    if (claims.nonce !== state.nonce) return res.status(401).json({ error: 'OIDC nonce validation failed' });
     const email = claims.email || claims.preferred_username;
     if (!email) return res.status(401).json({ error: 'no email claim' });
     const User = require('../models/User');
-    let user = await User.findOne({ email: email.toLowerCase() });
-    if (!user) user = await User.create({ email: email.toLowerCase(), name: claims.name || email.split('@')[0], role: 'client', status: 'active', authProvider: 'oidc', tenantId: T(req).tenantId });
+    let user = await User.findOne({ email: email.toLowerCase(), company: T(req).tenantId });
+    if (!user) user = await User.create({ email: email.toLowerCase(), name: claims.name || email.split('@')[0], role: 'client', status: 'active', authProvider: 'oidc', company: T(req).tenantId });
     if (user.status !== 'active') return res.status(401).json({ error: 'Account disabled' });
     const { signToken } = require('../middleware/auth');
     res.json({ token: signToken({ id: String(user._id), type: 'user' }), user: { id: user._id, email: user.email, name: user.name } });

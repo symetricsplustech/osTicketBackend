@@ -28,10 +28,13 @@ const agentSchema = new mongoose.Schema(
     signature: { type: String, default: '' },
     notes: { type: String, default: '' },
     lastLogin: { type: Date },
+    lastSeenAt: { type: Date, default: null },
+    sessionVersion: { type: Number, default: 0, select: false },
     avatar: { type: String, default: '' },
     lockedTickets: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Ticket' }],
     // ---- Enterprise: Workforce management ----
     skills: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Skill' }],
+    level: { type: String, enum: ['L1', 'L2', 'L3'], default: 'L1', index: true },
     presence: {
       type: String,
       enum: ['online', 'away', 'busy', 'offline', 'on_break', 'in_meeting', 'dnd'],

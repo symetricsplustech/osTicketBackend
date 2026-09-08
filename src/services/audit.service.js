@@ -46,6 +46,9 @@ async function audit({
       ip: req?.ip || req?.socket?.remoteAddress || '',
       userAgent: req?.get?.('user-agent') || '',
       source: source || (actorType === 'api' ? 'api' : ''),
+      privilegedSessionId: req?.privilegedSession?.sessionId || '',
+      realActor: req?.privilegedSession?.realActor || null,
+      realActorName: req?.privilegedSession?.realActorEmail || '',
     });
   } catch (err) {
     // audit must never break the business flow

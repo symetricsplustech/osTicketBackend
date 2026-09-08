@@ -152,17 +152,25 @@ const getCompanyMeta = async (companyId) => {
 
 
 exports.login = asyncHandler(async (req, res) => {
-  const { email, password } = req.body;
-  const superAdmin = await SuperAdmin.findOne({ email: (email || '').toLowerCase() });
+  const { email, password, totpCode } = req.body;
+  const superAdmin = await SuperAdmin.findOne({ email: (email || '').toLowerCase() }).select('+sessionVersion');
   if (!superAdmin || !superAdmin.isActive) {
     throw new ApiError(401, 'Invalid email or password');
   }
   if (!(await superAdmin.matchPassword(password))) {
     throw new ApiError(401, 'Invalid email or password');
   }
+  if (superAdmin.twoFactorEnabled) {
+    const { verifyTotp } = require('../../utils/totp');
+    const clean = String(totpCode || '').trim();
+    if (!clean) throw new ApiError(403, 'Two-factor code required', { twoFactorRequired: true });
+    if (!superAdmin.twoFactorSecret || !verifyTotp(superAdmin.twoFactorSecret, clean)) {
+      throw new ApiError(401, 'Invalid two-factor code');
+    }
+  }
   superAdmin.lastLogin = new Date();
   await superAdmin.save();
-  const token = signToken({ id: superAdmin._id, type: 'superadmin' });
+  const token = signToken({ id: superAdmin._id, type: 'superadmin', sv: Number(superAdmin.sessionVersion || 0) });
   res.json({ success: true, token, user: superAdmin });
 });
 exports.getMe = asyncHandler(async (req, res) => {

@@ -71,7 +71,10 @@ async function submitResponse({ company, surveyId, ticketId, userId, rating, com
 async function surveyAnalytics({ company, type }) {
   const surveys = await Survey.find({ company, ...(type ? { type } : {}) }).lean();
   const ids = surveys.map((s) => s._id);
-  const responses = await SurveyResponse.find({ company, survey: { $in: ids } }).populate('agent', 'name').populate('department', 'name');
+  const responses = await SurveyResponse.find({ company, survey: { $in: ids } })
+    .populate('agent', 'name teams')
+    .populate('department', 'name')
+    .populate({ path: 'ticket', select: 'topic', populate: { path: 'topic', select: 'topic' } });
 
   const byType = {};
   for (const s of surveys) {
@@ -105,10 +108,36 @@ async function surveyAnalytics({ company, type }) {
     entry.count += 1;
     entry.total += r.rating;
   }
+  const avgOf = (e) => (e.count ? Math.round((e.total / e.count) * 100) / 100 : null);
+  // Team slice via the responding agent's teams; topic slice via the ticket.
+  const Team = require('../models/Team');
+  const teamIds = [...new Set(responses.flatMap((r) => (r.agent?.teams || []).map(String)))];
+  const teams = teamIds.length ? await Team.find({ _id: { $in: teamIds } }).select('name').lean() : [];
+  const teamNames = Object.fromEntries(teams.map((t) => [String(t._id), t.name]));
+  const byTeam = {};
+  for (const r of responses) {
+    const tids = r.agent?.teams?.length ? r.agent.teams.map(String) : ['unassigned'];
+    for (const tid of tids) {
+      const entry = (byTeam[tid] = byTeam[tid] || { teamId: tid, name: teamNames[tid] || 'Unassigned', count: 0, total: 0 });
+      entry.count += 1;
+      entry.total += r.rating;
+    }
+  }
+  const byTopic = {};
+  for (const r of responses) {
+    const topic = r.ticket?.topic;
+    const key = topic ? String(topic._id || topic) : 'none';
+    const name = topic?.topic || 'No topic';
+    const entry = (byTopic[key] = byTopic[key] || { topicId: key, name, count: 0, total: 0 });
+    entry.count += 1;
+    entry.total += r.rating;
+  }
   return {
     byType,
-    byAgent: Object.values(byAgent).map((a) => ({ ...a, average: a.count ? Math.round((a.total / a.count) * 100) / 100 : null })),
-    byDepartment: Object.values(byDepartment).map((d) => ({ ...d, average: d.count ? Math.round((d.total / d.count) * 100) / 100 : null })),
+    byAgent: Object.values(byAgent).map((a) => ({ ...a, average: avgOf(a) })),
+    byDepartment: Object.values(byDepartment).map((d) => ({ ...d, average: avgOf(d) })),
+    byTeam: Object.values(byTeam).map((t) => ({ ...t, average: avgOf(t) })),
+    byTopic: Object.values(byTopic).map((t) => ({ ...t, average: avgOf(t) })),
   };
 }
 

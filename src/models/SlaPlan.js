@@ -23,7 +23,22 @@ const slaPlanSchema = new mongoose.Schema(
       escalation: { type: Number, default: null },
       callback: { type: Number, default: null },
       approval: { type: Number, default: null },
+      assignment: { type: Number, default: null },
+      task: { type: Number, default: null },
+      vendor: { type: Number, default: null },
+      closure: { type: Number, default: null },
     },
+    pauseRules: {
+      waiting_customer: { type: Boolean, default: true },
+      pending_approval: { type: Boolean, default: false },
+      pending_vendor: { type: Boolean, default: false },
+      on_hold: { type: Boolean, default: false },
+    },
+    escalationRules: [{
+      clock: { type: String, default: 'resolution' },
+      afterMinutes: { type: Number, required: true },
+      actions: [{ type: { type: String, enum: ['notify_agent', 'notify_team_lead', 'notify_department_manager', 'notify_company_admin', 'email', 'sms', 'push', 'webhook', 'increase_priority', 'reassign_team', 'escalate_ticket', 'create_major_incident'] }, target: String }],
+    }],
     pauseOnWaiting: { type: Boolean, default: true }, // pause timer while waiting on customer
     notifyOnBreach: { type: Boolean, default: true },
     notifyOnAtRisk: { type: Boolean, default: false },

@@ -14,7 +14,7 @@ const superAdminSchema = new mongoose.Schema(
     },
     password: { type: String, required: true },
     role: { type: String, enum: ['super_admin', 'support'], default: 'super_admin' },
-    platformRole: { type: String, enum: ['platform_owner', 'platform_administrator', 'platform_support_administrator', 'platform_security_administrator', 'platform_auditor'], default: 'platform_owner', index: true },
+    platformRole: { type: String, enum: ['platform_owner', 'platform_administrator', 'platform_operations_administrator', 'platform_support_administrator', 'platform_customer_success_administrator', 'platform_billing_administrator', 'platform_security_administrator', 'platform_developer_administrator', 'platform_auditor'], default: 'platform_support_administrator', index: true },
     isActive: { type: Boolean, default: true },
     permissions: { type: [String], default: [] },
     moduleKeys: { type: [String], default: [] },
@@ -22,6 +22,8 @@ const superAdminSchema = new mongoose.Schema(
     twoFactorSecret: { type: String, default: '' },
     allowedIps: { type: [String], default: [] },
     lastLogin: { type: Date },
+    lastSeenAt: { type: Date, default: null },
+    sessionVersion: { type: Number, default: 0, select: false },
   },
   { timestamps: true }
 );

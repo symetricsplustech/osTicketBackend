@@ -2,8 +2,14 @@ const SlaPlan = require('../models/SlaPlan');
 const Holiday = require('../models/Holiday');
 const SystemSetting = require('../models/SystemSetting');
 const { emit } = require('./events');
+const SlaEvent = require('../models/SlaEvent');
 
-const SLA_TYPES = ['first_response', 'next_response', 'resolution', 'update', 'escalation', 'callback', 'approval'];
+const SLA_TYPES = ['assignment', 'first_response', 'next_response', 'resolution', 'update', 'escalation', 'callback', 'approval', 'task', 'vendor', 'closure'];
+
+const recordSlaEvent = async (ticket, event, clock, extra = {}) => {
+  if (!ticket?._id) return;
+  await SlaEvent.create({ level: 'tenant', company: ticket.company, ticket: ticket._id, policy: ticket.sla || null, policyModel: 'SlaPlan', service: 'helpdesk', event, clock: clock || '', priority: ticket.priority || '', occurredAt: new Date(), startedAt: ticket.slaStartedAt || ticket.createdAt, dueAt: clock === 'first_response' ? ticket.responseDueAt : ticket.resolutionDueAt || ticket.dueDate, ...extra }).catch(() => {});
+};
 
 let settingsCache = null;
 let settingsCacheAt = 0;
@@ -48,9 +54,9 @@ const getHolidays = async (company) => {
       const d = new Date(h.date);
       if (isNaN(d.getTime())) continue;
       if (h.recurring) {
-        out.push({ month: d.getMonth(), day: d.getDate() });
+        out.push({ month: d.getUTCMonth() + 1, day: d.getUTCDate(), recurring: true });
       } else {
-        out.push({ ts: d.toDateString() });
+        out.push({ year: d.getUTCFullYear(), month: d.getUTCMonth() + 1, day: d.getUTCDate(), recurring: false });
       }
     }
     return out;
@@ -74,8 +80,8 @@ const isWorkingMoment = async (date, company) => {
   if (t < openMin || t >= closeMin) return false;
   const holidays = await getHolidays(company);
   for (const h of holidays) {
-    if (h.month !== undefined && h.month === date.getMonth() && h.day === date.getDate()) return false;
-    if (h.ts && h.ts === date.toDateString()) return false;
+    if (h.recurring && h.month === date.getMonth() + 1 && h.day === date.getDate()) return false;
+    if (!h.recurring && h.year === date.getFullYear() && h.month === date.getMonth() + 1 && h.day === date.getDate()) return false;
   }
   return true;
 };
@@ -84,6 +90,28 @@ const isWorkingMoment = async (date, company) => {
  * Compute a due date honouring the SLA schedule (24/7 or business hours from admin
  * Schedules + Holidays) for the given SLA type target.
  */
+const dueInHours = async (plan, hours, startDate, company) => {
+  if (!plan || plan.schedule === '24/7') {
+    return new Date(new Date(startDate).getTime() + hours * 60 * 60 * 1000);
+  }
+  // Walk in minute increments so sub-hour targets remain exact. The schedule
+  // is evaluated in the SLA plan timezone, not the Node process timezone.
+  let due = new Date(startDate);
+  let remainingMinutes = Math.ceil(Number(hours) * 60);
+  let steps = 0;
+  const maxSteps = 60 * 24 * 366 * 5;
+  const holidays = await getHolidays(company);
+  while (remainingMinutes > 0 && steps < maxSteps) {
+    due = new Date(due.getTime() + 60 * 1000);
+    steps += 1;
+    if (isWithinPlanHours(due, plan) && !isHolidayInTimezone(due, plan.timezone, holidays)) {
+      remainingMinutes -= 1;
+    }
+  }
+  if (remainingMinutes > 0) throw new Error('SLA target exceeds the supported five-year schedule window');
+  return due;
+};
+
 const computeDueDate = async (sla, startDate = new Date(), opts = {}) => {
   if (!sla) return null;
   const plan = await SlaPlan.findById(sla);
@@ -93,20 +121,29 @@ const computeDueDate = async (sla, startDate = new Date(), opts = {}) => {
   if (plan.targets && typeof plan.targets[slaType] === 'number') {
     hours = plan.targets[slaType];
   }
-  if (plan.schedule === '24/7') {
-    return new Date(new Date(startDate).getTime() + hours * 60 * 60 * 1000);
-  }
-  // Business hours walk (configurable via Schedules + Holidays)
+  return dueInHours(plan, hours, startDate, plan.company || opts.company || null);
+};
+
+/**
+ * Start the separate response + resolution clocks (§14). dueDate remains the
+ * resolution clock for backward compatibility.
+ */
+const startClocks = async (sla, startDate = new Date(), opts = {}) => {
+  if (!sla) return { responseDue: null, resolutionDue: null };
+  const plan = await SlaPlan.findById(sla);
+  if (!plan) return { responseDue: null, resolutionDue: null };
   const company = plan.company || opts.company || null;
-  let due = new Date(startDate);
-  let remaining = hours;
-  let steps = 0;
-  while (remaining > 0 && steps < 24 * 60 * 31) {
-    due = new Date(due.getTime() + 60 * 60 * 1000);
-    steps += 1;
-    if (await isWorkingMoment(due, company)) remaining -= 1;
-  }
-  return due;
+  const responseHours = plan.targets && typeof plan.targets.first_response === 'number'
+    ? plan.targets.first_response
+    : plan.gracePeriod || 24;
+  const resolutionHours = plan.targets && typeof plan.targets.resolution === 'number'
+    ? plan.targets.resolution
+    : plan.gracePeriod || 24;
+  const [responseDue, resolutionDue] = await Promise.all([
+    dueInHours(plan, responseHours, startDate, company),
+    dueInHours(plan, resolutionHours, startDate, company),
+  ]);
+  return { responseDue, resolutionDue };
 };
 
 const getSlaHours = async (sla, slaType = 'first_response') => {
@@ -121,13 +158,19 @@ const getSlaHours = async (sla, slaType = 'first_response') => {
  * Pause the SLA timer (e.g. waiting on customer). Stores elapsed time so
  * resume can continue from the same due date.
  */
-const pauseSla = async (ticket) => {
+const pauseSla = async (ticket, waitingOn) => {
   if (!ticket || ticket.slaPaused || !ticket.dueDate) return ticket;
+  if (ticket.sla) {
+    const plan = await SlaPlan.findById(ticket.sla).select('pauseRules').lean();
+    const key = { customer: 'waiting_customer', approval: 'pending_approval', vendor: 'pending_vendor' }[waitingOn] || 'on_hold';
+    if (plan?.pauseRules && plan.pauseRules[key] === false) return ticket;
+  }
   ticket.slaPaused = true;
   ticket.slaPausedAt = new Date();
   ticket.slaResumeAt = null;
-  ticket.waitingOn = ticket.waitingOn || 'customer';
+  ticket.waitingOn = waitingOn || ticket.waitingOn || 'customer';
   await ticket.save().catch(() => {});
+  await recordSlaEvent(ticket, 'paused', 'resolution', { reason: ticket.waitingOn });
   emit('sla.paused', { company: ticket.company, ticketId: ticket._id, ticketNumber: ticket.number });
   return ticket;
 };
@@ -140,11 +183,14 @@ const resumeSla = async (ticket) => {
   const pausedMs = ticket.slaPausedAt ? Date.now() - new Date(ticket.slaPausedAt).getTime() : 0;
   if (pausedMs > 0 && ticket.dueDate) {
     ticket.dueDate = new Date(new Date(ticket.dueDate).getTime() + pausedMs);
+    if (ticket.resolutionDueAt) ticket.resolutionDueAt = new Date(new Date(ticket.resolutionDueAt).getTime() + pausedMs);
+    if (!ticket.responseMetAt && ticket.responseDueAt) ticket.responseDueAt = new Date(new Date(ticket.responseDueAt).getTime() + pausedMs);
   }
   ticket.slaPaused = false;
   ticket.slaPausedAt = null;
   ticket.waitingOn = 'none';
   await ticket.save().catch(() => {});
+  await recordSlaEvent(ticket, 'resumed', 'resolution', { pausedDurationMs: pausedMs });
   emit('sla.resumed', { company: ticket.company, ticketId: ticket._id, ticketNumber: ticket.number });
   return ticket;
 };
@@ -164,7 +210,7 @@ const predictBreachRisk = async (ticket) => {
   // workload penalty
   const Ticket = require('../models/Ticket');
   if (ticket.agent) {
-    const workload = await Ticket.countDocuments({ agent: ticket.agent, status: { $in: ['open', 'assigned', 'overdue'] } });
+    const workload = await Ticket.countDocuments({ agent: ticket.agent, status: { $in: ['new', 'open', 'triaged', 'assigned', 'in_progress', 'pending_customer', 'pending_vendor', 'pending_approval', 'on_hold', 'escalated', 'overdue'] } });
     if (workload > 8) risk += 10;
     if (workload > 15) risk += 10;
   }
@@ -187,7 +233,7 @@ const markOverdueTickets = async () => {
     dueDate: { $ne: null, $lte: now },
     isOverdue: false,
     slaPaused: false,
-    status: { $nin: [Ticket.STATUSES.CLOSED, Ticket.STATUSES.ARCHIVED, Ticket.STATUSES.DELETED] },
+    status: { $nin: [Ticket.STATUSES.RESOLVED, Ticket.STATUSES.CLOSED, Ticket.STATUSES.ARCHIVED, Ticket.STATUSES.DELETED] },
   }).lean();
   if (!candidates.length) return { modified: 0 };
 
@@ -202,6 +248,7 @@ const markOverdueTickets = async () => {
 
   for (const t of candidates) {
     emit('sla.breached', { company: t.company, ticketId: t._id, ticketNumber: t.number, dueDate: t.dueDate });
+    await recordSlaEvent(t, 'breached', 'resolution', { completedAt: now, actual: new Date(t.dueDate).getTime() - new Date(t.slaStartedAt || t.createdAt).getTime(), unit: 'milliseconds' });
     emit('ticket.overdue', { company: t.company, ticketId: t._id, ticketNumber: t.number });
     const plan = t.sla ? await SlaPlan.findById(t.sla) : null;
     if (plan && plan.notifyOnBreach) {
@@ -241,11 +288,88 @@ const checkAtRiskTickets = async () => {
     dueDate: { $ne: null, $gte: new Date(), $lte: windowStart },
     isOverdue: false,
     slaPaused: false,
-    status: { $nin: [Ticket.STATUSES.CLOSED, Ticket.STATUSES.ARCHIVED, Ticket.STATUSES.DELETED] },
+    status: { $nin: [Ticket.STATUSES.RESOLVED, Ticket.STATUSES.CLOSED, Ticket.STATUSES.ARCHIVED, Ticket.STATUSES.DELETED] },
   }).lean();
   for (const t of tickets) {
     emit('sla.at_risk', { company: t.company, ticketId: t._id, ticketNumber: t.number, dueDate: t.dueDate });
   }
+};
+
+const executeEscalationRules = async () => {
+  const Ticket = require('../models/Ticket');
+  const open = await Ticket.find({ sla: { $ne: null }, slaPaused: false, status: { $nin: ['resolved', 'closed', 'archived', 'deleted'] } }).populate('sla').limit(1000);
+  let executed = 0;
+  for (const ticket of open) {
+    for (const rule of ticket.sla?.escalationRules || []) {
+      const anchor = ticket.slaStartedAt || ticket.createdAt;
+      if (Date.now() - new Date(anchor).getTime() < Number(rule.afterMinutes || 0) * 60000) continue;
+      const exists = await SlaEvent.exists({ ticket: ticket._id, event: 'warning', 'metadata.ruleId': String(rule._id) });
+      if (exists) continue;
+      for (const action of rule.actions || []) {
+        const payload = { company: ticket.company, ticketId: ticket._id, ticketNumber: ticket.number, action: action.type, target: action.target || '' };
+        if (action.type === 'notify_agent' && ticket.agent) await require('./notification.service').notifyAgent({ agentId: ticket.agent, type: 'sla_breach', message: `SLA escalation for #${ticket.number}`, link: `/tickets/${ticket.number}`, ticket: ticket._id, company: ticket.company }).catch(() => {});
+        else if (action.type === 'notify_company_admin' || action.type === 'notify_team_lead' || action.type === 'notify_department_manager') await require('./notification.service').notifyAdminRoom({ type: 'sla_breach', message: `SLA escalation for #${ticket.number}`, link: `/tickets/${ticket.number}`, ticket: ticket._id, company: ticket.company }).catch(() => {});
+        else if (action.type === 'increase_priority') ticket.priority = ticket.priority === 'Emergency' ? 'Emergency' : 'Emergency';
+        else if (action.type === 'escalate_ticket') ticket.status = Ticket.STATUSES.ESCALATED;
+        emit(`sla.action.${action.type}`, payload); // email/SMS/push/webhook/major-incident workers consume this
+      }
+      await ticket.save().catch(() => {});
+      await recordSlaEvent(ticket, 'warning', rule.clock || 'resolution', { metadata: { ruleId: String(rule._id), actions: rule.actions }, reason: `Escalation at ${rule.afterMinutes} minutes` });
+      executed += 1;
+    }
+  }
+  return { executed };
+};
+
+/**
+ * Mark response-SLA breaches (first response clock). Unlike resolution
+ * breaches this never flips status — it emits + notifies so the response
+ * clock gets its own trackable event stream.
+ */
+const markResponseBreaches = async () => {
+  const Ticket = require('../models/Ticket');
+  const now = new Date();
+  const open = await Ticket.find({
+    responseDueAt: { $ne: null, $lte: now },
+    responseMetAt: null,
+    responseBreached: { $ne: true },
+    status: { $nin: ['resolved', 'closed', 'archived', 'deleted'] },
+  }).lean();
+  if (!open.length) return { modified: 0 };
+
+  await Ticket.updateMany(
+    { _id: { $in: open.map((t) => t._id) } },
+    { $set: { responseBreached: true } }
+  );
+
+  const { sendFromTemplate } = require('./email.service');
+  const { notifyAgent } = require('./notification.service');
+  for (const t of open) {
+    emit('sla.breached', { company: t.company, ticketId: t._id, ticketNumber: t.number, clock: 'response', dueDate: t.responseDueAt });
+    await recordSlaEvent(t, 'breached', 'first_response', { completedAt: now, actual: new Date(t.responseDueAt).getTime() - new Date(t.slaStartedAt || t.createdAt).getTime(), unit: 'milliseconds' });
+    if (t.agent) {
+      await notifyAgent({
+        agentId: t.agent,
+        type: 'overdue',
+        message: `Response SLA breached for ticket #${t.number}`,
+        link: `/agent/tickets/${t.number}`,
+        ticket: t._id,
+        company: t.company,
+      }).catch(() => {});
+      const assigned = await require('../models/Agent').findById(t.agent).select('email name').lean();
+      if (assigned?.email) {
+        await sendFromTemplate({
+          key: 'sla_response_breach',
+          to: assigned.email,
+          data: { recipient: { name: assigned.name || '' }, ticketNumber: t.number, dueDate: t.responseDueAt },
+          event: 'sla_response_breach',
+          ticket: t._id,
+          company: t.company,
+        }).catch(() => {});
+      }
+    }
+  }
+  return { modified: open.length };
 };
 
 const scheduleOverdueCheck = () => {
@@ -255,6 +379,8 @@ const scheduleOverdueCheck = () => {
     try {
       await markOverdueTickets();
       await checkAtRiskTickets();
+      await markResponseBreaches();
+      await executeEscalationRules();
     } catch (err) {
       // ignore
     }
@@ -289,6 +415,28 @@ const partsInTz = (date, timezone) => {
   }
 };
 
+const calendarPartsInTz = (date, timezone) => {
+  try {
+    const fmt = new Intl.DateTimeFormat('en-CA', {
+      timeZone: timezone || 'UTC',
+      year: 'numeric',
+      month: 'numeric',
+      day: 'numeric',
+    });
+    const parts = Object.fromEntries(fmt.formatToParts(date).map((p) => [p.type, p.value]));
+    return { year: Number(parts.year), month: Number(parts.month), day: Number(parts.day) };
+  } catch (_) {
+    return { year: date.getFullYear(), month: date.getMonth() + 1, day: date.getDate() };
+  }
+};
+
+const isHolidayInTimezone = (date, timezone, holidays = []) => {
+  const local = calendarPartsInTz(date, timezone);
+  return holidays.some((holiday) => holiday.month === local.month
+    && holiday.day === local.day
+    && (holiday.recurring || holiday.year === local.year));
+};
+
 const isWithinPlanHours = (date, plan) => {
   if (!plan || plan.schedule === '24/7' || !plan.businessHours) return true;
   const tz = plan.timezone || 'UTC';
@@ -300,14 +448,19 @@ const isWithinPlanHours = (date, plan) => {
 
 module.exports = {
   computeDueDate,
+  startClocks,
   pauseSla,
   resumeSla,
   predictBreachRisk,
   markOverdueTickets,
+  markResponseBreaches,
   checkAtRiskTickets,
+  executeEscalationRules,
   scheduleOverdueCheck,
   getSlaHours,
   isWorkingMoment,
   isWithinPlanHours,
+  dueInHours,
   SLA_TYPES,
+  recordSlaEvent,
 };

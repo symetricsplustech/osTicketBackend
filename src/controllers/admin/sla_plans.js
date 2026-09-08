@@ -388,10 +388,10 @@ const INTEGRATION_CATALOG = [
 
 exports.listSlaPlans = asyncHandler(async (req, res) => {
   const plans = await SlaPlan.find(req.companyId ? { company: req.companyId } : {}).sort({ name: 1 });
-  res.json({ success: true, items: plans });
+  res.json({ success: true, items: plans, plans });
 });
 exports.createSlaPlan = asyncHandler(async (req, res) => {
-  const { name, gracePeriod, schedule, status, notes } = req.body;
+  const { name, gracePeriod, schedule, status, notes, targets, responseMinutes, resolutionMinutes, timezone, businessHours, pauseRules, escalationRules, notifyOnBreach, notifyOnAtRisk, breachEscalate } = req.body;
   if (!name) throw new ApiError(422, 'SLA name is required');
   const plan = await SlaPlan.create({
     name,
@@ -400,6 +400,14 @@ exports.createSlaPlan = asyncHandler(async (req, res) => {
     schedule: schedule || '24/7',
     status: status || 'active',
     notes: notes || '',
+    targets: { ...(targets || {}), ...(responseMinutes !== undefined ? { first_response: Number(responseMinutes) / 60 } : {}), ...(resolutionMinutes !== undefined ? { resolution: Number(resolutionMinutes) / 60 } : {}) },
+    timezone: timezone || 'UTC',
+    businessHours: businessHours || undefined,
+    pauseRules: pauseRules || undefined,
+    escalationRules: escalationRules || [],
+    notifyOnBreach: notifyOnBreach !== false,
+    notifyOnAtRisk: !!notifyOnAtRisk,
+    breachEscalate: !!breachEscalate,
   });
   res.status(201).json({ success: true, plan });
 });
@@ -407,16 +415,54 @@ exports.updateSlaPlan = asyncHandler(async (req, res) => {
   const plan = await SlaPlan.findById(req.params.id);
   if (!plan) throw new ApiError(404, 'SLA plan not found');
   if (req.companyId && String(plan.company) !== String(req.companyId)) throw new ApiError(403, 'Access denied');
-  const { name, gracePeriod, schedule, status, notes } = req.body;
+  const { name, gracePeriod, schedule, status, notes, targets, responseMinutes, resolutionMinutes, timezone, businessHours, pauseRules, escalationRules, notifyOnBreach, notifyOnAtRisk, breachEscalate } = req.body;
   if (name) plan.name = name;
   if (gracePeriod !== undefined) plan.gracePeriod = parseInt(gracePeriod, 10);
   if (schedule !== undefined) plan.schedule = schedule;
   if (status !== undefined) plan.status = status;
   if (notes !== undefined) plan.notes = notes;
+  if (targets !== undefined) plan.targets = { ...plan.targets?.toObject?.(), ...targets };
+  if (responseMinutes !== undefined) plan.targets.first_response = Number(responseMinutes) / 60;
+  if (resolutionMinutes !== undefined) plan.targets.resolution = Number(resolutionMinutes) / 60;
+  if (timezone !== undefined) plan.timezone = timezone;
+  if (businessHours !== undefined) plan.businessHours = businessHours;
+  if (pauseRules !== undefined) plan.pauseRules = pauseRules;
+  if (escalationRules !== undefined) plan.escalationRules = escalationRules;
+  if (notifyOnBreach !== undefined) plan.notifyOnBreach = !!notifyOnBreach;
+  if (notifyOnAtRisk !== undefined) plan.notifyOnAtRisk = !!notifyOnAtRisk;
+  if (breachEscalate !== undefined) plan.breachEscalate = !!breachEscalate;
   await plan.save();
   res.json({ success: true, plan });
 });
 exports.deleteSlaPlan = asyncHandler(async (req, res) => {
   await SlaPlan.deleteOne({ _id: req.params.id, ...(req.companyId ? { company: req.companyId } : {}) });
   res.json({ success: true, message: 'SLA plan deleted' });
+});
+
+exports.slaDashboard = asyncHandler(async (req, res) => {
+  const SlaEvent = require('../../models/SlaEvent');
+  const Ticket = require('../../models/Ticket');
+  const since = new Date(Date.now() - Math.min(Number(req.query.days) || 30, 365) * 86400000);
+  const [events, openTickets, atRisk, breached, departments] = await Promise.all([
+    SlaEvent.find({ level: 'tenant', company: req.companyId, occurredAt: { $gte: since }, event: { $in: ['met', 'breached'] } }).lean(),
+    Ticket.countDocuments({ company: req.companyId, status: { $nin: ['resolved', 'closed', 'archived', 'deleted'] } }),
+    Ticket.countDocuments({ company: req.companyId, isOverdue: false, dueDate: { $gt: new Date(), $lte: new Date(Date.now() + 2 * 3600000) } }),
+    Ticket.countDocuments({ company: req.companyId, $or: [{ isOverdue: true }, { responseBreached: true }] }),
+    Ticket.aggregate([{ $match: { company: req.companyId } }, { $group: { _id: '$dept', total: { $sum: 1 }, breached: { $sum: { $cond: [{ $or: [{ $eq: ['$isOverdue', true] }, { $eq: ['$responseBreached', true] }] }, 1, 0] } } } }]),
+  ]);
+  const summarize = (clock) => {
+    const selected = events.filter((event) => event.clock === clock);
+    const met = selected.filter((event) => event.event === 'met').length;
+    return { measured: selected.length, met, breached: selected.length - met, compliance: selected.length ? (met / selected.length) * 100 : 100 };
+  };
+  res.json({ success: true, data: { openTickets, withinSla: Math.max(0, openTickets - breached), atRisk, breached, response: summarize('first_response'), resolution: summarize('resolution'), departments } });
+});
+
+exports.ticketSlaHistory = asyncHandler(async (req, res) => {
+  const Ticket = require('../../models/Ticket');
+  const SlaEvent = require('../../models/SlaEvent');
+  const ticket = await Ticket.findOne({ number: req.params.number, company: req.companyId }).select('_id number sla responseDueAt resolutionDueAt').populate('sla', 'name');
+  if (!ticket) throw new ApiError(404, 'Ticket not found');
+  const events = await SlaEvent.find({ level: 'tenant', company: req.companyId, ticket: ticket._id }).sort({ occurredAt: 1 }).lean();
+  res.json({ success: true, data: { ticket, events } });
 });

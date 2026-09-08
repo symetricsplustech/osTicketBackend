@@ -46,6 +46,14 @@ const defaultSettings = {
     // customer reply after this many hours (0/disabled = never auto-close).
     autoCloseEnabled: true,
     autoCloseAfterHours: 72,
+    // Resolution discipline (§41): require code + solution to resolve.
+    requireResolution: true,
+    // Parent stays open until subtasks finish (§22).
+    blockCloseOnOpenTasks: true,
+    // Reopen windows in days (§40): customer reply reopens inside the window,
+    // otherwise a new ticket linked to the previous one is created.
+    reopenWindowDays: 7,
+    closedReopenWindowDays: 60,
   },
   emails: {
     banList: [],

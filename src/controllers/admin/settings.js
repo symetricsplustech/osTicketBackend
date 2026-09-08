@@ -423,6 +423,35 @@ exports.updateCompanySettings = asyncHandler(async (req, res) => {
   await company.save();
   res.json({ success: true, data: company });
 });
+// Transfer company ownership to another active agent of the same tenant.
+// Allowed for company admins; the current owner need not be the caller.
+exports.transferCompanyOwnership = asyncHandler(async (req, res) => {
+  if (!req.companyId) throw new ApiError(404, 'No company is associated with your account');
+  const { agentId } = req.body;
+  if (!agentId) throw new ApiError(422, 'agentId is required');
+  const Agent = require('../../models/Agent');
+  const target = await Agent.findOne({ _id: agentId, company: req.companyId, isActive: true });
+  if (!target) throw new ApiError(422, 'Owner must be an active agent of this company');
+  const company = await Company.findById(req.companyId);
+  if (!company) throw new ApiError(404, 'Company not found');
+  const prev = company.ownerId;
+  company.ownerId = target._id;
+  await company.save();
+  audit({
+    company: req.companyId,
+    actorType: 'agent',
+    actor: req.agent?._id,
+    actorName: req.agent?.name || '',
+    action: 'company.ownership_transferred',
+    entityType: 'company',
+    entityId: company._id,
+    before: { ownerId: prev },
+    after: { ownerId: target._id },
+    source: 'admin.company',
+    req,
+  });
+  res.json({ success: true, data: company });
+});
 exports.uploadCompanyLogo = asyncHandler(async (req, res) => {
   if (!req.file) throw new ApiError(422, 'No file uploaded');
   const url = `/uploads/${req.file.filename}`;

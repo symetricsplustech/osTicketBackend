@@ -31,6 +31,8 @@ exports.createEmployee = asyncHandler(async (req, res) => {
   const normalizedEmail = String(email).toLowerCase().trim();
   const existing = await User.findOne({ email: normalizedEmail });
   if (existing) throw new ApiError(409, 'An account with this email already exists');
+  const { assertPasswordPolicy } = require('../utils/passwordPolicy');
+  await assertPasswordPolicy(password, req.user.company || null);
 
   const employee = await User.create({
     name,
@@ -102,6 +104,8 @@ exports.updateEmployee = asyncHandler(async (req, res) => {
   if (permissions !== undefined) employee.permissions = sanitizePermissions(permissions);
   if (password) {
     if (password.length < 6) throw new ApiError(422, 'Password must be at least 6 characters');
+    const { assertPasswordPolicy } = require('../utils/passwordPolicy');
+    await assertPasswordPolicy(password, req.user.company || null);
     employee.password = password;
   }
   await employee.save();
@@ -161,6 +165,8 @@ exports.profile = asyncHandler(async (req, res) => {
     if (!currentPassword || !(await user.matchPassword(currentPassword))) {
       throw new ApiError(400, 'Current password is incorrect');
     }
+    const { assertPasswordPolicy } = require('../utils/passwordPolicy');
+    await assertPasswordPolicy(password, user.company || null);
     user.password = password;
   }
   await user.save();

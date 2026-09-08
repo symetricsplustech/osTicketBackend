@@ -10,6 +10,7 @@ const ticketStatusSchema = new mongoose.Schema(
     sortOrder: { type: Number, default: 0 },
     description: { type: String, default: '' },
     pauseSla: { type: Boolean, default: false },
+    waitingOn: { type: String, enum: ['customer', 'agent', 'vendor', 'approval', 'none'], default: 'customer' },
     isClosed: { type: Boolean, default: false },
     company: { type: mongoose.Schema.Types.ObjectId, ref: 'Company', default: null, index: true },
   },

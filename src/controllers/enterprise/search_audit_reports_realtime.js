@@ -292,6 +292,10 @@ exports.departmentMetricsReport = asyncHandler(async (req, res) => {
   const data = await reporting.departmentMetrics({ company: req.companyId, fromDays: parseInt(req.query.days, 10) || 30 });
   res.json({ success: true, ...data });
 });
+exports.teamMetricsReport = asyncHandler(async (req, res) => {
+  const data = await reporting.teamMetrics({ company: req.companyId, fromDays: parseInt(req.query.days, 10) || 30 });
+  res.json({ success: true, ...data });
+});
 exports.customerMetricsReport = asyncHandler(async (req, res) => {
   const data = await reporting.customerMetrics({ company: req.companyId, fromDays: parseInt(req.query.days, 10) || 30 });
   res.json({ success: true, ...data });

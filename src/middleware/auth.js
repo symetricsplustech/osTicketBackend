@@ -13,6 +13,76 @@ const signToken = (payload) =>
 
 const verifyToken = (token) => jwt.verify(token, config.jwt.secret);
 
+const assertSessionVersion = (decoded, principal) => {
+  const tokenVersion = Number(decoded.sv || 0);
+  const currentVersion = Number(principal.sessionVersion || 0);
+  if (tokenVersion !== currentVersion) throw new ApiError(401, 'Session has been revoked, please login again');
+};
+
+const attachPrivilegedSession = async (decoded, req) => {
+  if (!decoded.sid) return;
+  const PrivilegedSession = require('../models/PrivilegedSession');
+  const session = await PrivilegedSession.findOne({ sessionId: decoded.sid });
+  if (!session || session.status !== 'active' || session.expiresAt < new Date()) {
+    if (session && session.status === 'active') {
+      session.status = 'expired';
+      await session.save().catch(() => {});
+    }
+    throw new ApiError(401, 'Privileged session expired or revoked');
+  }
+  req.privilegedSession = session;
+  if (!req._privilegedAuditAttached) {
+    req._privilegedAuditAttached = true;
+    const startedAt = Date.now();
+    resFinishAudit(req, session, startedAt);
+  }
+};
+
+const resFinishAudit = (req, session, startedAt) => {
+  const res = req.res;
+  if (!res) return;
+  res.once('finish', () => {
+    require('../services/audit.service').audit({
+      company: session.targetTenant,
+      actorType: 'agent',
+      actor: session.effectiveActor,
+      actorName: session.targetUser,
+      action: `privileged.${req.method.toLowerCase()}`,
+      entityType: 'http_request',
+      entityId: null,
+      after: { path: req.originalUrl, statusCode: res.statusCode, durationMs: Date.now() - startedAt },
+      reason: session.reason,
+      source: 'privileged-session',
+      req,
+    });
+  });
+};
+
+/**
+ * Idle-session timeout + IP allowlist, evaluated on every authenticated
+ * request (settings.auth.sessionTimeoutMinutes, 0 = off; allowlist empty =
+ * no restriction). Activity touch is throttled to one write per 5 minutes.
+ */
+const touchSession = async (doc, req) => {
+  try {
+    const SystemSetting = require('../models/SystemSetting');
+    const settings = await SystemSetting.getSettings();
+    const timeoutMin = Number(settings.auth?.sessionTimeoutMinutes) || 0;
+    const now = Date.now();
+    const last = doc.lastSeenAt ? new Date(doc.lastSeenAt).getTime() : 0;
+    if (timeoutMin > 0 && last && now - last > timeoutMin * 60 * 1000) {
+      throw new ApiError(401, 'Session expired due to inactivity, please login again');
+    }
+    if (!last || now - last > 5 * 60 * 1000) {
+      await doc.constructor.updateOne({ _id: doc._id }, { $set: { lastSeenAt: new Date() } });
+    }
+  } catch (err) {
+    if (err && err.statusCode) throw err;
+    // session bookkeeping must never block authentication
+  }
+  await require('./ipAllowlist').enforceIpAllowlist(req);
+};
+
 const extractToken = (req) => {
   if (req.headers.authorization && req.headers.authorization.startsWith('Bearer ')) {
     return req.headers.authorization.split(' ')[1];
@@ -46,10 +116,12 @@ const protectUser = asyncHandler(async (req, res, next) => {
     throw new ApiError(401, 'Session expired, please login again');
   }
   if (decoded.type !== 'user') throw new ApiError(403, 'Customer access only');
-  const user = await User.findById(decoded.id);
+  const user = await User.findById(decoded.id).select('+sessionVersion');
   if (!user || user.status !== 'active') throw new ApiError(401, 'Account not found or disabled');
+  assertSessionVersion(decoded, user);
   req.user = user;
   await attachActiveCompany(user, req);
+  await touchSession(user, req);
   runWithTenant(req.companyId, next);
 });
 
@@ -83,24 +155,13 @@ const protectAgent = asyncHandler(async (req, res, next) => {
     throw new ApiError(401, 'Session expired, please login again');
   }
   if (decoded.type !== 'agent') throw new ApiError(403, 'Staff access only');
-  const agent = await Agent.findById(decoded.id).populate('role');
+  const agent = await Agent.findById(decoded.id).select('+sessionVersion').populate('role');
   if (!agent || !agent.isActive) throw new ApiError(401, 'Account not found or disabled');
-  // Privileged-session tokens (impersonation / break-glass) are only valid
-  // while the session is active and unexpired — revocation takes effect now.
-  if (decoded.sid) {
-    const PrivilegedSession = require('../models/PrivilegedSession');
-    const session = await PrivilegedSession.findOne({ sessionId: decoded.sid });
-    if (!session || session.status !== 'active' || session.expiresAt < new Date()) {
-      if (session && session.status === 'active') {
-        session.status = 'expired';
-        await session.save().catch(() => {});
-      }
-      throw new ApiError(401, 'Privileged session expired or revoked');
-    }
-    req.privilegedSession = session;
-  }
+  assertSessionVersion(decoded, agent);
+  await attachPrivilegedSession(decoded, req);
   req.agent = agent;
   await attachActiveCompany(agent, req);
+  await touchSession(agent, req);
   runWithTenant(req.companyId, next);
 });
 
@@ -114,13 +175,18 @@ const protectAdmin = asyncHandler(async (req, res, next) => {
     throw new ApiError(401, 'Session expired, please login again');
   }
   if (decoded.type !== 'agent') throw new ApiError(403, 'Staff access only');
-  const agent = await Agent.findById(decoded.id).populate('role');
+  const agent = await Agent.findById(decoded.id).select('+sessionVersion').populate('role');
   if (!agent || !agent.isActive) throw new ApiError(401, 'Account not found or disabled');
-  if (!agent.isAdmin && !(agent.role && agent.role.isAdmin)) {
+  assertSessionVersion(decoded, agent);
+  await attachPrivilegedSession(decoded, req);
+  // Company Auditors (role category `auditor`) may enter the admin surface
+  // read-only; the admin router blocks their non-GET requests.
+  if (!agent.isAdmin && !(agent.role && agent.role.isAdmin) && agent.role?.category !== 'auditor') {
     throw new ApiError(403, 'Admin access required');
   }
   req.agent = agent;
   await attachActiveCompany(agent, req);
+  await touchSession(agent, req);
   runWithTenant(req.companyId, next);
 });
 
@@ -130,20 +196,26 @@ const protectTenantPrincipal = asyncHandler(async (req, res, next) => {
   let decoded;
   try { decoded = verifyToken(token); } catch (_) { throw new ApiError(401, 'Session expired, please login again'); }
   if (decoded.type === 'user') {
-    const user = await User.findById(decoded.id);
+    const user = await User.findById(decoded.id).select('+sessionVersion');
     if (!user || user.status !== 'active') throw new ApiError(401, 'Account not found or disabled');
+    assertSessionVersion(decoded, user);
     req.user = user;
     await attachActiveCompany(user, req);
+    await touchSession(user, req);
+    req.user.tenantId = req.companyId;
   } else if (decoded.type === 'agent') {
-    const agent = await Agent.findById(decoded.id).populate('role');
+    const agent = await Agent.findById(decoded.id).select('+sessionVersion').populate('role');
     if (!agent || !agent.isActive) throw new ApiError(401, 'Account not found or disabled');
+    assertSessionVersion(decoded, agent);
     req.agent = agent;
     req.user = agent;
     await attachActiveCompany(agent, req);
+    await touchSession(agent, req);
     req.user.tenantId = req.companyId;
   } else if (decoded.type === 'superadmin') {
-    const superAdmin = await SuperAdmin.findById(decoded.id);
+    const superAdmin = await SuperAdmin.findById(decoded.id).select('+sessionVersion');
     if (!superAdmin || !superAdmin.isActive) throw new ApiError(401, 'Account not found or disabled');
+    assertSessionVersion(decoded, superAdmin);
     req.superAdmin = superAdmin;
     req.user = superAdmin;
     // Superadmin has no tenant context — skip runWithTenant to avoid setting "undefined"
@@ -164,10 +236,11 @@ const protectSuperAdmin = asyncHandler(async (req, res, next) => {
     throw new ApiError(401, 'Session expired, please login again');
   }
   if (decoded.type !== 'superadmin') throw new ApiError(403, 'Super admin access only');
-  const superAdmin = await SuperAdmin.findById(decoded.id);
+  const superAdmin = await SuperAdmin.findById(decoded.id).select('+sessionVersion');
   if (!superAdmin || !superAdmin.isActive) {
     throw new ApiError(401, 'Account not found or disabled');
   }
+  assertSessionVersion(decoded, superAdmin);
   if (superAdmin.allowedIps && superAdmin.allowedIps.length) {
     const ip = req.ip || req.connection?.remoteAddress || '';
     if (!superAdmin.allowedIps.includes(ip)) {
@@ -177,6 +250,7 @@ const protectSuperAdmin = asyncHandler(async (req, res, next) => {
   superAdmin.lastLogin = new Date();
   await superAdmin.save();
   req.superAdmin = superAdmin;
+  await touchSession(superAdmin, req);
   next();
 });
 
@@ -214,6 +288,25 @@ const requirePermission = (perm, opts = {}) =>
   });
 
 /**
+ * requirePlatformRole(...roles) — SaaS platform RBAC (§1). platform_owner
+ * bypasses everything; platform_auditor is globally read-only; legacy
+ * SuperAdmin docs without platformRole default to owner so upgrades never
+ * lock anyone out.
+ */
+const requirePlatformRole = (...roles) =>
+  asyncHandler(async (req, res, next) => {
+    const sa = req.superAdmin;
+    if (!sa) throw new ApiError(401, 'Not authorized');
+    const role = sa.platformRole || 'platform_owner';
+    if (role === 'platform_owner') return next();
+    if (role === 'platform_auditor' && !['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
+      throw new ApiError(403, 'Auditor role is read-only');
+    }
+    if (!roles.includes(role)) throw new ApiError(403, 'You do not have permission for this action');
+    next();
+  });
+
+/**
  * requireSuperAdminPermission - checks if superadmin has a specific permission.
  * Superadmin must have the permission in their permissions array.
  * Pass an array of permissions; user needs at least one (OR logic).
@@ -228,10 +321,28 @@ const requireSuperAdminPermission = (...perms) =>
     next();
   });
 
+const requirePlatformPermission = (...perms) =>
+  asyncHandler(async (req, res, next) => {
+    const superAdmin = req.superAdmin;
+    if (!superAdmin) throw new ApiError(401, 'Not authorized');
+    if (!superAdmin.platformRole) throw new ApiError(403, 'Platform role migration required for this account');
+    if (superAdmin.platformRole === 'platform_owner') return next();
+    const { ROLE_PERMISSIONS } = require('../config/platformPermissions');
+    const effective = new Set(
+      superAdmin.permissions?.length
+        ? superAdmin.permissions
+        : (ROLE_PERMISSIONS[superAdmin.platformRole] || [])
+    );
+    if (!perms.some((permission) => effective.has(permission))) {
+      throw new ApiError(403, 'You do not have permission for this action');
+    }
+    next();
+  });
+
 const protectTenantAgent = [protectAgent, (req, res, next) => {
   req.user = req.agent;
   req.user.tenantId = req.companyId;
   next();
 }];
 
-module.exports = { signToken, verifyToken, protectUser, protectAgent, protectAdmin, protectSuperAdmin, protectTenantAgent, protectTenantPrincipal, optionalUser, requirePermission, requireSuperAdminPermission, attachActiveCompany };
+module.exports = { signToken, verifyToken, protectUser, protectAgent, protectAdmin, protectSuperAdmin, protectTenantAgent, protectTenantPrincipal, optionalUser, requirePermission, requireSuperAdminPermission, requirePlatformRole, requirePlatformPermission, attachActiveCompany };

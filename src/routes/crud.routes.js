@@ -1,10 +1,12 @@
 const express = require('express');
 const mongoose = require('mongoose');
-const { protectTenantPrincipal } = require('../middleware/auth');
+const { protectTenantAgent } = require('../middleware/auth');
 const { resolve, AUTOMATIONS } = require('../core/entityRegistry');
 
 const router = express.Router();
-router.use(protectTenantPrincipal);
+// Registry CRUD powers staff workspaces. Customer principals must never gain
+// arbitrary create/update/delete access simply by belonging to the tenant.
+router.use(...protectTenantAgent);
 
 const T = req => ({ tenantId: req.user.tenantId || req.user.companyId });
 const notFound = res => res.status(404).json({ error: 'Record not found' });

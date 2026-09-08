@@ -21,7 +21,7 @@ const agentCan = (req, perm) => req.agent && authzHasPermission(req.agent, perm)
 // close (their open tickets) / reopen (their resolved+closed tickets).
 router.post('/status', protectTenantPrincipal, async (req, res) => {
   try {
-    const { ticketIds, status, reason } = req.body;
+    const { ticketIds, status, reason, resolution } = req.body;
     if (!Array.isArray(ticketIds) || !ticketIds.length || !status) {
       return res.status(400).json({ error: 'ticketIds and status required' });
     }
@@ -79,8 +79,8 @@ router.post('/status', protectTenantPrincipal, async (req, res) => {
           ticket,
           status,
           isAgent
-            ? { actorType: 'agent', actorId: req.agent._id, actorName: req.agent.name, reason: reason || 'bulk update' }
-            : { actorType: 'user', actorId: req.user._id, actorName: req.user.name, reason: reason || 'bulk update' }
+            ? { actorType: 'agent', actorId: req.agent._id, actorName: req.agent.name, reason: reason || 'bulk update', resolution: resolution || null }
+            : { actorType: 'user', actorId: req.user._id, actorName: req.user.name, reason: reason || 'bulk update', resolution: resolution || null }
         );
         updated.push(ticket.number);
       } catch (err) {

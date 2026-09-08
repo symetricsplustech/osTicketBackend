@@ -17,9 +17,11 @@ let rrIndex = new Map(); // companyId -> next agent index
 
 /**
  * Score a candidate agent for a ticket. Lower score = better fit.
- * Factors: skill match, workload, presence, capacity, SLA (speed to answer), priority.
+ * Factors: skill match, workload, presence, capacity, SLA (speed to answer),
+ * priority, seniority (L1/L2/L3) and VIP customers (§13/§18).
  */
-const scoreAgent = (agent, { requiredSkills = [], priority = 'Normal', slaHours = 0 }) => {
+const LEVEL_RANK = { L1: 1, L2: 2, L3: 3 };
+const scoreAgent = (agent, { requiredSkills = [], priority = 'Normal', slaHours = 0, customerTier = 'standard' } = {}) => {
   let score = 0;
   const presence = PRESENCE_WEIGHT[agent.presence] ?? 10;
   score += presence;
@@ -39,17 +41,24 @@ const scoreAgent = (agent, { requiredSkills = [], priority = 'Normal', slaHours 
   if (priority === 'High') score += (active * 2);
   if (priority === 'Emergency') score += (active * 4);
 
+  // seniority: critical work and VIP customers prefer L3/L2 over L1
+  const level = LEVEL_RANK[agent.level] || 1;
+  if (priority === 'Emergency' || priority === 'High') score += (3 - level) * 4;
+  if (customerTier === 'enterprise' || customerTier === 'priority') score += (3 - level) * 3;
+
   // SLA: tighter SLA favours faster-available agents
   if (slaHours > 0 && slaHours <= 4) score += active * 3;
   return score;
 };
+
+const ACTIVE_WORK_STATUSES = ['new', 'open', 'triaged', 'assigned', 'in_progress', 'pending_customer', 'pending_vendor', 'pending_approval', 'on_hold', 'escalated', 'overdue'];
 
 /**
  * Load active ticket counts per agent (cheap single aggregation).
  */
 const loadWorkloads = async (company, agentIds) => {
   const counts = await Ticket.aggregate([
-    { $match: { company, agent: { $in: agentIds }, status: { $in: ['open', 'assigned', 'overdue'] } } },
+    { $match: { company, agent: { $in: agentIds }, status: { $in: ACTIVE_WORK_STATUSES } } },
     { $group: { _id: '$agent', n: { $sum: 1 } } },
   ]);
   const map = {};
@@ -59,10 +68,11 @@ const loadWorkloads = async (company, agentIds) => {
 
 /**
  * findBestAgent — pick the best agent from a pool for a ticket.
- * opts: { company, deptId, teamId, requiredSkills[], priority, slaHours, excludeAgentId }
+ * opts: { company, deptId, teamId, requiredSkills[], priority, slaHours,
+ *         customerTier, excludeAgentId, algorithm }
  */
 async function findBestAgent(opts) {
-  const { company, deptId, teamId, requiredSkills = [], priority = 'Normal', slaHours = 0, excludeAgentId, algorithm = 'skill_based' } = opts;
+  const { company, deptId, teamId, requiredSkills = [], priority = 'Normal', slaHours = 0, customerTier = 'standard', excludeAgentId, algorithm = 'skill_based' } = opts;
   let query = { isActive: true, company: company || null };
   if (deptId || teamId) {
     query.$or = [];
@@ -101,9 +111,16 @@ async function findBestAgent(opts) {
     return Agent.findById(list[0]._id);
   }
 
+  if (algorithm === 'priority_based') {
+    // Senior-first for critical work, then least loaded.
+    const rank = (a) => LEVEL_RANK[a.level] || 1;
+    pool.sort((a, b) => rank(b) - rank(a) || a._active - b._active || PRESENCE_WEIGHT[a.presence] - PRESENCE_WEIGHT[b.presence]);
+    return Agent.findById(pool[0]._id);
+  }
+
   // skill_based (default): score everything
   const scored = pool
-    .map((a) => ({ agent: a, score: scoreAgent(a, { requiredSkills, priority, slaHours }) }))
+    .map((a) => ({ agent: a, score: scoreAgent(a, { requiredSkills, priority, slaHours, customerTier }) }))
     .sort((a, b) => a.score - b.score);
   return Agent.findById(scored[0].agent._id);
 }

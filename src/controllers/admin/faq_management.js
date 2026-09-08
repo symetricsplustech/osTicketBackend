@@ -406,22 +406,57 @@ exports.deleteFaqCategory = asyncHandler(async (req, res) => {
   await Faq.updateMany({ category: req.params.id, ...(req.companyId ? { company: req.companyId } : {}) }, { $set: { category: null } });
   res.json({ success: true, message: 'Category deleted' });
 });
+const VALID_VISIBILITY = ['public', 'customers', 'employees', 'agents', 'department', 'team'];
+const VALID_LIFECYCLE = ['draft', 'review', 'approved', 'published', 'expired', 'archived'];
+
 exports.createFaq = asyncHandler(async (req, res) => {
-  const { category, question, answer, keywords, isPublished } = req.body;
+  const { category, question, answer, keywords, isPublished, visibility, visibleDepartments, visibleTeams, lifecycle } = req.body;
   if (!question || !answer) throw new ApiError(422, 'Question and answer are required');
-  const faq = await Faq.create({ category: category || null, company: req.companyId, question, answer, keywords: keywords || [], isPublished: isPublished !== false, createdBy: req.agent._id });
+  if (visibility !== undefined && !VALID_VISIBILITY.includes(visibility)) throw new ApiError(422, 'Invalid visibility');
+  // Publishing flows through the lifecycle machine: new articles start as
+  // drafts unless explicitly published.
+  const targetLifecycle = lifecycle || (isPublished === false ? 'draft' : 'published');
+  if (!VALID_LIFECYCLE.includes(targetLifecycle)) throw new ApiError(422, 'Invalid lifecycle state');
+  const faq = await Faq.create({
+    category: category || null,
+    company: req.companyId,
+    question,
+    answer,
+    keywords: keywords || [],
+    isPublished: targetLifecycle === 'published',
+    lifecycle: targetLifecycle,
+    visibility: visibility || 'public',
+    visibleDepartments: visibleDepartments || [],
+    visibleTeams: visibleTeams || [],
+    createdBy: req.agent._id,
+  });
   res.status(201).json({ success: true, faq });
 });
 exports.updateFaq = asyncHandler(async (req, res) => {
   const faq = await Faq.findById(req.params.id);
   if (!faq) throw new ApiError(404, 'FAQ not found');
   if (req.companyId && String(faq.company) !== String(req.companyId)) throw new ApiError(403, 'Access denied');
-  const { category, question, answer, keywords, isPublished } = req.body;
+  const { category, question, answer, keywords, isPublished, visibility, visibleDepartments, visibleTeams, lifecycle } = req.body;
   if (category !== undefined) faq.category = category;
   if (question) faq.question = question;
   if (answer !== undefined) faq.answer = answer;
   if (keywords !== undefined) faq.keywords = keywords;
-  if (isPublished !== undefined) faq.isPublished = isPublished;
+  if (visibility !== undefined) {
+    if (!VALID_VISIBILITY.includes(visibility)) throw new ApiError(422, 'Invalid visibility');
+    faq.visibility = visibility;
+  }
+  if (visibleDepartments !== undefined) faq.visibleDepartments = visibleDepartments;
+  if (visibleTeams !== undefined) faq.visibleTeams = visibleTeams;
+  if (lifecycle !== undefined) {
+    // Lifecycle moves go through the allow-listed machine, not free writes.
+    require('../../services/stateMachine.service').assertTransition('faq', faq.lifecycle || 'draft', lifecycle);
+    faq.lifecycle = lifecycle;
+    faq.isPublished = lifecycle === 'published';
+  } else if (isPublished !== undefined) {
+    faq.isPublished = isPublished;
+    if (isPublished && ['draft', 'archived', 'expired'].includes(faq.lifecycle)) faq.lifecycle = 'published';
+    if (!isPublished && faq.lifecycle === 'published') faq.lifecycle = 'draft';
+  }
   await faq.save();
   res.json({ success: true, faq });
 });

@@ -158,8 +158,8 @@ const PrivilegedSession = require('../../models/PrivilegedSession');
 const SESSION_TTL_MIN = 15;
 const SESSION_TTL_MAX_MIN = 60;
 
-const sessionToken = (adminId, sessionId, ttlMin) =>
-  jwt.sign({ id: adminId, type: 'agent', sid: sessionId }, config.jwt.secret, { expiresIn: `${ttlMin}m` });
+const sessionToken = (adminId, sessionId, ttlMin, sessionVersion = 0) =>
+  jwt.sign({ id: adminId, type: 'agent', sid: sessionId, sv: Number(sessionVersion || 0) }, config.jwt.secret, { expiresIn: `${ttlMin}m` });
 
 const newSession = async ({ kind, req, company, admin, reason, ttlMin, breakGlass }) => {
   const ttl = Math.min(Math.max(Number(ttlMin) || SESSION_TTL_MIN, 1), SESSION_TTL_MAX_MIN);
@@ -191,7 +191,7 @@ exports.impersonateCompanyAdmin = asyncHandler(async (req, res) => {
   const admin = await Agent.findOne({ company: companyId, isAdmin: true, isActive: true }).sort({ createdAt: 1 });
   if (!admin) throw new ApiError(404, 'No admin agent found for this company');
   const { session, ttl } = await newSession({ kind: 'impersonation', req, company, admin, reason: String(reason).trim(), ttlMinutes });
-  const token = sessionToken(admin._id, session.sessionId, ttl);
+  const token = sessionToken(admin._id, session.sessionId, ttl, admin.sessionVersion);
   await log(req, 'impersonation.company_admin', 'Company', companyId, {
     agent: admin.email, sessionId: session.sessionId, reason: session.reason,
     expiresAt: session.expiresAt, realActor: session.realActorEmail, correlationId: session.correlationId,
@@ -209,7 +209,7 @@ exports.breakGlassAccess = asyncHandler(async (req, res) => {
   const admin = await Agent.findOne({ company: companyId, isAdmin: true, isActive: true }).sort({ createdAt: 1 });
   if (!admin) throw new ApiError(404, 'No admin agent found for this company');
   const { session, ttl } = await newSession({ kind: 'break_glass', req, company, admin, reason: String(reason).trim(), ttlMinutes, breakGlass: true });
-  const token = sessionToken(admin._id, session.sessionId, ttl);
+  const token = sessionToken(admin._id, session.sessionId, ttl, admin.sessionVersion);
   await log(req, 'security.break_glass', 'Company', companyId, {
     agent: admin.email, sessionId: session.sessionId, reason: session.reason,
     expiresAt: session.expiresAt, realActor: session.realActorEmail, correlationId: session.correlationId,

@@ -35,7 +35,14 @@ const usageGuard = (metric) => async (req, res, next) => {
     if (!tenantId) return next();
     const period = currentPeriod();
 
-    const limitDoc = await UsageLimit.findOne({ tenantId, metric }).lean();
+    let limitDoc = await UsageLimit.findOne({ tenantId, metric }).lean();
+    if (!limitDoc) {
+      const Company = require('../models/Company');
+      const company = await Company.findById(tenantId).populate('plan').lean();
+      const planField = { apiCalls: 'apiMonthlyLimit', storageBytes: 'storageLimit', agents: 'maxAgents', users: 'maxUsers', tickets: 'maxTickets' }[metric];
+      const inheritedLimit = planField ? Number(company?.plan?.[planField] || 0) : 0;
+      if (inheritedLimit > 0) limitDoc = { limit: inheritedLimit, hardBlock: true, warnAtPct: 80, inheritedFromPlan: true };
+    }
     if (!limitDoc) {
       meter(tenantId, metric);
       return next();

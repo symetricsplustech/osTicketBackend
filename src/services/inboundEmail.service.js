@@ -7,6 +7,8 @@ const logger = require('../utils/logger');
 const { uploadsDir } = require('../config/multer');
 const Company = require('../models/Company');
 const Ticket = require('../models/Ticket');
+const User = require('../models/User');
+const Department = require('../models/Department');
 const HelpTopic = require('../models/HelpTopic');
 const Agent = require('../models/Agent');
 const EmailLog = require('../models/EmailLog');
@@ -15,8 +17,8 @@ const ticketService = require('./ticket.service');
 const emailService = require('./email.service');
 const { notifyAgent } = require('./notification.service');
 
-const TICKET_REF_PATTERN = /\[#([A-Z0-9]{8,12})\]/i;
-const TICKET_REF_BODY_PATTERN = /#([A-Z0-9]{8,12})\b/i;
+const TICKET_REF_PATTERN = /\[#(TKT-\d{4}-\d+|[A-Z0-9]{8,12})\]/i;
+const TICKET_REF_BODY_PATTERN = /#(TKT-\d{4}-\d+|[A-Z0-9]{8,12})\b/i;
 const MAX_TEXT_LENGTH = 100 * 1024;
 const BOUNCE_SENDERS = new Set(['mailer-daemon@googlemail.com', 'postmaster@googlemail.com', 'mailer-daemon@gmail.com']);
 const BOUNCE_SUBJECT_PATTERN = /delivery (status )?notification/i;
@@ -40,6 +42,9 @@ const extractTicketNumber = (subject = '', text = '') => {
 const safeFilename = (name) => (name || 'attachment').replace(/[^a-zA-Z0-9._-]/g, '_');
 
 const normalizeAddr = (a) => String(a || '').toLowerCase().trim();
+
+// Strip < > so stored Message-IDs match regardless of bracket formatting.
+const normalizeMsgId = (id) => String(id || '').trim().replace(/^<+|>+$/g, '');
 
 /**
  * Per-organisation inbound routing.
@@ -124,7 +129,7 @@ const isSystemSent = async (messageId) => {
   return EmailLog.exists({ event: { $ne: 'inbound_processed' }, 'meta.messageId': messageId });
 };
 
-const markProcessed = async ({ messageId, subject, from, action, ticket }) => {
+const markProcessed = async ({ messageId, subject, from, action, ticket, matchedVia }) => {
   try {
     await EmailLog.create({
       to: from || '',
@@ -132,7 +137,7 @@ const markProcessed = async ({ messageId, subject, from, action, ticket }) => {
       subject: subject || '',
       event: 'inbound_processed',
       status: 'processed',
-      meta: { messageId, inboundAction: action },
+      meta: { messageId, inboundAction: action, ...(matchedVia ? { matchedVia } : {}) },
       ticket: ticket || null,
     });
   } catch (err) {
@@ -181,19 +186,26 @@ const notifyAgentsForReply = async (ticket, sender) => {
   }
 };
 
-const handleNewTicket = async ({ senderName, senderEmail, subject, text, attachments, companyId }) => {
+const handleNewTicket = async ({ senderName, senderEmail, subject, text, attachments, companyId, toAddresses = [] }) => {
   // Reuse the existing account by email (any tenant) so portal history stays
   // linked when the customer later logs in. User.email is globally unique,
   // so creating a second record for the same address would throw E11000.
-  const User = require('../models/User');
   const existing = await User.findOne({ email: normalizeAddr(senderEmail) });
   const effectiveCompanyId = existing?.company || companyId;
-  const sender = existing || (await ticketService.findOrCreateUser({ name: senderName, email: senderEmail, company: companyId, userType: 'external' }));
+  const sender = existing || (await ticketService.findOrCreateUser({ name: senderName, email: senderEmail, company: companyId }));
   // Backfill tenant for email-created accounts that had none (else portal
   // auth denies tenant-less users). Never move an already-tenanted account.
   if (!sender.company && companyId) {
     sender.company = companyId;
     await sender.save().catch(() => {});
+  }
+  // Per-mailbox routing: To/Cc matching a department inbox pins the ticket
+  // to that department (and its SLA); otherwise topic/filters decide.
+  let deptId = null;
+  try {
+    deptId = await findDeptByInbox(effectiveCompanyId || companyId, toAddresses);
+  } catch (err) {
+    logger.error(`Dept inbox lookup failed: ${err.message}`);
   }
   const helpTopic = await findHelpTopic(effectiveCompanyId || companyId);
   const ticket = await ticketService.createTicket({
@@ -203,11 +215,74 @@ const handleNewTicket = async ({ senderName, senderEmail, subject, text, attachm
     subject,
     details: text,
     topicId: helpTopic?._id || null,
+    deptId,
     priority: 'Normal',
     source: 'email',
     attachments,
+    toAddresses,
   });
   return ticket;
+};
+
+/**
+ * Per-mailbox routing table: a department whose `email` matches a To/Cc
+ * address owns the message (e.g. billing@ -> Billing dept + Billing SLA,
+ * since createTicket derives SLA from the department).
+ */
+const findDeptByInbox = async (companyId, toAddresses = []) => {
+  const to = new Set((toAddresses || []).map(normalizeAddr).filter(Boolean));
+  if (!companyId || !to.size) return null;
+  const depts = await Department.find({
+    status: 'active',
+    $or: [{ company: companyId }, { company: null }],
+    email: { $ne: '' },
+  }).select('_id email').lean();
+  const hit = depts.find((d) => to.has(normalizeAddr(d.email)));
+  return hit ? hit._id : null;
+};
+
+/**
+ * Step 1 of reply matching: resolve the ticket from In-Reply-To / References
+ * headers via the outbound EmailLog (every sent mail logs its Message-ID with
+ * the ticket). Prefers our own outbound mails over echoed inbound IDs.
+ */
+const findTicketByHeaders = async (inReplyTo = [], references = []) => {
+  const ids = [...inReplyTo, ...references]
+    .map(normalizeMsgId)
+    .filter(Boolean)
+    .slice(0, 10);
+  if (!ids.length) return null;
+  const variants = [...new Set(ids.flatMap((id) => [id, `<${id}>`]))];
+  const query = { 'meta.messageId': { $in: variants }, ticket: { $ne: null } };
+  const outbound = await EmailLog.findOne({ ...query, event: { $ne: 'inbound_processed' } })
+    .sort({ createdAt: -1 })
+    .select('ticket');
+  const log = outbound
+    || (await EmailLog.findOne(query).sort({ createdAt: -1 }).select('ticket'));
+  if (!log?.ticket) return null;
+  return Ticket.findOne({ _id: log.ticket, status: { $ne: Ticket.STATUSES.DELETED } });
+};
+
+/**
+ * Step 5 of reply matching: only the ticket owner, a collaborator, or an
+ * agent of the same company may append to a ticket by email. Anything else
+ * falls through to new-ticket creation so unrelated mail never lands on a
+ * stranger's ticket.
+ */
+const isAuthorizedReplySender = async (ticket, senderEmail) => {
+  const email = normalizeAddr(senderEmail);
+  if (!email) return false;
+  const owner = await User.findById(ticket.user).select('email').lean();
+  if (owner && normalizeAddr(owner.email) === email) return true;
+  if (ticket.collaborators?.length) {
+    const collabs = await User.find({ _id: { $in: ticket.collaborators } }).select('email').lean();
+    if (collabs.some((c) => normalizeAddr(c.email) === email)) return true;
+  }
+  if (ticket.company) {
+    const agent = await Agent.findOne({ email, company: ticket.company, isActive: true }).select('_id').lean();
+    if (agent) return true;
+  }
+  return false;
 };
 
 const handleReply = async ({ sender, ticket, text, attachments }) => {
@@ -223,7 +298,7 @@ const handleReply = async ({ sender, ticket, text, attachments }) => {
   return ticket;
 };
 
-const processParsedEmail = async ({ messageId, senderName, senderEmail, subject, text, attachments, companyId, toAddresses = [] }) => {
+const processParsedEmail = async ({ messageId, inReplyTo = [], references = [], senderName, senderEmail, subject, text, attachments, companyId, toAddresses = [] }) => {
   if (!senderEmail) return { action: 'skipped', reason: 'no sender' };
   if (await isProcessed(messageId)) return { action: 'skipped', reason: 'duplicate' };
   if (await isSystemSent(messageId)) return { action: 'skipped', reason: 'system generated' };
@@ -245,28 +320,64 @@ const processParsedEmail = async ({ messageId, senderName, senderEmail, subject,
   }
   const number = extractTicketNumber(subject, text);
   let ticket = null;
+  let matchedVia = null;
 
-  if (number) {
-    // Ticket numbers are globally unique: look up without tenant filter so a
-    // reply always sticks to its original ticket/company, even if the
-    // customer mailed a slightly different alias.
+  // 1-2. Headers first (In-Reply-To / References via outbound mail log).
+  try {
+    ticket = await findTicketByHeaders(inReplyTo, references);
+    if (ticket) matchedVia = 'headers';
+  } catch (err) {
+    logger.error(`Header reply-match failed: ${err.message}`);
+  }
+  // 3-4. Ticket token in subject/body. Numbers are globally unique: look up
+  // without a tenant filter so a reply sticks to its original ticket/company
+  // even if the customer mailed a slightly different alias.
+  if (!ticket && number) {
     ticket = await Ticket.findOne({ number, status: { $ne: Ticket.STATUSES.DELETED } });
+    if (ticket) matchedVia = 'subject';
+  }
+  if (ticket) {
+    // 5. Sender authorization — strangers fall through to new-ticket creation.
+    const authorized = await isAuthorizedReplySender(ticket, senderEmail).catch(() => false);
+    if (!authorized) {
+      logger.warn(`Unauthorized email reply from ${senderEmail} for ticket ${ticket.number}; creating new ticket`);
+      ticket = null;
+      matchedVia = null;
+    }
   }
   if (ticket) {
     const replyCompanyId = ticket.company || effectiveCompanyId;
-    const User = require('../models/User');
     const existingSender = await User.findOne({ email: normalizeAddr(senderEmail) });
-    const sender = existingSender || (await ticketService.findOrCreateUser({ name: senderName, email: senderEmail, company: replyCompanyId, userType: 'external' }));
+    const sender = existingSender || (await ticketService.findOrCreateUser({ name: senderName, email: senderEmail, company: replyCompanyId }));
     if (!sender.company && replyCompanyId) {
       sender.company = replyCompanyId;
       await sender.save().catch(() => {});
     }
+    // Reply window expired (§40): follow-up ticket linked to the old one.
+    if (ticket.status === Ticket.STATUSES.RESOLVED || ticket.status === Ticket.STATUSES.CLOSED) {
+      const replySettings = await SystemSetting.getSettings().catch(() => null);
+      if (replySettings && !ticketService.reopenWindowAllows(ticket, replySettings)) {
+        const created = await ticketService.createFollowUpTicket({
+          ticket,
+          user: sender,
+          body: text,
+          attachments: savedAttachments,
+          source: 'email',
+          actorId: sender._id,
+        });
+        await markProcessed({ messageId, subject, from: senderEmail, action: 'new_ticket', ticket: created._id, matchedVia: 'window_expired' });
+        try {
+          await notifyAgentsForReply(created, sender);
+        } catch (_) { /* non-blocking */ }
+        return { action: 'new_ticket', ticketNumber: created.number, followUp: true, linkedTo: ticket.number };
+      }
+    }
     await handleReply({ sender, ticket, text, attachments: savedAttachments });
-    await markProcessed({ messageId, subject, from: senderEmail, action: 'reply', ticket: ticket._id });
-    return { action: 'reply', ticketNumber: ticket.number };
+    await markProcessed({ messageId, subject, from: senderEmail, action: 'reply', ticket: ticket._id, matchedVia });
+    return { action: 'reply', ticketNumber: ticket.number, matchedVia };
   }
 
-  const created = await handleNewTicket({ senderName, senderEmail, subject, text, attachments: savedAttachments, companyId: effectiveCompanyId });
+  const created = await handleNewTicket({ senderName, senderEmail, subject, text, attachments: savedAttachments, companyId: effectiveCompanyId, toAddresses });
   await markProcessed({ messageId, subject, from: senderEmail, action: 'new_ticket', ticket: created._id });
   return { action: 'new_ticket', ticketNumber: created.number };
 };
@@ -295,8 +406,15 @@ const parseMessage = async (message) => {
     ...collect(parsed.to),
     ...collect(parsed.cc),
   ].map((a) => String(a).toLowerCase().trim()).filter(Boolean);
+  const asIds = (v) => {
+    if (!v) return [];
+    const arr = Array.isArray(v) ? v : [v];
+    return arr.map((x) => String(x || '').trim()).filter(Boolean);
+  };
   return {
     messageId: parsed.messageId || message.envelope?.messageId || null,
+    inReplyTo: asIds(parsed.inReplyTo),
+    references: asIds(parsed.references),
     senderName: from.name || parsed.from?.text?.split('<')[0]?.trim() || 'Email Sender',
     senderEmail: (from.address || '').toLowerCase(),
     subject: parsed.subject || '(No Subject)',

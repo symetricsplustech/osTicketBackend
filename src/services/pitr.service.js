@@ -28,7 +28,8 @@ async function listCollections(tenantId) {
 async function exportCollection(name, tenantId) {
   try {
     const col = mongoose.connection.db.collection(name);
-    const docs = await col.find({ tenantId }).limit(10000).toArray();
+    const objectId = mongoose.isValidObjectId(tenantId) ? new mongoose.Types.ObjectId(tenantId) : tenantId;
+    const docs = await col.find({ $or: [{ tenantId: objectId }, { company: objectId }] }).toArray();
     return docs;
   } catch (_) {
     return [];
@@ -65,7 +66,7 @@ async function backupNow(tenantId) {
   const tenantDir = path.join(ROOT, String(tenantId));
   if (!fs.existsSync(tenantDir)) fs.mkdirSync(tenantDir, { recursive: true });
 
-  const date = new Date().toISOString().slice(0, 10);
+  const date = new Date().toISOString().replace(/[:.]/g, '-');
   const filename = `${date}.json.gz`;
   const outfile = path.join(tenantDir, filename);
 
@@ -80,7 +81,8 @@ async function backupNow(tenantId) {
     totalDocs += docs.length;
   }
 
-  const secret = process.env.BACKUP_SECRET || 'backup-dev-key';
+  const secret = process.env.BACKUP_SECRET;
+  if (!secret || secret.length < 32) throw new Error('BACKUP_SECRET must be configured with at least 32 characters');
   const encrypted = encryptPayload(dump, secret);
   fs.writeFileSync(outfile, zlib.gzipSync(encrypted));
   fs.existsSync(outfile) || fs.writeFileSync(outfile, zlib.gzipSync(JSON.stringify(dump)));
@@ -103,12 +105,35 @@ async function backupNow(tenantId) {
  * Verify a backup by attempting to decrypt and count docs.
  */
 async function verifyRestore(tenantId, filename) {
+  if (path.basename(filename) !== filename) throw new Error('Invalid backup filename');
   const file = path.join(ROOT, String(tenantId), filename);
   if (!fs.existsSync(file)) throw new Error(`Backup not found: ${filename}`);
   const raw = fs.readFileSync(file);
-  const decrypted = decryptPayload(zlib.gunzipSync(raw).toString(), process.env.BACKUP_SECRET || 'backup-dev-key');
+  const secret = process.env.BACKUP_SECRET;
+  if (!secret || secret.length < 32) throw new Error('BACKUP_SECRET must be configured with at least 32 characters');
+  const decrypted = decryptPayload(zlib.gunzipSync(raw).toString(), secret);
   const totalDocs = Object.values(decrypted.collections || {}).reduce((n, arr) => n + arr.length, 0);
   return { ok: true, totalDocs, collections: Object.keys(decrypted.collections || {}).length };
+}
+
+async function restoreBackup(tenantId, filename, confirmation) {
+  if (confirmation !== 'RESTORE') throw new Error('Explicit RESTORE confirmation is required');
+  if (path.basename(filename) !== filename) throw new Error('Invalid backup filename');
+  const file = path.join(ROOT, String(tenantId), filename);
+  if (!fs.existsSync(file)) throw new Error('Backup not found');
+  const secret = process.env.BACKUP_SECRET;
+  if (!secret || secret.length < 32) throw new Error('BACKUP_SECRET must be configured with at least 32 characters');
+  const dump = decryptPayload(zlib.gunzipSync(fs.readFileSync(file)).toString(), secret);
+  if (String(dump.tenantId) !== String(tenantId)) throw new Error('Backup tenant does not match restore tenant');
+  await backupNow(tenantId); // recovery point before destructive replacement
+  const objectId = new mongoose.Types.ObjectId(tenantId);
+  let restored = 0;
+  for (const [name, docs] of Object.entries(dump.collections || {})) {
+    const col = mongoose.connection.db.collection(name);
+    await col.deleteMany({ $or: [{ tenantId: objectId }, { company: objectId }] });
+    if (docs.length) { await col.insertMany(docs, { ordered: false }); restored += docs.length; }
+  }
+  return { ok: true, restored, collections: Object.keys(dump.collections || {}).length };
 }
 
 /** Daily cron runner — call this from a scheduler. */
@@ -126,4 +151,4 @@ async function runDaily() {
   }
 }
 
-module.exports = { backupNow, verifyRestore, runDaily, ROOT };
+module.exports = { backupNow, verifyRestore, restoreBackup, runDaily, ROOT };

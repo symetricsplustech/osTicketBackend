@@ -392,8 +392,11 @@ exports.listAgents = asyncHandler(async (req, res) => {
   res.json({ success: true, items: agents });
 });
 exports.createAgent = asyncHandler(async (req, res) => {
-  const { name, email, password, role, isAdmin, isActive, departments, teams, signature, notes, permissions } = req.body;
+  const { name, email, password, role, isAdmin, isActive, departments, teams, signature, notes, permissions, level } = req.body;
   if (!name || !email || !password) throw new ApiError(422, 'Name, email and password are required');
+  if (level !== undefined && !['L1', 'L2', 'L3'].includes(level)) throw new ApiError(422, 'Invalid agent level');
+  const { assertPasswordPolicy } = require('../../utils/passwordPolicy');
+  await assertPasswordPolicy(password, req.companyId);
   if (await Agent.findOne({ email: email.toLowerCase(), ...(req.companyId ? { company: req.companyId } : {}) })) throw new ApiError(409, 'An agent with this email already exists');
   const agent = await Agent.create({
     name,
@@ -408,6 +411,7 @@ exports.createAgent = asyncHandler(async (req, res) => {
     permissions: Array.isArray(permissions) ? permissions : [],
     signature: signature || '',
     notes: notes || '',
+    level: ['L1', 'L2', 'L3'].includes(level) ? level : 'L1',
   });
   res.status(201).json({ success: true, agent });
 });
@@ -415,10 +419,18 @@ exports.updateAgent = asyncHandler(async (req, res) => {
   const agent = await Agent.findById(req.params.id);
   if (!agent) throw new ApiError(404, 'Agent not found');
   if (req.companyId && String(agent.company) !== String(req.companyId)) throw new ApiError(403, 'Access denied');
-  const { name, email, password, role, isAdmin, isActive, departments, teams, signature, notes, permissions, skills, presence, capacity, notificationPrefs } = req.body;
+  const { name, email, password, role, isAdmin, isActive, departments, teams, signature, notes, permissions, skills, presence, capacity, notificationPrefs, level } = req.body;
   if (name) agent.name = name;
   if (email) agent.email = email;
-  if (password) agent.password = password;
+  if (level !== undefined) {
+    if (!['L1', 'L2', 'L3'].includes(level)) throw new ApiError(422, 'Invalid agent level');
+    agent.level = level;
+  }
+  if (password) {
+    const { assertPasswordPolicy } = require('../../utils/passwordPolicy');
+    await assertPasswordPolicy(password, agent.company || req.companyId);
+    agent.password = password;
+  }
   if (role !== undefined) agent.role = role;
   if (isAdmin !== undefined) agent.isAdmin = isAdmin;
   if (isActive !== undefined) agent.isActive = isActive;

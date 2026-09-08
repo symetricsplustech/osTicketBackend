@@ -1,7 +1,51 @@
 const express = require('express');
 const { TicketTemplate, RecurringRequest, RequestedItem, PostImplReview, KnowledgeBase, Outage, ChangeCalendar, MonitoringTicket, PriceBook, ActivitySequence, Segment, SalesForecast, DuplicateRecord, ProjectTemplate, ProjectIssue, ProjectDocument, Timesheet, ProjectRisk, HrRequestCatalogue, OnboardingChecklist, DepartmentTransfer, DocumentRequest, PolicyAcknowledgement, HrDocument, PreventiveMaintenance, Branch, Address, Mention, DeviceSession, CustomReport, DashboardConfig } = require('../models/Remaining.js');
 const { protectTenantAgent } = require('../middleware/auth');
+const { protectApiKey, hasScope } = require('../middleware/apikey');
 const router = express.Router();
+
+// Server alert → ticket (§8/§32) for external monitoring systems.
+// Auth: API key with `tickets:create` scope (company comes from the key).
+const monitoringWebhook = async (req, res) => {
+  // { source, alertId, title, description, severity: critical|high|medium|low, email? }
+  try {
+    const { source, alertId, title, description, severity, email } = req.body;
+    const Company = require('../models/Company');
+    const company = req.companyId
+      ? await Company.findById(req.companyId)
+      : await Company.findOne({ status: 'active' }).sort({ createdAt: 1 });
+    if (!company) return res.status(422).json({ error: 'No tenant to attach the alert to' });
+    const ticketService = require('../services/ticket.service');
+    const monitorUser = await ticketService.findOrCreateUser({
+      name: `${source || 'monitoring'} alert`,
+      email: (email || `alerts@${company.domain || 'monitoring.local'}`).toLowerCase(),
+      company: company._id,
+    });
+    const sevMap = { critical: 'Emergency', high: 'High', medium: 'Normal', low: 'Low' };
+    const ticket = await ticketService.createTicket({
+      user: monitorUser,
+      orgOwner: monitorUser._id,
+      createdBy: monitorUser._id,
+      subject: `[${source || 'monitor'}${alertId ? ` ${alertId}` : ''}] ${title || 'Monitoring Alert'}`.slice(0, 200),
+      details: description || JSON.stringify({ source, alertId, ...req.body }).slice(0, 4000),
+      topicId: null,
+      priority: sevMap[String(severity || '').toLowerCase()] || 'High',
+      source: 'api',
+    });
+    try {
+      if (MonitoringTicket) {
+        await MonitoringTicket.create({ source, alertId, ticket: ticket._id, resource: req.body.resource, alertData: req.body, status: 'ticket_created', tenantId: company._id });
+      }
+    } catch (_) { /* link record is best-effort */ }
+    res.status(201).json({ success: true, ticket: { number: ticket.number, _id: ticket._id } });
+  } catch (e) { res.status(400).json({ error: e.message }); }
+};
+router.post('/monitoring/webhook', protectApiKey, (req, res, next) => {
+  if (!hasScope(req, 'tickets:create') && !hasScope(req, 'tickets:write')) {
+    return res.status(403).json({ error: 'API key lacks tickets:create scope' });
+  }
+  return monitoringWebhook(req, res);
+});
 router.use(protectTenantAgent);
 
 // === HELP DESK REMAINING ===
@@ -74,21 +118,7 @@ router.post('/change-calendar', async (req, res) => {
   try { const c = await ChangeCalendar.create({...req.body, tenantId: req.user.tenantId}); res.status(201).json(c); } catch(e) { res.status(400).json({error:e.message}); }
 });
 
-// Monitoring-to-Ticket
-router.post('/monitoring/webhook', async (req, res) => {
-  try {
-    const { source, alertId, alertData, resource } = req.body;
-    const ticket = await require('../models/Ticket').default.create({
-      title: `[${source}] ${alertData?.title || 'Monitoring Alert'}`,
-      body: JSON.stringify(alertData),
-      source: 'monitoring',
-      tenantId: req.user?.tenantId || 'system',
-      status: 'open',
-    });
-    const m = await MonitoringTicket.create({ source, alertId, ticket: ticket._id, resource, alertData, status: 'ticket_created', tenantId: req.user?.tenantId || 'system' });
-    res.status(201).json({ ticket, monitoring: m });
-  } catch(e) { res.status(400).json({error:e.message}); }
-});
+// (Monitoring webhook lives above, pre-auth, API-key gated.)
 
 // === CRM REMAINING ===
 

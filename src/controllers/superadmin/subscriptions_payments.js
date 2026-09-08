@@ -15,6 +15,8 @@ const config = require('../../config/config');
 const Notification = require('../../models/Notification');
 const { notifySuperAdmin } = require('../../services/notification.service');
 const emailService = require('../../services/email.service');
+const Subscription = require('../../models/Subscription');
+const BillingAdjustment = require('../../models/BillingAdjustment');
 
 const notifySA = async ({ superAdminId, type, message, link, companyId }) => {
   try {
@@ -305,4 +307,38 @@ exports.razorpayWebhook = asyncHandler(async (req, res) => {
     }
   }
   res.json({ success: true, received: true });
+});
+
+exports.listSubscriptions = asyncHandler(async (req, res) => {
+  const query = {};
+  if (req.query.status) query.status = req.query.status;
+  if (req.query.companyId) query.company = req.query.companyId;
+  const data = await Subscription.find(query).populate('company', 'name status').populate('plan scheduledPlan', 'name code priceMonthly priceYearly').sort({ createdAt: -1 });
+  res.json({ success: true, data });
+});
+
+exports.updateSubscription = asyncHandler(async (req, res) => {
+  const subscription = await Subscription.findById(req.params.id);
+  if (!subscription) throw new ApiError(404, 'Subscription not found');
+  const allowed = ['status', 'billingCycle', 'cancelAtPeriodEnd', 'scheduledPlan', 'scheduledChangeAt', 'graceEndsAt', 'cancellationReason'];
+  for (const key of allowed) if (req.body[key] !== undefined) subscription[key] = req.body[key];
+  if (subscription.status === 'cancelled') subscription.cancelledAt = new Date();
+  await subscription.save();
+  await log(req, 'subscription.updated', 'Subscription', subscription._id, { status: subscription.status, companyId: subscription.company });
+  res.json({ success: true, data: subscription });
+});
+
+exports.listBillingAdjustments = asyncHandler(async (req, res) => {
+  const query = req.query.companyId ? { company: req.query.companyId } : {};
+  const data = await BillingAdjustment.find(query).populate('company', 'name').populate('invoice', 'invoiceNumber status').sort({ createdAt: -1 });
+  res.json({ success: true, data });
+});
+
+exports.createBillingAdjustment = asyncHandler(async (req, res) => {
+  const { companyId, invoiceId, type, amount, reason, code } = req.body;
+  if (!companyId || !type || !Number.isFinite(Number(amount)) || !reason) throw new ApiError(422, 'companyId, type, amount and reason are required');
+  const adjustment = await BillingAdjustment.create({ company: companyId, invoice: invoiceId || null, type, amount: Number(amount), reason, code: code || '', createdBy: req.superAdmin._id });
+  if (type === 'refund' && invoiceId) await Invoice.updateOne({ _id: invoiceId }, { $set: { status: 'refunded' } });
+  await log(req, `billing.${type}`, 'BillingAdjustment', adjustment._id, { companyId, invoiceId, amount: Number(amount), reason });
+  res.status(201).json({ success: true, data: adjustment });
 });

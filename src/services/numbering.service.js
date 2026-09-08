@@ -12,6 +12,7 @@
  */
 
 const Counter = require('../models/Counter');
+const { generateTicketNumber: legacyTicketNumber } = require('../utils/generators');
 
 const PREFIXES = ['INC', 'PRB', 'CHG', 'REQ', 'RITM', 'TASK'];
 
@@ -39,4 +40,33 @@ async function nextNumber(tenantId, prefix) {
   return formatNumber(prefix, seq);
 }
 
-module.exports = { PREFIXES, formatNumber, nextSequence, nextNumber };
+function formatTicketNumber(year, seq) {
+  return `TKT-${year}-${String(seq).padStart(8, '0')}`;
+}
+
+/**
+ * Global yearly ticket sequence: TKT-2026-00001234. Global (not per-tenant)
+ * because Ticket.number carries a global unique index — per-tenant sequences
+ * would collide across tenants. The counter document is per-year, reserved
+ * atomically. Legacy random numbers stay valid; on any failure we fall back
+ * to the legacy generator so creation never blocks.
+ */
+async function nextTicketNumber() {
+  try {
+    const year = new Date().getFullYear();
+    const doc = await Counter.findOneAndUpdate(
+      { _id: `GLOBAL:TKT:${year}` },
+      { $inc: { seq: 1 } },
+      { new: true, upsert: true }
+    );
+    const number = formatTicketNumber(year, doc.seq);
+    const Ticket = require('../models/Ticket');
+    const exists = await Ticket.exists({ number });
+    if (!exists) return number;
+  } catch (_) {
+    // fall through to legacy
+  }
+  return legacyTicketNumber();
+}
+
+module.exports = { PREFIXES, formatNumber, nextSequence, nextNumber, formatTicketNumber, nextTicketNumber };

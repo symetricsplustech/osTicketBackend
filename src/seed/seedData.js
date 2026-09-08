@@ -140,6 +140,24 @@ Regards,
     context: 'ticket',
   },
   {
+    key: 'sla_response_breach',
+    name: 'Response SLA Breached',
+    description: 'Sent to the assigned agent when the first-response target passes with no agent reply.',
+    subject: 'RESPONSE SLA BREACHED: %{ticketNumber} is awaiting first response',
+    body: `Dear %{recipient.name},
+
+Ticket %{ticketNumber} has breached its first-response SLA (due %{dueDate}) without an agent reply.
+
+Immediate attention is required.
+
+Regards,
+Support`,
+    trigger: 'sla_response_breach',
+    recipient: 'agent',
+    isActive: true,
+    context: 'alert',
+  },
+  {
     key: 'ticket_closed',
     name: 'Ticket Closed',
     description: 'Sent to the customer when their ticket is closed.',

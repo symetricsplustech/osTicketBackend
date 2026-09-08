@@ -42,7 +42,7 @@ async function agentMetrics({ company, fromDays = 30 }) {
     if (t.stats?.responses) m.responseTimes.push(t.stats.responses);
     if (t.closedAt && t.createdAt) m.resolutionTimes.push((new Date(t.closedAt) - new Date(t.createdAt)) / 3600000);
     if (t.stats?.reopened) m.reopened += t.stats.reopened;
-    if (['closed', 'archived'].includes(t.status)) {
+    if (['resolved', 'closed', 'archived'].includes(t.status)) {
       m.resolved += 1;
       m.closed += 1;
     }
@@ -105,7 +105,7 @@ async function departmentMetrics({ company, fromDays = 30 }) {
     const id = String(t.dept);
     const m = (byDept[id] = byDept[id] || { deptId: id, incoming: 0, resolved: 0, slaBreaches: 0, escalations: 0, avgResolutionHours: [], avgResponseMin: [] });
     m.incoming += 1;
-    if (['closed', 'archived'].includes(t.status)) m.resolved += 1;
+    if (['resolved', 'closed', 'archived'].includes(t.status)) m.resolved += 1;
     if (t.isOverdue) m.slaBreaches += 1;
     if (t.escalatedBy?.length) m.escalations += 1;
     if (t.closedAt && t.createdAt) m.avgResolutionHours.push((new Date(t.closedAt) - new Date(t.createdAt)) / 3600000);
@@ -132,6 +132,52 @@ async function departmentMetrics({ company, fromDays = 30 }) {
   };
 }
 
+/**
+ * Team metrics (§45 Team Lead): queue size, workload, unassigned share,
+ * SLA risk/breaches, avg response + resolution.
+ */
+async function teamMetrics({ company, fromDays = 30 }) {
+  const from = sinceDays(fromDays);
+  const teams = await Team.find({ company }).lean();
+  const tickets = await Ticket.find({ company, createdAt: { $gte: from } });
+  const byTeam = {};
+  let unassigned = 0;
+  for (const t of tickets) {
+    if (!t.team) {
+      if (!['closed', 'archived', 'deleted', 'resolved'].includes(t.status)) unassigned += 1;
+      continue;
+    }
+    const id = String(t.team);
+    const m = (byTeam[id] = byTeam[id] || { teamId: id, incoming: 0, open: 0, resolved: 0, slaBreaches: 0, escalations: 0, avgResolutionHours: [], avgResponseMin: [] });
+    m.incoming += 1;
+    if (['resolved', 'closed', 'archived'].includes(t.status)) m.resolved += 1;
+    else m.open += 1;
+    if (t.isOverdue) m.slaBreaches += 1;
+    if (t.escalatedBy?.length) m.escalations += 1;
+    if (t.closedAt && t.createdAt) m.avgResolutionHours.push((new Date(t.closedAt) - new Date(t.createdAt)) / 3600000);
+    if (t.stats?.firstResponseAt) m.avgResponseMin.push((new Date(t.stats.firstResponseAt) - new Date(t.createdAt)) / 60000);
+  }
+  return {
+    from: from.toISOString(),
+    unassignedOpen: unassigned,
+    teams: teams.map((team) => {
+      const m = byTeam[String(team._id)] || {};
+      return {
+        teamId: team._id,
+        name: team.name,
+        members: (team.members || []).length,
+        incoming: m.incoming || 0,
+        open: m.open || 0,
+        resolved: m.resolved || 0,
+        backlog: (m.incoming || 0) - (m.resolved || 0),
+        slaBreaches: m.slaBreaches || 0,
+        escalations: m.escalations || 0,
+        avgResolutionHours: avg(m.avgResolutionHours || []),
+        avgResponseMin: avg(m.avgResponseMin || []),
+      };
+    }),
+  };
+}
 /**
  * Customer metrics: ticket volume, SLA, CSAT, NPS, escalations, churn risk.
  */
@@ -208,4 +254,4 @@ async function volumeTrend({ company, days = 30 }) {
   return Object.values(map);
 }
 
-module.exports = { agentMetrics, departmentMetrics, customerMetrics, volumeTrend };
+module.exports = { agentMetrics, departmentMetrics, teamMetrics, customerMetrics, volumeTrend };

@@ -116,14 +116,48 @@ const run = async () => {
   }
   console.log('Priorities seeded.');
 
+  // ----- Default Impact × Urgency → Priority matrix (§13, global fallback) -----
+  const defaultMatrix = [
+    { impact: 'high', urgency: 'high', priority: 'critical' },
+    { impact: 'high', urgency: 'medium', priority: 'high' },
+    { impact: 'high', urgency: 'low', priority: 'medium' },
+    { impact: 'medium', urgency: 'high', priority: 'high' },
+    { impact: 'medium', urgency: 'medium', priority: 'medium' },
+    { impact: 'medium', urgency: 'low', priority: 'low' },
+    { impact: 'low', urgency: 'high', priority: 'medium' },
+    { impact: 'low', urgency: 'medium', priority: 'low' },
+    { impact: 'low', urgency: 'low', priority: 'low' },
+  ];
+  for (const cell of defaultMatrix) {
+    await require('../models/platformIdentity/PriorityMatrix').findOneAndUpdate(
+      { impact: cell.impact, urgency: cell.urgency, tenantId: { $exists: false } },
+      { ...cell },
+      { upsert: true }
+    );
+  }
+  console.log('Priority matrix seeded.');
+
   // ----- Ticket statuses -----
   const defaultStatuses = [
+    { name: 'New', key: 'new', color: '#0ea5e9', sortOrder: 0 },
     { name: 'Open', key: 'open', color: '#4a86b0', isDefault: true, sortOrder: 1 },
-    { name: 'Assigned', key: 'assigned', color: '#8e6bb0', sortOrder: 2 },
-    { name: 'Overdue', key: 'overdue', color: '#c0392b', sortOrder: 3 },
-    { name: 'Resolved', key: 'resolved', color: '#16a34a', sortOrder: 4 },
-    { name: 'Closed', key: 'closed', color: '#6c757d', sortOrder: 5 },
-    { name: 'Archived', key: 'archived', color: '#95a5a6', sortOrder: 6 },
+    { name: 'Triaged', key: 'triaged', color: '#6366f1', sortOrder: 2 },
+    { name: 'Assigned', key: 'assigned', color: '#8e6bb0', sortOrder: 3 },
+    { name: 'In Progress', key: 'in_progress', color: '#2563eb', sortOrder: 4 },
+    { name: 'Pending Customer', key: 'pending_customer', color: '#d97706', sortOrder: 5, pauseSla: true, waitingOn: 'customer' },
+    { name: 'Pending Vendor', key: 'pending_vendor', color: '#b45309', sortOrder: 6, pauseSla: true, waitingOn: 'vendor' },
+    { name: 'Pending Approval', key: 'pending_approval', color: '#a855f7', sortOrder: 7, pauseSla: true, waitingOn: 'approval' },
+    { name: 'On Hold', key: 'on_hold', color: '#78716c', sortOrder: 8, pauseSla: true, waitingOn: 'customer' },
+    { name: 'Escalated', key: 'escalated', color: '#dc2626', sortOrder: 9 },
+    { name: 'Overdue', key: 'overdue', color: '#c0392b', sortOrder: 10 },
+    { name: 'Resolved', key: 'resolved', color: '#16a34a', sortOrder: 11 },
+    { name: 'Verification', key: 'verification', color: '#059669', sortOrder: 12 },
+    { name: 'Closed', key: 'closed', color: '#6c757d', sortOrder: 13 },
+    { name: 'Cancelled', key: 'cancelled', color: '#9ca3af', sortOrder: 14 },
+    { name: 'Rejected', key: 'rejected', color: '#ef4444', sortOrder: 15 },
+    { name: 'Duplicate', key: 'duplicate', color: '#f59e0b', sortOrder: 16 },
+    { name: 'Spam', key: 'spam', color: '#525252', sortOrder: 17 },
+    { name: 'Archived', key: 'archived', color: '#95a5a6', sortOrder: 18 },
   ];
   for (const s of defaultStatuses) {
     await require('../models/TicketStatus').findOneAndUpdate({ key: s.key }, s, { upsert: true });
@@ -185,6 +219,8 @@ const run = async () => {
     Role.create({ name: 'Support Agent', permissions: ['tickets.view', 'tickets.create', 'tickets.edit', 'tickets.assign', 'tickets.transfer', 'tickets.close', 'tickets.reply', 'tickets.note', 'tickets.tasks', 'users.manage', 'canned.manage', 'kb.manage'], isAdmin: false }),
     Role.create({ name: 'Technician', permissions: ['tickets.view', 'tickets.reply', 'tickets.note', 'tickets.assign', 'tickets.close', 'tickets.tasks'], isAdmin: false }),
   ]);
+  // Read-only company auditor (§1): enforced by the admin-surface guard.
+  await Role.create({ name: 'Company Auditor', permissions: ['audit.view', 'records.view', 'reports.manage'], category: 'auditor', isAdmin: false }).catch(() => {});
 
   // ----- Departments -----
   const support = await Department.create({ name: 'Support', isPublic: true, notes: 'General customer support' });

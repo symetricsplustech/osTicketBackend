@@ -20,6 +20,14 @@ const faqSchema = new mongoose.Schema(
     },
     expiresAt: { type: Date, default: null },
     internalOnly: { type: Boolean, default: false },
+    // Visibility scopes (§28). internalOnly=true behaves as `agents`.
+    visibility: {
+      type: String,
+      enum: ['public', 'customers', 'employees', 'agents', 'department', 'team'],
+      default: 'public',
+    },
+    visibleDepartments: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Department' }],
+    visibleTeams: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Team' }],
     locale: { type: String, default: '' },
     relatedTickets: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Ticket' }],
     relatedProducts: { type: [String], default: [] },

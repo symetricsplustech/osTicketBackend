@@ -268,16 +268,25 @@ exports.listWebhooks = asyncHandler(async (req, res) => {
   res.json({ success: true, items: webhooks });
 });
 exports.createWebhook = asyncHandler(async (req, res) => {
-  const { name, url, secret, events, isActive } = req.body;
+  const { name, url, secret, events, format, isActive } = req.body;
   if (!name || !url) throw new ApiError(422, 'Name and URL are required');
   if (!Array.isArray(events) || !events.length) throw new ApiError(422, 'At least one event is required');
-  const webhook = await Webhook.create({ name, company: req.companyId, url, secret: secret || '', events, isActive: isActive !== false, createdBy: req.agent._id });
+  if (format !== undefined && !['generic', 'slack', 'teams'].includes(format)) throw new ApiError(422, 'Invalid format');
+  const webhook = await Webhook.create({ name, company: req.companyId, url, secret: secret || '', events, format: format || 'generic', isActive: isActive !== false, createdBy: req.agent._id });
   res.status(201).json({ success: true, item: webhook });
 });
 exports.updateWebhook = asyncHandler(async (req, res) => {
   const webhook = await Webhook.findOne({ _id: req.params.id, ...scope(req) });
   if (!webhook) throw new ApiError(404, 'Webhook not found');
-  const { name, url, secret, events, isActive } = req.body;
+  const { name, url, secret, events, format, isActive } = req.body;
+  if (name) webhook.name = name;
+  if (url) webhook.url = url;
+  if (secret !== undefined) webhook.secret = secret;
+  if (events) webhook.events = events;
+  if (format !== undefined) {
+    if (!['generic', 'slack', 'teams'].includes(format)) throw new ApiError(422, 'Invalid format');
+    webhook.format = format;
+  }
   if (name) webhook.name = name;
   if (url) webhook.url = url;
   if (secret !== undefined) webhook.secret = secret;

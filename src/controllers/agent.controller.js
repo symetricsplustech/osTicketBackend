@@ -142,11 +142,13 @@ exports.queues = asyncHandler(async (req, res) => {
   const agent = req.agent;
   const base = scopeTicketQuery(agent, { status: { $ne: Ticket.STATUSES.DELETED } });
   const count = async (status) => Ticket.countDocuments(status ? { ...base, status } : base);
-  const [all, open, assigned, overdue, resolved, closed, archived, mine] = await Promise.all([
+  const [all, open, assigned, overdue, pending, escalated, resolved, closed, archived, mine] = await Promise.all([
     count(null),
     count(Ticket.STATUSES.OPEN),
     count(Ticket.STATUSES.ASSIGNED),
     count(Ticket.STATUSES.OVERDUE),
+    Ticket.countDocuments({ ...base, status: { $in: [Ticket.STATUSES.PENDING_CUSTOMER, Ticket.STATUSES.PENDING_VENDOR, Ticket.STATUSES.PENDING_APPROVAL, Ticket.STATUSES.ON_HOLD] } }),
+    count(Ticket.STATUSES.ESCALATED),
     count(Ticket.STATUSES.RESOLVED),
     count(Ticket.STATUSES.CLOSED),
     count(Ticket.STATUSES.ARCHIVED),
@@ -156,7 +158,7 @@ exports.queues = asyncHandler(async (req, res) => {
       $or: [{ agent: agent._id }, { team: { $in: getAgentTeamIds(agent) } }],
     }),
   ]);
-  res.json({ success: true, queues: { all, open, assigned, overdue, resolved, closed, archived, mine } });
+  res.json({ success: true, queues: { all, open, assigned, overdue, pending, escalated, resolved, closed, archived, mine } });
 });
 
 exports.listTickets = asyncHandler(async (req, res) => {
@@ -312,6 +314,7 @@ exports.addNote = asyncHandler(async (req, res) => {
     body: message,
   });
   require('../services/audit.service').audit({ company: ticket.company, actorType: 'agent', actor: req.agent._id, actorName: req.agent.name, action: 'ticket.note_added', entityType: 'ticket', entityId: ticket._id, after: { note: true }, req });
+  emit('ticket.note_added', { company: ticket.company, ticketId: ticket._id, ticketNumber: ticket.number, actor: req.agent._id });
   await notifyMentionedAgents({ ticket, message, actor: req.agent, company: ticket.company });
   const threads = await TicketThread.find({ ticket: ticket._id, deletedAt: null }).sort({ createdAt: 1 }).populate('user', 'name email').populate('agent', 'name');
   res.json({ success: true, message: 'Note added', threads });
@@ -376,12 +379,13 @@ exports.transfer = asyncHandler(async (req, res) => {
 exports.changeStatus = asyncHandler(async (req, res) => {
   const ticket = await loadTicketForAgent(req.params.number, req.agent);
   assertNotLocked(ticket, req.agent);
-  const { status, closedReason } = req.body;
+  const { status, closedReason, resolution } = req.body;
   await ticketService.applyStatusChange(ticket, status, {
     actorType: 'agent',
     actorId: req.agent._id,
     actorName: req.agent.name,
     reason: closedReason || '',
+    resolution: resolution || null,
   });
   res.json({ success: true, message: 'Status updated', ticket });
 });
@@ -424,7 +428,7 @@ exports.updateFields = asyncHandler(async (req, res) => {
   if (!hasPerm(req.agent, 'tickets.edit')) throw new ApiError(403, 'Permission denied');
   const ticket = await loadTicketForAgent(req.params.number, req.agent);
   assertNotLocked(ticket, req.agent);
-  const { subject, priority, dueDate, source } = req.body;
+  const { subject, priority, dueDate, source, asset } = req.body;
   const changed = [];
   if (subject !== undefined) {
     if (!String(subject).trim()) throw new ApiError(422, 'Subject cannot be empty');
@@ -444,6 +448,15 @@ exports.updateFields = asyncHandler(async (req, res) => {
     if (!VALID_SOURCES.includes(source)) throw new ApiError(422, 'Invalid source');
     ticket.source = source;
     changed.push('source');
+  }
+  if (asset !== undefined) {
+    if (asset) {
+      const Asset = require('../models/Asset');
+      const exists = await Asset.exists({ _id: asset, company: req.companyId });
+      if (!exists) throw new ApiError(404, 'Asset not found in this tenant');
+    }
+    ticket.asset = asset || null;
+    changed.push('asset');
   }
   if (!changed.length) throw new ApiError(422, 'Nothing to update');
   await ticket.save();
@@ -479,9 +492,14 @@ exports.claim = asyncHandler(async (req, res) => {
 
 exports.create = asyncHandler(async (req, res) => {
   if (!hasPerm(req.agent, 'tickets.create')) throw new ApiError(403, 'Permission denied');
-  const { email, name, phone, subject, details, priority, topicId, deptId, source, customData } = req.body;
+  const { email, name, phone, subject, details, priority, impact, urgency, topicId, deptId, source, customData } = req.body;
   if (!email) throw new ApiError(422, 'Customer email is required');
   if (!subject || !String(subject).trim()) throw new ApiError(422, 'Subject is required');
+  for (const [key, value] of [['impact', impact], ['urgency', urgency]]) {
+    if (value !== undefined && value !== null && !['low', 'medium', 'high'].includes(value)) {
+      throw new ApiError(422, `Invalid ${key} (low, medium, high)`);
+    }
+  }
   const user = await ticketService.findOrCreateUser({
     name: name || email.split('@')[0],
     email,
@@ -505,6 +523,8 @@ exports.create = asyncHandler(async (req, res) => {
     topicId: topicId || undefined,
     deptId: deptId || undefined,
     priority: (priority && (await isValidPriority(priority))) ? priority : undefined,
+    impact: impact || undefined,
+    urgency: urgency || undefined,
     source: VALID_SOURCES.includes(source) ? source : 'web',
     customData: parsedCustom,
   });
@@ -697,8 +717,18 @@ exports.updateTask = asyncHandler(async (req, res) => {
   if (assignedTo !== undefined) task.assignedTo = assignedTo;
   if (dueDate !== undefined) task.dueDate = dueDate;
   if (status !== undefined) {
+    const wasOpen = task.status !== 'closed';
     task.status = status;
     task.closedAt = status === 'closed' ? new Date() : null;
+    if (status === 'closed' && wasOpen) {
+      require('../services/events').emit('task.completed', {
+        company: ticket.company,
+        ticketId: ticket._id,
+        ticketNumber: ticket.number,
+        taskId: task._id,
+        actor: req.agent._id,
+      });
+    }
   }
   await task.save();
   res.json({ success: true, task });
@@ -804,6 +834,36 @@ exports.updateCanned = asyncHandler(async (req, res) => {
 exports.deleteCanned = asyncHandler(async (req, res) => {
   await CannedResponse.deleteOne({ _id: req.params.id, ...(req.companyId ? { company: req.companyId } : {}) });
   res.json({ success: true, message: 'Canned response deleted' });
+});
+
+// Render a canned response with ticket variables (§38). Supports both the
+// platform `%{ticket.number}` syntax and `{{customer.name}}` style.
+exports.renderCanned = asyncHandler(async (req, res) => {
+  const canned = await CannedResponse.findById(req.params.id);
+  if (!canned) throw new ApiError(404, 'Canned response not found');
+  if (req.companyId && canned.company && String(canned.company) !== String(req.companyId)) {
+    throw new ApiError(403, 'Access denied');
+  }
+  const { ticketNumber } = req.body;
+  let data = { agent: { name: req.agent.name, email: req.agent.email } };
+  if (ticketNumber) {
+    const ticket = await Ticket.findOne({ number: String(ticketNumber).trim().toUpperCase(), status: { $ne: Ticket.STATUSES.DELETED } });
+    if (!ticket) throw new ApiError(404, 'Ticket not found');
+    if (req.companyId && ticket.company && String(ticket.company) !== String(req.companyId)) {
+      throw new ApiError(403, 'Access denied');
+    }
+    data = { ...(await ticketService.buildTicketContext(ticket)), agent: { name: req.agent.name, email: req.agent.email } };
+  }
+  // Aliases matching the documented {{customer.name}} / {{sla.due_at}} style.
+  const vars = {
+    ...data,
+    customer: { name: data.user?.name || '', email: data.user?.email || '' },
+    sla: { ...(data.sla || {}), due_at: data.ticket?.due || '' },
+    ticket: { ...(data.ticket || {}), due_at: data.ticket?.due || '' },
+  };
+  const withPercents = String(canned.response || '').replace(/\{\{\s*([\w.]+)\s*\}\}/g, '%{$1}');
+  const renderTemplate = require('../utils/renderTemplate');
+  res.json({ success: true, title: canned.title, rendered: renderTemplate(withPercents, vars) });
 });
 
 exports.listFaqCategories = asyncHandler(async (req, res) => {

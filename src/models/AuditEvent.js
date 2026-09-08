@@ -23,6 +23,9 @@ const auditEventSchema = new mongoose.Schema(
     userAgent: { type: String, default: '' },
     source: { type: String, default: '' },
     metadata: { type: mongoose.Schema.Types.Mixed, default: {} },
+    privilegedSessionId: { type: String, default: '', index: true },
+    realActor: { type: mongoose.Schema.Types.ObjectId, ref: 'SuperAdmin', default: null },
+    realActorName: { type: String, default: '' },
   },
   { timestamps: true }
 );

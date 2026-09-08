@@ -78,7 +78,7 @@ exports.getMyTickets = asyncHandler(async (req, res) => {
 });
 
 exports.create = asyncHandler(async (req, res) => {
-  const { subject, details, topic, priority, customData } = req.body;
+  const { subject, details, topic, priority, impact, urgency, customData } = req.body;
   if (!String(subject || '').trim() || !String(details || '').trim()) throw new ApiError(422, 'Subject and details are required');
   let parsedCustom = {};
   if (customData) {
@@ -106,6 +106,11 @@ exports.create = asyncHandler(async (req, res) => {
     const { isValidPriority } = require('../services/priority.service');
     if (!(await isValidPriority(priority, companyId))) throw new ApiError(422, 'Invalid ticket priority');
   }
+  for (const [key, value] of [['impact', impact], ['urgency', urgency]]) {
+    if (value !== undefined && value !== null && !['low', 'medium', 'high'].includes(value)) {
+      throw new ApiError(422, `Invalid ${key} (low, medium, high)`);
+    }
+  }
 
   const ticketOwner = getOrgOwner(user) || user._id;
   const attachments = (req.files || []).map((f) => ({
@@ -123,6 +128,8 @@ exports.create = asyncHandler(async (req, res) => {
     details: details.trim(),
     topicId: topic || null,
     priority,
+    impact,
+    urgency,
     source: 'web',
     attachments,
     customData: parsedCustom,
@@ -221,6 +228,23 @@ exports.reply = asyncHandler(async (req, res) => {
     mimetype: f.mimetype,
   }));
 
+  // Reply window expired (§40): don't resurrect ancient tickets — create a
+  // follow-up ticket linked to this one instead.
+  if (ticket.status === Ticket.STATUSES.RESOLVED || ticket.status === Ticket.STATUSES.CLOSED) {
+    const replySettings = await SystemSetting.getSettings();
+    if (!ticketService.reopenWindowAllows(ticket, replySettings)) {
+      const created = await ticketService.createFollowUpTicket({
+        ticket,
+        user: req.user,
+        body: message,
+        attachments,
+        source: 'web',
+        actorId: req.user._id,
+      });
+      return res.status(201).json({ success: true, message: `Previous ticket ${ticket.number} is past the reply window — created follow-up ${created.number}`, ticket: created, followUp: true, linkedTo: ticket.number });
+    }
+  }
+
   await ticketService.addThreadEntry({
     ticket,
     type: 'message',
@@ -269,14 +293,15 @@ exports.closeTicket = asyncHandler(async (req, res) => {
   if (ticket.status === Ticket.STATUSES.CLOSED) {
     throw new ApiError(400, 'Ticket is already closed');
   }
-  ticket.status = Ticket.STATUSES.CLOSED;
-  ticket.closedAt = new Date();
-  ticket.lockedBy = null;
-  ticket.lockExpiresAt = null;
-  await ticket.save();
-  await ticketService.addSystemEvent({ ticket, message: 'Ticket closed by user' });
+  // Shared applier: transition validation + open-task blocking + closure
+  // mail + CSAT, identical to agent/bulk close.
+  await ticketService.applyStatusChange(ticket, Ticket.STATUSES.CLOSED, {
+    actorType: 'user',
+    actorId: req.user?._id || null,
+    actorName: req.user?.name || 'customer',
+    reason: 'closed by user',
+  });
   await notifyOwnerOfEmployeeAction({ ticket, user: req.user, type: 'status_change', action: 'closed' });
-  await ticketService.handleTicketClosed(ticket, { actor: req.user?._id || null });
   res.json({ success: true, message: 'Ticket closed' });
 });
 
@@ -289,11 +314,15 @@ exports.reopenTicket = asyncHandler(async (req, res) => {
   if (ticket.status !== Ticket.STATUSES.CLOSED && ticket.status !== Ticket.STATUSES.RESOLVED) {
     throw new ApiError(400, 'Only resolved or closed tickets can be reopened');
   }
+  if (!ticketService.reopenWindowAllows(ticket, settings)) {
+    throw new ApiError(400, 'Reopen window expired — please open a follow-up ticket instead');
+  }
   ticket.status = Ticket.STATUSES.OPEN;
   ticket.closedAt = null;
   ticket.closedBy = null;
   ticket.resolvedAt = null;
   ticket.resolvedBy = null;
+  ticket.resolutionMetAt = null;
   ticket.stats.reopened += 1;
   await ticket.save();
   await ticketService.addSystemEvent({ ticket, message: 'Ticket reopened by user' });
