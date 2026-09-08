@@ -8,6 +8,8 @@ const alertSchema = new mongoose.Schema(
     severity: { type: String, enum: ['info', 'warning', 'critical', 'emergency'], default: 'warning' },
     status: { type: String, enum: ['firing', 'acknowledged', 'resolved', 'silenced'], default: 'firing' },
     source: { type: String, default: 'manual' },
+    dedupeKey: { type: String, default: '', index: true },
+    count: { type: Number, default: 1 },
     resource: { type: mongoose.Schema.Types.ObjectId, ref: 'Resource', default: null },
     service: { type: String, default: '' },
     metric: { type: String, default: '' },

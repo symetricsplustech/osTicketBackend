@@ -7,6 +7,14 @@ const router = express.Router();
 
 router.use(protectAdmin);
 
+// Company Auditor (§1/§4): read-only across the admin surface.
+router.use((req, res, next) => {
+  if (req.agent?.role?.category === 'auditor' && !['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
+    return res.status(403).json({ success: false, message: 'Auditor role is read-only' });
+  }
+  next();
+});
+
 // Dashboard
 router.get('/dashboard', ctrl.dashboard);
 router.get('/info', ctrl.systemInfo);
@@ -54,6 +62,8 @@ router.get('/sla-plans', ctrl.listSlaPlans);
 router.post('/sla-plans', ctrl.createSlaPlan);
 router.put('/sla-plans/:id', ctrl.updateSlaPlan);
 router.delete('/sla-plans/:id', ctrl.deleteSlaPlan);
+router.get('/sla-dashboard', ctrl.slaDashboard);
+router.get('/tickets/:number/sla-history', ctrl.ticketSlaHistory);
 
 // Ticket Filters
 router.get('/filters', ctrl.listFilters);
@@ -74,6 +84,7 @@ router.put('/settings', ctrl.updateSettings);
 router.get('/company', ctrl.getCompanySettings);
 router.put('/company', ctrl.updateCompanySettings);
 router.post('/company/logo', upload.single('logo'), ctrl.uploadCompanyLogo);
+router.post('/company/transfer-ownership', ctrl.transferCompanyOwnership);
 
 // Users
 router.get('/users', ctrl.listUsers);
@@ -118,6 +129,9 @@ router.get('/custom-fields', ctrl.customFields.list);
 router.post('/custom-fields', ctrl.customFields.create);
 router.put('/custom-fields/:id', ctrl.customFields.update);
 router.delete('/custom-fields/:id', ctrl.customFields.remove);
+
+const customAuthRouter = require('./customAuth.routes');
+router.use('/custom-auth', customAuthRouter);
 
 // Ticket Forms
 router.get('/ticket-forms', ctrl.ticketForms.list);

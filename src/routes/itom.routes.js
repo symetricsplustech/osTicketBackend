@@ -71,9 +71,8 @@ router.get('/alerts', protectAgent, moduleRequired('itom'), async (req, res, nex
 
 router.post('/alerts', protectAgent, moduleRequired('itom'), async (req, res, next) => {
   try {
-    const Alert = require('../models/Alert');
-    const tenantId = req.user.tenantId || req.user.companyId;
-    const alert = await Alert.create({ ...req.body, company: tenantId, createdBy: req.user._id });
+    const { ingestAlert } = require('../services/alertManager.service');
+    const alert = await ingestAlert({ company: req.companyId, ...req.body });
     res.status(201).json({ alert });
   } catch (e) { next(e); }
 });

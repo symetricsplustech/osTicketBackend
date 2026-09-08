@@ -26,6 +26,7 @@
  */
 
 const ApiError = require('../utils/ApiError');
+const { getTenantCustomAuth, evaluateCustom } = require('./customAuth.service');
 
 const ALLOW = 'ALLOW';
 const DENY = 'DENY';
@@ -376,6 +377,7 @@ async function authorize({
   conditions,
   fields,
   extraRoles,
+  customAuth, // preloaded { permissions, roles } snapshot, or false to skip
   req,
   audit = 'deny',
 }) {
@@ -415,9 +417,40 @@ async function authorize({
     }
   }
 
-  // 6+7. permission with deny precedence
+  // 6+7. permission with deny precedence (stock space)
   const check = checkPermission(principal, permission, extraRoles);
-  if (!check.granted) {
+
+  // 6b. custom tenant auth (cached 60s; opt out with customAuth: false).
+  // Custom DENY vetoes even stock grants; custom ALLOW fills stock gaps and
+  // may narrow scope/conditions. SaaS keys can never match custom rules.
+  let via = check.via;
+  if (customAuth !== false) {
+    let snap = null;
+    if (customAuth && typeof customAuth === 'object' && (customAuth.permissions || customAuth.roles)) {
+      snap = customAuth;
+    } else {
+      try {
+        snap = await getTenantCustomAuth(tenantId);
+      } catch (_) {
+        snap = null; // custom store unreachable — stock decision stands
+      }
+    }
+    if (snap) {
+      const verdict = evaluateCustom(permission, snap, principal);
+      if (verdict && verdict.decision === 'DENY') {
+        return fail('CUSTOM_DENY', { via: verdict.via });
+      }
+      if (!check.granted && verdict && verdict.decision === 'ALLOW') {
+        via = verdict.via;
+        if (verdict.scope) requiredScope = verdict.scope;
+        if (verdict.conditions) conditions = verdict.conditions;
+      } else if (!check.granted) {
+        return fail('PERMISSION_MISSING', { via: check.via });
+      }
+    } else if (!check.granted) {
+      return fail(check.via === 'deny' ? 'EXPLICIT_DENY' : 'PERMISSION_MISSING', { via: check.via });
+    }
+  } else if (!check.granted) {
     return fail(check.via === 'deny' ? 'EXPLICIT_DENY' : 'PERMISSION_MISSING', { via: check.via });
   }
 
@@ -441,7 +474,7 @@ async function authorize({
     decision: ALLOW,
     reason: 'OK',
     permission,
-    via: check.via,
+    via,
     ...(typeof matchedScope !== 'undefined' ? { scope: matchedScope } : {}),
     ...(fieldResult ? { allowedFields: fieldResult.allowedFields, deniedFields: fieldResult.deniedFields } : {}),
   };

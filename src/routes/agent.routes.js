@@ -104,6 +104,30 @@ router.put('/faqs/:id', ctrl.updateFaq);
 router.post('/faqs/:id/transition', ctrl.transitionFaq);
 router.delete('/faqs/:id', ctrl.deleteFaq);
 
+// KB deflection metric
+router.get('/kb/deflection', moduleRequired('helpdesk'), async (req, res, next) => {
+  try {
+    const Faq = require('../models/Faq');
+    const faqId = req.query.faqId;
+    const periodDays = parseInt(req.query.periodDays, 10) || 30;
+    const since = new Date(Date.now() - periodDays * 86400000);
+    const q = { company: req.companyId, isPublished: true };
+    if (faqId) q._id = faqId;
+    const faqs = await Faq.find(q).select('subject views votesUp votesDown').lean();
+    const stats = faqs.map(f => ({
+      faqId: f._id,
+      subject: f.subject,
+      views: f.views || 0,
+      votesUp: f.votesUp || 0,
+      votesDown: f.votesDown || 0,
+      deflectionRate: f.views ? Math.round(((f.votesUp || 0) / f.views) * 100) : 0,
+    }));
+    const totalViews = stats.reduce((a, s) => a + s.views, 0);
+    const totalDeflected = stats.reduce((a, s) => a + s.votesUp, 0);
+    res.json({ totalViews, totalDeflected, overallDeflectionRate: totalViews ? Math.round((totalDeflected / totalViews) * 100) : 0, articles: stats });
+  } catch (e) { next(e); }
+});
+
 // Announcements
 router.get('/announcements', ctrl.listAnnouncements);
 router.post('/announcements', ctrl.createAnnouncement);
