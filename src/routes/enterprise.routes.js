@@ -297,6 +297,22 @@ function crud(path, Model, opts = {}) {
 
 // ---- CMDB ----
 crud('/cmdb/cis', E.CI, { filters: ['ciClass', 'status', 'environment', 'criticality'], search: ['name', 'ipAddress'] });
+// Service health aggregation (MD §82): BusinessService health from monitored
+// CIs + firing alerts + dependency propagation.
+router.get('/cmdb/services/health', async (req, res, next) => {
+  try {
+    const { computeServiceHealth } = require('../services/serviceHealth.service');
+    const result = await computeServiceHealth(T(req).tenantId);
+    res.json(result);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+router.post('/cmdb/services/health/recompute', async (req, res, next) => {
+  try {
+    const { recomputeAllHealth } = require('../services/serviceHealth.service');
+    const result = await recomputeAllHealth();
+    res.json(result);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
 crud('/cmdb/services', E.BusinessService, { search: ['name'] });
 router.post('/cmdb/cis/:id/relate', async (req, res) => {
   try { const ci = await E.CI.findOne({ _id: req.params.id, ...T(req) }); if (!ci) return res.status(404).json({});

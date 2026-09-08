@@ -50,6 +50,15 @@ router.get('/tickets/sla/predictions', moduleRequired('helpdesk'), async (req, r
     res.json(result);
   } catch (e) { next(e); }
 });
+router.get('/search/semantic', moduleRequired('helpdesk'), async (req, res, next) => {
+  try {
+    const { semanticSearch } = require('../services/neuralSearch.service');
+    const q = String(req.query.q || '').trim();
+    if (q.length < 2) return res.json({ results: [], query: q });
+    const results = await semanticSearch({ company: req.companyId, query: q, limit: parseInt(req.query.limit, 10) || 30, userId: req.user._id });
+    res.json({ results, query: q });
+  } catch (e) { next(e); }
+});
 router.get('/tickets/:number/sla-history', require('../controllers/admin.controller').ticketSlaHistory);
 router.get('/tickets/:number', ctrl.getTicket);
 router.post('/tickets/:number/reply', upload.array('files', 5), scanUploads, ctrl.reply);

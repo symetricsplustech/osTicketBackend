@@ -11,6 +11,7 @@ const { scheduleAutoCloseCheck } = require('./services/ticket.service');
 const { startInboundPoller } = require('./services/inboundEmail.service');
 const { startEscalationRunner } = require('./services/escalation.service');
 const { initWorkflowEngine } = require('./services/workflow.service');
+const { startLearningLoop } = require('./services/learningLoop.service');
 const logger = require('./utils/logger');
 const { ensureDefaults } = require('./bootstrap/ensureDefaults');
 
@@ -35,6 +36,7 @@ const start = async () => {
   const realtime = require('./services/realtime.service');
   setInterval(() => approvalService.runApprovalLifecycle().catch(() => {}), 5 * 60 * 1000);
   setInterval(() => realtime.broadcastSnapshot({}).catch(() => {}), 60 * 1000);
+  startLearningLoop();
 
   server.listen(config.port, () => {
     logger.info(`osTicket MERN API running on http://localhost:${config.port} (${config.env})`);

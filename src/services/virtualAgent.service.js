@@ -113,6 +113,23 @@ async function rankIntent(company, userText) {
  *  { intent, confidence, response, actions: { openTicket?, escalate?, knowledge?: [], statuses?: [] }, matched }
  */
 async function virtualAgent({ company, userText, userId, conversationId }) {
+  try {
+    const { handleUserInput, matchFlow } = require('./botFlow.service');
+    const flow = await matchFlow(company, userText);
+    if (flow) {
+      const started = await handleUserInput(company, userText, conversationId, null);
+      if (started && started.reply) {
+        return {
+          intent: 'custom_flow',
+          confidence: 1,
+          response: started.reply,
+          actions: started.handoff ? { escalate: true } : (started.nextPrompt ? { prompt: true } : {}),
+          matched: [flow.key],
+        };
+      }
+    }
+  } catch (_) { /* custom flows are advisory */ }
+
   const { intent, confidence } = await rankIntent(company, userText);
   const def = INTENTS[intent];
   const actions = {};
