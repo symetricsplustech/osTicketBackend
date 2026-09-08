@@ -1,8 +1,9 @@
 const express = require('express');
 const { protectTenantPrincipal, requirePermission } = require('../middleware/auth');
 const { moduleRequired } = require('../middleware/module');
-const { upload } = require('../config/multer');
+const { upload, scanUploads } = require('../config/multer');
 const ctrl = require('../controllers/agent.controller');
+const assistCtrl = require('../controllers/assist.controller');
 
 const router = express.Router();
 
@@ -42,8 +43,9 @@ router.put('/notifications/:id/read', ctrl.markNotificationRead);
 router.get('/tickets', moduleRequired('helpdesk'), ctrl.listTickets);
 router.post('/tickets', moduleRequired('helpdesk'), ctrl.create);
 router.get('/tickets/export', ctrl.exportTickets);
+router.get('/tickets/:number/sla-history', require('../controllers/admin.controller').ticketSlaHistory);
 router.get('/tickets/:number', ctrl.getTicket);
-router.post('/tickets/:number/reply', upload.array('files', 5), ctrl.reply);
+router.post('/tickets/:number/reply', upload.array('files', 5), scanUploads, ctrl.reply);
 router.post('/tickets/:number/note', ctrl.addNote);
 router.post('/tickets/:number/assign', ctrl.assign);
 router.post('/tickets/:number/claim', ctrl.claim);
@@ -67,6 +69,11 @@ router.delete('/queues/saved/:id', ctrl.deleteSavedQueue);
 router.post('/tickets/:number/tasks', ctrl.addTask);
 router.put('/tickets/:number/tasks/:taskId', ctrl.updateTask);
 
+// Assistant (tenant-learned triage + summarization, MD ITSM-02/15)
+router.post('/tickets/suggest', moduleRequired('helpdesk'), assistCtrl.suggestTriage);
+router.get('/tickets/suggest-refs', moduleRequired('helpdesk'), assistCtrl.suggestRefs);
+router.post('/assist/summarize', moduleRequired('helpdesk'), assistCtrl.summarize);
+
 // Supervision
 router.get('/workload', ctrl.workload);
 router.get('/escalations', ctrl.listEscalations);
@@ -87,6 +94,8 @@ router.get('/canned', ctrl.listCanned);
 router.post('/canned', ctrl.createCanned);
 router.put('/canned/:id', ctrl.updateCanned);
 router.delete('/canned/:id', ctrl.deleteCanned);
+router.post('/canned/:id/render', ctrl.renderCanned);
+router.get('/kb/suggest', require('../controllers/kb.controller').suggestForAgent);
 router.get('/faq-categories', ctrl.listFaqCategories);
 router.post('/faq-categories', ctrl.createFaqCategory);
 router.get('/faqs', ctrl.listFaqs);

@@ -35,7 +35,8 @@ router.delete('/workflows/:id', async (req, res) => {
 // guarded status writes (MD §65). Never mass-assign req.body.
 const companyOf = (req) => ({ company: T(req).tenantId });
 const { nextNumber } = require('../services/numbering.service');
-const { assertTransition } = require('../services/stateMachine.service');
+const { findTenantRecord, transitionRecord, findChangeConflicts, scoreChangeRisk } = require('../services/taskCore.service');
+const BlackoutWindow = require('../models/platformData/BlackoutWindow');
 const SEVERITY_MAP = { critical: 'Sev1', high: 'Sev2', medium: 'Sev3', low: 'Sev4', Sev1: 'Sev1', Sev2: 'Sev2', Sev3: 'Sev3', Sev4: 'Sev4' };
 const pick = (src, keys) => { const out = {}; for (const k of keys) if (src[k] !== undefined) out[k] = src[k]; return out; };
 
@@ -60,14 +61,17 @@ router.post('/incidents', async (req, res) => {
 });
 router.put('/incidents/:id', async (req, res) => {
   try {
-    const inc = await Inc.findOne({ _id: req.params.id, ...companyOf(req) });
-    if (!inc) return res.status(404).json({});
-    if (req.body.status && req.body.status !== inc.status) assertTransition('incident', inc.status, req.body.status);
-    Object.assign(inc, pick(req.body, ['title', 'description', 'summary', 'severity', 'status', 'commander', 'team', 'affectedServices', 'isMajor']));
-    if (req.body.status === 'resolved' && !inc.resolvedAt) inc.resolvedAt = new Date();
-    await inc.save();
+    const inc = await findTenantRecord(Inc, req.params.id, T(req).tenantId, 'Incident');
+    const body = pick(req.body, ['title', 'description', 'summary', 'severity', 'commander', 'team', 'affectedServices', 'isMajor']);
+    if (req.body.status === 'resolved' && !inc.resolvedAt) body.resolvedAt = new Date();
+    if (req.body.status && req.body.status !== inc.status) {
+      await transitionRecord({ entity: 'incident', doc: inc, to: req.body.status, stamp: body });
+    } else {
+      Object.assign(inc, body);
+      await inc.save();
+    }
     res.json({ incident: inc });
-  } catch (e) { res.status(e.statusCode === 422 ? 422 : 400).json({ error: e.message }); }
+  } catch (e) { res.status(e.statusCode === 422 ? 422 : e.statusCode || 400).json({ error: e.message }); }
 });
 
 router.get('/changes', async (req, res) => {
@@ -86,20 +90,63 @@ router.post('/changes', async (req, res) => {
       rollbackPlan: req.body.rollbackPlan,
       windowStart: req.body.windowStart,
       windowEnd: req.body.windowEnd,
+      linkedAssets: req.body.linkedAssets || [],
+      linkedTickets: req.body.linkedTickets || [],
       ...companyOf(req),
     });
-    res.json({ change: chg });
+    // Score + report calendar conflicts immediately so the requester sees
+    // CAB-relevant risk before approval.
+    let conflicts = { overlapping: [], blackouts: [], sharedAssets: [] };
+    try {
+      conflicts = await findChangeConflicts({
+        Change: Chg, BlackoutWindow, tenantId: T(req).tenantId,
+        windowStart: chg.windowStart, windowEnd: chg.windowEnd, assetIds: chg.linkedAssets,
+      });
+      chg.riskScore = scoreChangeRisk(chg, conflicts);
+      await chg.save();
+    } catch (_) { /* scoring is advisory */ }
+    res.json({ change: chg, conflicts });
+  } catch (e) { res.status(400).json({ error: e.message }); }
+});
+
+// Change-conflict check (MD ITSM-05): overlapping scheduled changes,
+// blackout collisions, shared-asset (CI) overlaps. Advisory (never blocks).
+router.get('/changes/conflicts', async (req, res) => {
+  try {
+    const assets = String(req.query.assets || '').split(',').map((a) => a.trim()).filter(Boolean);
+    const conflicts = await findChangeConflicts({
+      Change: Chg, BlackoutWindow, tenantId: T(req).tenantId,
+      windowStart: req.query.start, windowEnd: req.query.end,
+      assetIds: assets, excludeId: req.query.excludeId || null,
+    });
+    res.json({ conflicts });
   } catch (e) { res.status(400).json({ error: e.message }); }
 });
 router.put('/changes/:id', async (req, res) => {
   try {
-    const chg = await Chg.findOne({ _id: req.params.id, ...companyOf(req) });
-    if (!chg) return res.status(404).json({});
-    if (req.body.status && req.body.status !== chg.status) assertTransition('change', chg.status, req.body.status);
-    Object.assign(chg, pick(req.body, ['title', 'description', 'status', 'type', 'risk', 'implementationPlan', 'rollbackPlan', 'windowStart', 'windowEnd']));
-    await chg.save();
+    const chg = await findTenantRecord(Chg, req.params.id, T(req).tenantId, 'Change');
+    const body = pick(req.body, ['title', 'description', 'type', 'risk', 'implementationPlan', 'rollbackPlan', 'windowStart', 'windowEnd', 'linkedAssets', 'linkedTickets']);
+    const apply = async () => {
+      if (req.body.status && req.body.status !== chg.status) {
+        await transitionRecord({ entity: 'change', doc: chg, to: req.body.status, stamp: body });
+      } else {
+        Object.assign(chg, body);
+        await chg.save();
+      }
+    };
+    await apply();
+    // Re-score risk against the live calendar after every mutation.
+    try {
+      const conflicts = await findChangeConflicts({
+        Change: Chg, BlackoutWindow, tenantId: T(req).tenantId,
+        windowStart: chg.windowStart, windowEnd: chg.windowEnd,
+        assetIds: chg.linkedAssets, excludeId: chg._id,
+      });
+      chg.riskScore = scoreChangeRisk(chg, conflicts);
+      await chg.save();
+    } catch (_) { /* scoring is advisory */ }
     res.json({ change: chg });
-  } catch (e) { res.status(e.statusCode === 422 ? 422 : 400).json({ error: e.message }); }
+  } catch (e) { res.status(e.statusCode === 422 ? 422 : e.statusCode || 400).json({ error: e.message }); }
 });
 
 router.get('/problems', async (req, res) => {
@@ -122,24 +169,30 @@ router.post('/problems', async (req, res) => {
 });
 router.put('/problems/:id', async (req, res) => {
   try {
-    const prb = await Prb.findOne({ _id: req.params.id, ...companyOf(req) });
-    if (!prb) return res.status(404).json({});
-    if (req.body.status && req.body.status !== prb.status) assertTransition('problem', prb.status, req.body.status);
-    Object.assign(prb, pick(req.body, ['title', 'description', 'status', 'rootCause', 'workaround', 'permanentSolution', 'postmortem', 'knownError', 'linkedIncidents', 'linkedChanges', 'linkedTickets']));
-    await prb.save();
+    const prb = await findTenantRecord(Prb, req.params.id, T(req).tenantId, 'Problem');
+    const body = pick(req.body, ['title', 'description', 'rootCause', 'workaround', 'permanentSolution', 'postmortem', 'knownError', 'linkedIncidents', 'linkedChanges', 'linkedTickets']);
+    if (req.body.status && req.body.status !== prb.status) {
+      await transitionRecord({ entity: 'problem', doc: prb, to: req.body.status, stamp: body });
+    } else {
+      Object.assign(prb, body);
+      await prb.save();
+    }
     res.json({ problem: prb });
-  } catch (e) { res.status(e.statusCode === 422 ? 422 : 400).json({ error: e.message }); }
+  } catch (e) { res.status(e.statusCode === 422 ? 422 : e.statusCode || 400).json({ error: e.message }); }
 });
 
 router.get('/assets', async (req, res) => {
-  try { const q = { ...T(req) }; if (req.query.type) q.type = req.query.type; if (req.query.search) q.$or = [{ name: RegExp(String(req.query.search), 'i') }, { serialNumber: RegExp(String(req.query.search), 'i') }];
+  try { const q = { ...companyOf(req) }; if (req.query.type) q.type = req.query.type; if (req.query.search) q.$or = [{ name: RegExp(String(req.query.search), 'i') }, { serial: RegExp(String(req.query.search), 'i') }, { hostname: RegExp(String(req.query.search), 'i') }];
     res.json({ assets: await Ast.find(q).limit(300) }); } catch (e) { res.status(500).json({ error: e.message }); }
 });
 router.get('/assets/:id', async (req, res) => {
-  try { res.json({ asset: await Ast.findOne({ _id: req.params.id, ...T(req) }) }); } catch (e) { res.status(500).json({ error: e.message }); }
+  try { res.json({ asset: await Ast.findOne({ _id: req.params.id, ...companyOf(req) }) }); } catch (e) { res.status(500).json({ error: e.message }); }
 });
 router.post('/assets', async (req, res) => {
-  try { const ast = await Ast.create({ ...req.body, tenantId: T(req).tenantId }); res.json({ asset: ast }); } catch (e) { res.status(400).json({ error: e.message }); }
+  try {
+    const ast = await Ast.create({ ...pick(req.body, ['name', 'type', 'serial', 'ip', 'hostname', 'environment', 'criticality', 'location', 'status', 'warrantyUntil', 'purchaseDate', 'tags', 'notes']), company: T(req).tenantId, createdBy: req.agent?._id || null });
+    res.status(201).json({ asset: ast });
+  } catch (e) { res.status(400).json({ error: e.message }); }
 });
 
 router.get('/audit', async (req, res) => {
@@ -149,6 +202,13 @@ router.get('/audit', async (req, res) => {
     res.json({ audit: await A ? A.find(T(req)).sort({ createdAt: -1 }).limit(200) : [] });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
+
+// Phone channel (§8): call logs + log-call-to-ticket
+const callsCtrl = require('../controllers/enterprise/call_logs_voice_foundation');
+router.get('/calls', callsCtrl.listCallLogs);
+router.post('/calls', callsCtrl.createCallLog);
+router.put('/calls/:id', callsCtrl.updateCallLog);
+router.post('/calls/:id/log-to-ticket', callsCtrl.logCallToTicket);
 router.get('/realtime', async (req, res) => {
   try {
     const Ticket = require('../models/Ticket');
@@ -171,6 +231,14 @@ router.get('/reports/overview', async (req, res) => {
     res.json({ overview: { total, resolved, open, resolutionRate: total ? Math.round(resolved / total * 100) : 0 } });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
+// Role reports (§45): agent / team / department / customer / volume / live
+const metricsCtrl = require('../controllers/enterprise/search_audit_reports_realtime');
+router.get('/reports/agents', metricsCtrl.agentMetricsReport);
+router.get('/reports/teams', metricsCtrl.teamMetricsReport);
+router.get('/reports/departments', metricsCtrl.departmentMetricsReport);
+router.get('/reports/customers', metricsCtrl.customerMetricsReport);
+router.get('/reports/volume', metricsCtrl.volumeTrendReport);
+router.get('/reports/realtime', metricsCtrl.realTimeDashboard);
 
 // Generic CRUD factory
 function crud(path, Model, opts = {}) {

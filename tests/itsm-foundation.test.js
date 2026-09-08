@@ -5,7 +5,7 @@ const assert = (condition, message) => { if (!condition) throw new Error(`FAIL $
 
 const { formatNumber } = require('../src/services/numbering.service');
 const { canTransition, assertTransition } = require('../src/services/stateMachine.service');
-const { isWithinPlanHours } = require('../src/services/sla.service');
+const { isWithinPlanHours, dueInHours } = require('../src/services/sla.service');
 const { checkPermission } = require('../src/services/authorization.service');
 
 (async () => {
@@ -46,6 +46,53 @@ const { checkPermission } = require('../src/services/authorization.service');
   assert(isWithinPlanHours(new Date('2026-08-04T10:00:00Z'), bh) === true, 'tuesday 10am inside hours'); // 2026-08-04 is a Tuesday
   assert(isWithinPlanHours(new Date('2026-08-04T20:00:00Z'), bh) === false, 'tuesday 8pm outside hours');
   assert(isWithinPlanHours(new Date('2026-08-08T10:00:00Z'), bh) === false, 'saturday outside days'); // 2026-08-08 is a Saturday
+  const Holiday = require('../src/models/Holiday');
+  const originalHolidayFind = Holiday.find;
+  Holiday.find = () => ({ lean: async () => [] });
+  const quarterHourDue = await dueInHours(bh, 0.25, new Date('2026-08-04T09:00:00Z'), null);
+  assert(quarterHourDue.toISOString() === '2026-08-04T09:15:00.000Z', 'business-hours SLA preserves sub-hour targets');
+  const indiaPlan = { schedule: 'Business Hours', timezone: 'Asia/Kolkata', businessHours: { days: [1, 2, 3, 4, 5], start: '09:00', end: '17:00' } };
+  const indiaDue = await dueInHours(indiaPlan, 0.25, new Date('2026-08-04T03:30:00Z'), null);
+  assert(indiaDue.toISOString() === '2026-08-04T03:45:00.000Z', 'business-hours SLA evaluates the plan timezone');
+  Holiday.find = originalHolidayFind;
+
+  const Ticket = require('../src/models/Ticket');
+  const urgency = Ticket.schema.path('urgency');
+  assert(urgency && urgency.enumValues.includes('medium') && urgency.enumValues.includes('critical'), 'ticket urgency has one compatible schema definition');
+
+  // Tenant-learned triage (pure ranking)
+  const { tokenize, suggest } = require('../src/services/suggestion.service');
+  assert(tokenize('Printer NOT printing, please HELP!!!').join(',') === 'printer,printing', 'tokenizer lowercases, strips stopwords/short tokens');
+  const corpus = [
+    { _id: '1', number: 'T1', title: 'Printer jam on floor 3', body: 'paper jam printer hardware', dept: 'd1', deptName: 'Hardware', topic: 't1', topicName: 'Printers', priority: 'Normal' },
+    { _id: '2', number: 'T2', title: 'VPN access request', body: 'need vpn access remote network', dept: 'd2', deptName: 'Network', topic: 't2', topicName: 'Access', priority: 'High' },
+    { _id: '3', number: 'T3', title: 'Printer toner replacement', body: 'toner empty printer replace cartridge', dept: 'd1', deptName: 'Hardware', topic: 't1', topicName: 'Printers', priority: 'Low' },
+  ];
+  const s = suggest({ text: 'my printer has a paper jam and will not print', docs: corpus });
+  assert(s.department[0] && String(s.department[0].id) === 'd1', 'triage votes hardware department');
+  assert(s.similar[0] && s.similar[0].number === 'T1', 'most similar ticket ranks first');
+  assert(suggest({ text: '', docs: corpus }).similar.length === 0, 'empty query suggests nothing');
+  assert(suggest({ text: 'printer jam', docs: [] }).similar.length === 0, 'no history suggests nothing');
+
+  // Extractive summarization (offline tier)
+  const { extractiveSummary } = require('../src/services/ai.service');
+  const long = [
+    'The customer reports that the printer on floor three is jammed with error code E51 showing on the display panel.',
+    'Agent asked the customer to power cycle the device and the customer confirmed the jam persists after restart.',
+    'Ok thanks.',
+    'A technician is scheduled for tomorrow morning to replace the fuser unit and clear the paper path.',
+  ];
+  const sum = extractiveSummary(long, 2);
+  assert(sum.sentences.length === 2 && sum.summary.includes('printer'), 'extractive summary picks content sentences');
+
+  // Change safety: overlap math + deterministic risk score
+  const { overlaps, scoreChangeRisk } = require('../src/services/taskCore.service');
+  assert(overlaps('2026-09-10T10:00Z', '2026-09-10T12:00Z', '2026-09-10T11:00Z', '2026-09-10T13:00Z') === true, 'overlapping windows detected');
+  assert(overlaps('2026-09-10T10:00Z', '2026-09-10T11:00Z', '2026-09-10T11:00Z', '2026-09-10T12:00Z') === false, 'adjacent windows do not overlap');
+  const r1 = scoreChangeRisk({ type: 'emergency', risk: 'critical', rollbackPlan: '' }, { overlapping: [{}, {}], blackouts: [{}], sharedAssets: [] });
+  assert(r1 === 30 + 25 + 25 + 15, 'risk score adds type/risk/conflicts(capped)/missing-backout');
+  const r2 = scoreChangeRisk({ type: 'standard', risk: 'low', rollbackPlan: 'revert' }, { overlapping: [], blackouts: [], sharedAssets: [] });
+  assert(r2 === 0, 'safe standard change scores zero');
 
   // Role-level deny (MD §22)
   const r = checkPermission(
