@@ -43,6 +43,13 @@ router.put('/notifications/:id/read', ctrl.markNotificationRead);
 router.get('/tickets', moduleRequired('helpdesk'), ctrl.listTickets);
 router.post('/tickets', moduleRequired('helpdesk'), ctrl.create);
 router.get('/tickets/export', ctrl.exportTickets);
+router.get('/tickets/sla/predictions', moduleRequired('helpdesk'), async (req, res, next) => {
+  try {
+    const { predictBreachMany } = require('../services/slaPredictor.service');
+    const result = await predictBreachMany({ company: req.companyId, limit: parseInt(req.query.limit, 10) || 50 });
+    res.json(result);
+  } catch (e) { next(e); }
+});
 router.get('/tickets/:number/sla-history', require('../controllers/admin.controller').ticketSlaHistory);
 router.get('/tickets/:number', ctrl.getTicket);
 router.post('/tickets/:number/reply', upload.array('files', 5), scanUploads, ctrl.reply);
@@ -63,6 +70,15 @@ router.put('/tickets/:number/threads/:threadId', ctrl.updateThread);
 router.delete('/tickets/:number/threads/:threadId', ctrl.deleteThread);
 router.post('/tickets/:number/sla/pause', ctrl.pauseSla);
 router.post('/tickets/:number/sla/resume', ctrl.resumeSla);
+router.post('/tickets/:number/sla/predict', moduleRequired('helpdesk'), async (req, res, next) => {
+  try {
+    const { predictBreach } = require('../services/slaPredictor.service');
+    const ticket = await require('../models/Ticket').findOne({ number: String(req.params.number).toUpperCase(), company: req.companyId }).lean();
+    if (!ticket) return res.status(404).json({ error: 'Ticket not found' });
+    const result = await predictBreach({ company: req.companyId, ticketId: ticket._id });
+    res.json(result);
+  } catch (e) { next(e); }
+});
 router.get('/queues/saved', ctrl.listSavedQueues);
 router.post('/queues/saved', ctrl.createSavedQueue);
 router.delete('/queues/saved/:id', ctrl.deleteSavedQueue);

@@ -59,6 +59,20 @@ router.post('/incidents', async (req, res) => {
     res.json({ incident: inc });
   } catch (e) { res.status(400).json({ error: e.message }); }
 });
+// Major-incident swarming callout (MD §82 / ITIL swarming): notify the
+// incident's team with a callout message and log it to the incident timeline.
+router.post('/incidents/:id/swarm', async (req, res, next) => {
+  try {
+    const { escalateToSwarm } = require('../services/swarm.service');
+    const result = await escalateToSwarm({
+      company: T(req).tenantId,
+      incidentId: req.params.id,
+      requesterId: req.user.id || req.user._id,
+      message: req.body.message || '',
+    });
+    res.json(result);
+  } catch (e) { res.status(400).json({ error: e.message }); }
+});
 router.put('/incidents/:id', async (req, res) => {
   try {
     const inc = await findTenantRecord(Inc, req.params.id, T(req).tenantId, 'Incident');
@@ -104,6 +118,18 @@ router.post('/changes', async (req, res) => {
       });
       chg.riskScore = scoreChangeRisk(chg, conflicts);
       await chg.save();
+      // Automation (MD ITSM-05/ITSM-CAB): block high-risk changes whose
+      // schedule collides with an existing change or a blackout window.
+      const hardBlock =
+        conflicts.overlapping.length > 0 &&
+        (chg.windowStart || chg.windowEnd) &&
+        chg.riskScore >= (Number(process.env.CHANGE_AUTO_BLOCK_RISK) || 60);
+      if (hardBlock) {
+        chg.status = 'rejected';
+        chg.rejectionReason =
+          `Auto-blocked: schedule conflicts with ${conflicts.overlapping.length} existing change(s) and high risk (${chg.riskScore}/100).`;
+        await chg.save();
+      }
     } catch (_) { /* scoring is advisory */ }
     res.json({ change: chg, conflicts });
   } catch (e) { res.status(400).json({ error: e.message }); }
