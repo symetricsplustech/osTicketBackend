@@ -32,7 +32,7 @@ const roleSchema = new mongoose.Schema(
     name: { type: String, required: true, trim: true },
     scope: { type: String, enum: ROLE_SCOPES, default: 'tenant', immutable: true, index: true },
     company: { type: mongoose.Schema.Types.ObjectId, ref: 'Company', default: null, index: true },
-    permissions: { type: [String], enum: PERMISSIONS, default: [] },
+    permissions: { type: [String], default: [] },
     // Explicit role-level DENYs (MD §22). No enum on purpose — deny keys
     // mirror permission keys and must never be silently dropped by validation.
     deniedPermissions: { type: [String], default: [] },

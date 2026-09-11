@@ -27,6 +27,8 @@
 
 const ApiError = require('../utils/ApiError');
 const { getTenantCustomAuth, evaluateCustom } = require('./customAuth.service');
+const { expandGrants, isLegacyKey, legacyFromCanonical, canonicalFromLegacy } = require('../permissions/legacyMappings');
+const { isHighRisk } = require('../permissions/itsmCatalog');
 
 const ALLOW = 'ALLOW';
 const DENY = 'DENY';
@@ -102,6 +104,8 @@ function splitPermissions(list) {
 /**
  * Effective permission sets for a principal.
  * Direct grants > role grants > extra (assignment/inherited) grants.
+ * Grants are reported in RAW form; translation through the legacy transcorber
+ * happens in checkPermission via expandGrants (never in controllers).
  */
 function collectPermissions(principal, extraRoles) {
   const direct = splitPermissions(principal && principal.permissions);
@@ -122,23 +126,54 @@ function collectPermissions(principal, extraRoles) {
 }
 
 /**
- * Pure permission check with deny precedence. Returns { granted, via }.
- * `via` is one of: 'deny' | 'wildcard' | 'direct' | 'role' | 'admin_aggregate' | 'none'.
+ * Permission check with legacy-layer translation and deny precedence.
+ * Returns { granted, via }. `via` is one of:
+ * 'deny' | 'wildcard' | 'direct' | 'role' | 'admin_aggregate' | 'none'
  */
 function checkPermission(principal, permission, extraRoles) {
   if (!principal || !permission) return { granted: false, via: 'none' };
   if (isAggregateAdmin(principal)) return { granted: true, via: 'admin_aggregate' };
   const { directAllow, deny, roleAllow } = collectPermissions(principal, extraRoles);
   if (directAllow.has('*') || roleAllow.has('*')) return { granted: true, via: 'wildcard' };
-  if (deny.has(permission) || deny.has('*')) return { granted: false, via: 'deny' };
-  if (directAllow.has(permission)) return { granted: true, via: 'direct' };
-  if (roleAllow.has(permission)) return { granted: true, via: 'role' };
+  const effectiveDeny = expandGrants([...deny]);
+  if (effectiveDeny.has(permission) || deny.has('*')) return { granted: false, via: 'deny' };
+  if (expandGrants([...directAllow]).has(permission)) return { granted: true, via: 'direct' };
+  if (expandGrants([...roleAllow]).has(permission)) return { granted: true, via: 'role' };
   return { granted: false, via: 'none' };
 }
 
 /** Backward-compatible boolean used by controllers. */
 function hasPermission(principal, permission, extraRoles) {
   return checkPermission(principal, permission, extraRoles).granted;
+}
+
+/**
+ * Returns effective (expanded) permission set for a principal, including
+ * canonical equivalents of any legacy keys held, and vice‑versa.
+ * The frontend can use the `grants` array with `can()` for quick checks;
+ * the backend always re‑evaluates via `authorize()`.
+ */
+function resolveEffectivePermissions(principal, extraRoles) {
+  const { directAllow, deny, roleAllow } = collectPermissions(principal, extraRoles);
+  const directGrants = [...directAllow];
+  const roleGrants = [...roleAllow];
+  const rawAll = [...directGrants, ...roleGrants];
+  const effective = expandGrants(rawAll);
+  const legacyHeld = rawAll.filter(k => isLegacyKey(k));
+  const source = {
+    direct: directGrants,
+    roles: roleListOf(principal, extraRoles).map(r => ({ id: r._id, name: r.name, permissions: r.permissions || [] })),
+  };
+  return {
+    grants: [...effective],
+    direct: directGrants,
+    effective,
+    denied: [...deny],
+    legacy: legacyHeld,
+    aliases: legacyHeld.map(k => ({ legacy: k, canonical: canonicalFromLegacy(k) })),
+    scopes: grantedScopes(principal, extraRoles),
+    sources: source,
+  };
 }
 
 // ---------------------------------------------------------------------------
