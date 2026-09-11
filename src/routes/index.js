@@ -12,6 +12,7 @@ const coreTaskRoutes = require('./core/task');
 const coreApprovalRoutes = require('./core/approval');
 const coreAttachmentRoutes = require('./core/attachment');
 const coreAuditRoutes = require('./core/auditEvent');
+const coreIncidentRoutes = require('./core/incident');
 const correlationId = require('../middleware/correlationId');
 
 const router = express.Router();
@@ -35,5 +36,6 @@ router.use('/core/tasks', coreTaskRoutes);
 router.use('/core/approvals', coreApprovalRoutes);
 router.use('/core/attachments', coreAttachmentRoutes);
 router.use('/core/audit', coreAuditRoutes);
+router.use('/core/incidents', coreIncidentRoutes);
 
 module.exports = router;

@@ -42,11 +42,18 @@ const TICKET_TRANSITIONS = {
 };
 
 const INCIDENT_TRANSITIONS = {
-  investigating: ['identified', 'monitoring', 'resolved'],
-  identified: ['monitoring', 'resolved', 'investigating'],
-  monitoring: ['resolved', 'investigating'],
-  resolved: ['closed', 'investigating'],
-  closed: ['investigating'], // reopen
+  new: ['in_progress', 'on_hold_caller', 'on_hold_change', 'on_hold_problem', 'on_hold_vendor', 'resolved', 'closed', 'canceled', 'investigating'],
+  in_progress: ['on_hold_caller', 'on_hold_change', 'on_hold_problem', 'on_hold_vendor', 'resolved', 'closed', 'canceled', 'new'],
+  on_hold_caller: ['in_progress', 'new', 'canceled'],
+  on_hold_change: ['in_progress', 'new', 'canceled'],
+  on_hold_problem: ['in_progress', 'new', 'canceled'],
+  on_hold_vendor: ['in_progress', 'new', 'canceled'],
+  resolved: ['closed', 'in_progress', 'new'],
+  closed: ['in_progress', 'new'], // reopen
+  canceled: ['new'], // reopen from cancellation
+  investigating: ['identified', 'monitoring', 'resolved', 'in_progress'],
+  identified: ['monitoring', 'resolved', 'in_progress', 'investigating'],
+  monitoring: ['resolved', 'in_progress', 'investigating'],
 };
 
 const PROBLEM_TRANSITIONS = {

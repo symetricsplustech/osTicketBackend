@@ -119,6 +119,70 @@ const DECIDE_APPROVAL = {
   note: { type: 'string' },
 };
 
+const CREATE_INCIDENT = {
+  title: { required: true, type: 'string' },
+  description: { type: 'string' },
+  severity: { type: 'string', enum: ['Sev1', 'Sev2', 'Sev3', 'Sev4'] },
+  priority: { type: 'string', enum: ['Low', 'Normal', 'High', 'Emergency'] },
+  impact: { type: 'string', enum: ['1', '2', '3', '4'] },
+  urgency: { type: 'string', enum: ['1', '2', '3', '4'] },
+  category: { type: 'string' },
+  subcategory: { type: 'string' },
+  caller: { type: 'string' },
+  affectedUser: { type: 'string' },
+  assignmentGroup: { type: 'string' },
+  assignedTo: { type: 'string' },
+};
+
+const UPDATE_INCIDENT = {
+  title: { type: 'string' },
+  description: { type: 'string' },
+  severity: { type: 'string', enum: ['Sev1', 'Sev2', 'Sev3', 'Sev4'] },
+  priority: { type: 'string', enum: ['Low', 'Normal', 'High', 'Emergency'] },
+  impact: { type: 'string', enum: ['1', '2', '3', '4'] },
+  urgency: { type: 'string', enum: ['1', '2', '3', '4'] },
+  category: { type: 'string' },
+  subcategory: { type: 'string' },
+  assignedTo: { type: 'string' },
+  assignmentGroup: { type: 'string' },
+};
+
+const TRANSITION_INCIDENT = {
+  status: { required: true, type: 'string', enum: ['new', 'in_progress', 'on_hold_caller', 'on_hold_change', 'on_hold_problem', 'on_hold_vendor', 'resolved', 'closed', 'canceled', 'investigating', 'identified', 'monitoring'] },
+  notes: { type: 'string' },
+};
+
+const ASSIGN_INCIDENT = {
+  assignedTo: { type: 'string' },
+  assignmentGroup: { type: 'string' },
+  commander: { type: 'string' },
+  type: { type: 'string', enum: ['initial', 'reassignment', 'escalation', 'delegation'] },
+  reason: { type: 'string' },
+};
+
+const RESOLVE_INCIDENT = {
+  resolutionCode: { required: true, type: 'string', enum: ['fixed', 'workaround', 'duplicate', 'not_reproducible', 'not_a_bug', 'user_error', 'by_design', 'third_party', 'will_not_fix'] },
+  notes: { type: 'string' },
+  rootCause: { type: 'string' },
+  rootCauseCategory: { type: 'string', enum: ['code_defect', 'configuration', 'infrastructure', 'third_party', 'user_error', 'process_gap', 'unknown'] },
+  workaround: { type: 'string' },
+};
+
+const CREATE_INCIDENT_COMMENT = {
+  message: { required: true, type: 'string' },
+  type: { type: 'string', enum: ['comment', 'work_note', 'status_update'] },
+};
+
+const CREATE_MAJOR_INCIDENT_NOMINATION = {
+  justification: { type: 'string' },
+};
+
+const CREATE_PIR = {
+  incident: { required: true, type: 'string' },
+  title: { required: true, type: 'string' },
+  summary: { type: 'string' },
+};
+
 module.exports = {
   validate,
   schemas: {
@@ -130,5 +194,13 @@ module.exports = {
     ADD_RELATIONSHIP,
     CREATE_APPROVAL,
     DECIDE_APPROVAL,
+    CREATE_INCIDENT,
+    UPDATE_INCIDENT,
+    TRANSITION_INCIDENT,
+    ASSIGN_INCIDENT,
+    RESOLVE_INCIDENT,
+    CREATE_INCIDENT_COMMENT,
+    CREATE_MAJOR_INCIDENT_NOMINATION,
+    CREATE_PIR,
   },
 };
