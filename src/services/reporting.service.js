@@ -1,4 +1,4 @@
-const Ticket = require('../models/Ticket');
+const Ticket = require('../models/helpdesk/tickets/Ticket');
 const Agent = require('../models/Agent');
 const User = require('../models/User');
 const Department = require('../models/Department');

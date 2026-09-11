@@ -7,8 +7,8 @@ const Agent = require('../src/models/Agent');
 const User = require('../src/models/User');
 const Department = require('../src/models/Department');
 const Team = require('../src/models/Team');
-const Ticket = require('../src/models/Ticket');
-const TicketThread = require('../src/models/TicketThread');
+const Ticket = require('../src/models/helpdesk/tickets/Ticket');
+const TicketThread = require('../src/models/helpdesk/tickets/TicketThread');
 const AuditEvent = require('../src/models/AuditEvent');
 
 const port = 5110;
@@ -47,7 +47,7 @@ const assert = (condition, message) => { if (!condition) throw new Error(message
     owner = await User.create({ name: 'Assign owner', email: `asg-owner-${suffix}@osticket.local`, password: 'Pass@1234', company: coA._id, isRegistered: true, status: 'active' });
     const mkAgent = (name, company, departments, permissions) => Agent.create({ name, email: `${name.toLowerCase().replace(/\s+/g, '-')}-${suffix}@osticket.local`, password: 'Pass@1234', company, isActive: true, departments, permissions, isAdmin: false });
     adminA = await Agent.create({ name: 'Assign admin', email: `asg-admin-${suffix}@osticket.local`, password: 'Pass@1234', company: coA._id, isAdmin: true, isActive: true });
-    agentA1 = await mkAgent('Assign A1', coA._id, [{ department: deptA1._id, isPrimary: true }], ['tickets.assign', 'tickets.transfer', 'tickets.reply', 'tickets.note']);
+    agentA1 = await mkAgent('Assign A1', coA._id, [{ department: deptA1._id, isPrimary: true }], ['tickets.view', 'tickets.assign', 'tickets.transfer', 'tickets.reply', 'tickets.note']);
     agentA2 = await mkAgent('Assign A2', coA._id, [{ department: deptA1._id, isPrimary: true }], []);
     agentB1 = await mkAgent('Assign B1', coB._id, [{ department: deptB1._id, isPrimary: true }], []);
     agentNoPerm = await mkAgent('Assign NoPerm', coA._id, [{ department: deptA1._id, isPrimary: true }], []);

@@ -1,33 +1,61 @@
 const express = require('express');
 const { protectTenantPrincipal } = require('../middleware/auth');
-const E = require('../models/Enterprise');
-const P5 = require('../models/Platform5');
+const { moduleRequired } = require('../middleware/module');
+const { authorize, isAggregateAdmin, grantedScopes } = require('../services/authorization.service');
+const { auditRequired } = require('../services/audit.service');
+const { authorizeAgentCommand, auditAgentCommand } = require('../services/securedCommand.service');
+const ApiError = require('../utils/ApiError');
+const E = require('../models/enterprise');
+const P5 = require('../models/platformServices');
+const P6 = require('../models/platformData');
+const ServiceCatalogItem = require('../models/ServiceCatalogItem');
+const ServiceRequest = require('../models/helpdesk/incidents/ServiceRequest');
+const RequestedItem = require('../models/domain').RequestedItem;
+const User = require('../models/User');
 
 const router = express.Router();
 router.use(protectTenantPrincipal);
 const T = req => ({ tenantId: req.user.tenantId || req.user.companyId });
+const workflowTenant = req => ({ company: T(req).tenantId });
+const workflowGuard = (permission) => [
+  moduleRequired('helpdesk'),
+  async (req, _res, next) => {
+    try {
+      if (!req.agent) throw new ApiError(403, 'Agent access required');
+      await authorizeAgentCommand({ req, permission, resource: { type: 'workflow' } });
+      next();
+    } catch (error) { next(error); }
+  },
+];
 
 // ============ LEGACY COMPAT LAYER (/enterprise/* core endpoints) ============
 const def = p => { const m = require(p); return typeof m === 'function' ? m : (m[Object.keys(m).find(k => typeof m[k] === 'function' && k[0] !== '_')] || m[Object.keys(m)[0]]); };
-const Inc = def('../models/Incident'), Chg = def('../models/Change'), Prb = def('../models/Problem'),
+const Inc = def('../models/helpdesk/incidents/Incident'), Chg = def('../models/helpdesk/incidents/Change'), Prb = def('../models/helpdesk/incidents/Problem'),
       Wkf = def('../models/Workflow'), Ast = def('../models/Asset');
 
-router.get('/workflows', async (req, res) => {
-  try { res.json({ workflows: await Wkf.find(T(req)).sort({ createdAt: -1 }) }); } catch (e) { res.status(500).json({ error: e.message }); }
+router.get('/workflows', ...workflowGuard('workflow.manage'), async (req, res) => {
+  try { res.json({ workflows: await Wkf.find(workflowTenant(req)).sort({ createdAt: -1 }) }); } catch (e) { res.status(500).json({ error: e.message }); }
 });
-router.get('/workflows/:id', async (req, res) => {
-  try { res.json({ workflow: await Wkf.findOne({ _id: req.params.id, ...T(req) }) }); } catch (e) { res.status(500).json({ error: e.message }); }
+router.get('/workflows/:id', ...workflowGuard('workflow.manage'), async (req, res) => {
+  try { res.json({ workflow: await Wkf.findOne({ _id: req.params.id, ...workflowTenant(req) }) }); } catch (e) { res.status(500).json({ error: e.message }); }
 });
-router.post('/workflows', async (req, res) => {
+router.post('/workflows', ...workflowGuard('workflow.manage'), async (req, res) => {
   try { const wf = await Wkf.create({ name: req.body.name, description: req.body.description, event: req.body.event || req.body.trigger || 'ticket_created', conditions: req.body.conditions || [], actions: req.body.actions || [], isActive: false, status: 'draft', isDraft: true, company: T(req).tenantId });
+    await auditRequired({ company: T(req).tenantId, actorType: 'agent', actor: req.agent._id, actorName: req.agent.name, action: 'workflow.created', entityType: 'workflow', entityId: wf._id, after: { name: wf.name, event: wf.event, isActive: wf.isActive }, req });
     res.json({ workflow: wf }); } catch (e) { res.status(400).json({ error: e.message }); }
 });
-router.put('/workflows/:id', async (req, res) => {
-  try { const wf = await Wkf.findOneAndUpdate({ _id: req.params.id, ...T(req) }, req.body, { new: true });
-    if (!wf) return res.status(404).json({}); res.json({ workflow: wf }); } catch (e) { res.status(400).json({ error: e.message }); }
+router.put('/workflows/:id', ...workflowGuard('workflow.manage'), async (req, res) => {
+  try {
+    const before = await Wkf.findOne({ _id: req.params.id, ...workflowTenant(req) });
+    if (!before) return res.status(404).json({});
+    const body = {}; for (const key of ['name', 'description', 'event', 'conditions', 'actions', 'isActive', 'triggerFilters']) if (req.body[key] !== undefined) body[key] = req.body[key];
+    const wf = await Wkf.findOneAndUpdate({ _id: req.params.id, ...workflowTenant(req) }, body, { new: true, runValidators: true });
+    await auditRequired({ company: T(req).tenantId, actorType: 'agent', actor: req.agent._id, actorName: req.agent.name, action: 'workflow.updated', entityType: 'workflow', entityId: wf._id, before: { name: before.name, event: before.event, isActive: before.isActive }, after: { name: wf.name, event: wf.event, isActive: wf.isActive }, req });
+    res.json({ workflow: wf });
+  } catch (e) { res.status(e.statusCode || 400).json({ error: e.message }); }
 });
-router.delete('/workflows/:id', async (req, res) => {
-  try { await Wkf.deleteOne({ _id: req.params.id, ...T(req) }); res.json({ success: true }); } catch (e) { res.status(500).json({ error: e.message }); }
+router.delete('/workflows/:id', ...workflowGuard('workflow.manage'), async (req, res) => {
+  try { const wf = await Wkf.findOne({ _id: req.params.id, ...workflowTenant(req) }); if (!wf) return res.status(404).json({}); await auditRequired({ company: T(req).tenantId, actorType: 'agent', actor: req.agent._id, actorName: req.agent.name, action: 'workflow.deleted', entityType: 'workflow', entityId: wf._id, before: { name: wf.name, event: wf.event, isActive: wf.isActive }, req }); await wf.deleteOne(); res.json({ success: true }); } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // ITSM records are tenant-isolated via `company` (the canonical tenant key on
@@ -39,30 +67,77 @@ const { findTenantRecord, transitionRecord, findChangeConflicts, scoreChangeRisk
 const BlackoutWindow = require('../models/platformData/BlackoutWindow');
 const SEVERITY_MAP = { critical: 'Sev1', high: 'Sev2', medium: 'Sev3', low: 'Sev4', Sev1: 'Sev1', Sev2: 'Sev2', Sev3: 'Sev3', Sev4: 'Sev4' };
 const pick = (src, keys) => { const out = {}; for (const k of keys) if (src[k] !== undefined) out[k] = src[k]; return out; };
+const coreItesmGuard = (permission) => [
+  moduleRequired('helpdesk'),
+  async (req, _res, next) => {
+    try {
+      if (!req.agent) throw new ApiError(403, 'Agent access required');
+      await authorizeAgentCommand({ req, permission, resource: { type: 'itsm_core_record' } });
+      next();
+    } catch (error) { next(error); }
+  },
+];
+const requireTenantScope = (req, _res, next) => {
+  if (isAggregateAdmin(req.agent) || grantedScopes(req.agent).includes('TENANT')) return next();
+  next(new ApiError(403, 'Tenant-wide record scope required'));
+};
+const assertCoreRecordAccess = async (req, permission, record) => {
+  const result = await authorize({ principal: req.agent, permission, tenant: T(req).tenantId, resource: { type: 'itsm_core_record', id: record._id }, record, req });
+  if (result.decision !== 'ALLOW') throw new ApiError(403, 'You do not have permission for this action');
+};
+const auditCoreRecord = (req, action, record, before = null, after = null) => auditAgentCommand({ req, action, entityType: record.constructor.modelName.toLowerCase(), entityId: record._id, before, after });
+const incidentSeverity = (body) => {
+  const supplied = body.severity ?? body.priority;
+  if (supplied === undefined || supplied === null || supplied === '') return 'Sev3';
+  const severity = SEVERITY_MAP[supplied];
+  if (!severity) throw new ApiError(422, 'Invalid incident severity');
+  return severity;
+};
+const CHANGE_TYPES = new Set(['standard', 'normal', 'emergency']);
+const CHANGE_RISKS = new Set(['low', 'medium', 'high', 'critical']);
+const changeInput = (body, { creating = false } = {}) => {
+  const title = String(body.title || '').trim();
+  if (creating && !title) throw new ApiError(422, 'Change title is required');
+  if (body.type !== undefined && !CHANGE_TYPES.has(body.type)) throw new ApiError(422, 'Invalid change type');
+  if ((body.risk !== undefined || body.riskLevel !== undefined) && !CHANGE_RISKS.has(body.risk || body.riskLevel)) throw new ApiError(422, 'Invalid change risk');
+  const windowStart = body.windowStart ? new Date(body.windowStart) : null;
+  const windowEnd = body.windowEnd ? new Date(body.windowEnd) : null;
+  if ((body.windowStart && Number.isNaN(windowStart.getTime())) || (body.windowEnd && Number.isNaN(windowEnd.getTime()))) throw new ApiError(422, 'Invalid change window');
+  if (windowStart && windowEnd && windowStart >= windowEnd) throw new ApiError(422, 'Change window end must be after its start');
+};
+const requiredEvidence = (value, label) => {
+  if (!String(value || '').trim()) throw new ApiError(422, `${label} is required`);
+};
 
-router.get('/incidents', async (req, res) => {
+router.get('/incidents', ...coreItesmGuard('records.view'), requireTenantScope, async (req, res) => {
   try { res.json({ incidents: await Inc.find(companyOf(req)).sort({ createdAt: -1 }).limit(300) }); } catch (e) { res.status(500).json({ error: e.message }); }
 });
-router.post('/incidents', async (req, res) => {
+router.post('/incidents', ...coreItesmGuard('records.create'), async (req, res) => {
   try {
+    if (!String(req.body.title || '').trim()) throw new ApiError(422, 'Incident title is required');
+    if (req.body.isMajor) throw new ApiError(422, 'Declare a major incident through the dedicated declaration action');
     const inc = await Inc.create({
       number: await nextNumber(T(req).tenantId, 'INC'),
-      title: req.body.title,
+      title: String(req.body.title).trim(),
       description: req.body.description,
-      severity: SEVERITY_MAP[req.body.severity] || SEVERITY_MAP[req.body.priority] || 'Sev3',
+      severity: incidentSeverity(req.body),
       status: 'investigating',
-      isMajor: !!req.body.isMajor,
-      commander: req.user.id,
-      timeline: [{ at: new Date(), by: req.user.name || '', message: 'Incident created' }],
+      isMajor: false,
+      commander: req.agent._id,
+      createdBy: req.agent._id,
+      timeline: [{ at: new Date(), by: req.agent.name || '', message: 'Incident created' }],
       ...companyOf(req),
     });
+    await auditCoreRecord(req, 'incident.created', inc, null, { number: inc.number, title: inc.title, severity: inc.severity, status: inc.status });
     res.json({ incident: inc });
-  } catch (e) { res.status(400).json({ error: e.message }); }
+  } catch (e) { res.status(e.statusCode || 400).json({ error: e.message }); }
 });
 // Major-incident swarming callout (MD §82 / ITIL swarming): notify the
 // incident's team with a callout message and log it to the incident timeline.
-router.post('/incidents/:id/swarm', async (req, res, next) => {
+router.post('/incidents/:id/swarm', ...coreItesmGuard('records.update'), async (req, res, next) => {
   try {
+    const incident = await findTenantRecord(Inc, req.params.id, T(req).tenantId, 'Incident');
+    await assertCoreRecordAccess(req, 'records.update', incident);
     const { escalateToSwarm } = require('../services/swarm.service');
     const result = await escalateToSwarm({
       company: T(req).tenantId,
@@ -70,32 +145,104 @@ router.post('/incidents/:id/swarm', async (req, res, next) => {
       requesterId: req.user.id || req.user._id,
       message: req.body.message || '',
     });
+    await auditCoreRecord(req, 'incident.swarm_requested', incident, null, { message: req.body.message || '' });
     res.json(result);
   } catch (e) { res.status(400).json({ error: e.message }); }
 });
-router.put('/incidents/:id', async (req, res) => {
+router.post('/incidents/:id/major', ...coreItesmGuard('records.update'), async (req, res) => {
+  try {
+    const incident = await findTenantRecord(Inc, req.params.id, T(req).tenantId, 'Incident');
+    await assertCoreRecordAccess(req, 'records.update', incident);
+    const isMajor = req.body.isMajor !== false;
+    const reason = String(req.body.reason || '').trim();
+    if (reason.length < 5) throw new ApiError(422, 'A major-incident declaration reason is required');
+    if (isMajor && !['Sev1', 'Sev2'].includes(incident.severity)) throw new ApiError(422, 'Only Sev1 or Sev2 incidents may be declared major');
+    const before = { isMajor: incident.isMajor, severity: incident.severity };
+    incident.isMajor = isMajor;
+    incident.timeline.push({ at: new Date(), by: req.agent.name, message: isMajor ? `Major incident declared: ${reason}` : `Major incident demoted: ${reason}` });
+    await incident.save();
+    await auditCoreRecord(req, isMajor ? 'incident.major_declared' : 'incident.major_demoted', incident, before, { isMajor: incident.isMajor, reason });
+    res.json({ incident });
+  } catch (e) { res.status(e.statusCode || 400).json({ error: e.message }); }
+});
+router.put('/incidents/:id/communication-plan', ...coreItesmGuard('records.update'), async (req, res) => {
+  try {
+    const incident = await findTenantRecord(Inc, req.params.id, T(req).tenantId, 'Incident');
+    await assertCoreRecordAccess(req, 'records.update', incident);
+    if (!incident.isMajor) throw new ApiError(422, 'A communication plan requires a declared major incident');
+    const cadenceMinutes = Number(req.body.cadenceMinutes);
+    if (!Number.isInteger(cadenceMinutes) || cadenceMinutes < 15 || cadenceMinutes > 1440) throw new ApiError(422, 'Communication cadence must be between 15 and 1440 minutes');
+    const audience = [...new Set(req.body.audience || [])];
+    if (!audience.length || audience.some((value) => !['internal', 'customer', 'public'].includes(value))) throw new ApiError(422, 'At least one valid communication audience is required');
+    const plan = await P6.CommunicationPlan.findOneAndUpdate(
+      { tenantId: T(req).tenantId, incident: incident._id },
+      { cadenceMinutes, audience, nextUpdateAt: new Date(Date.now() + cadenceMinutes * 60000) },
+      { new: true, upsert: true, setDefaultsOnInsert: true },
+    );
+    await auditCoreRecord(req, 'incident.communication_plan_updated', incident, null, { cadenceMinutes, audience, nextUpdateAt: plan.nextUpdateAt });
+    res.json({ plan });
+  } catch (e) { res.status(e.statusCode || 400).json({ error: e.message }); }
+});
+router.post('/incidents/:id/communications', ...coreItesmGuard('records.update'), async (req, res) => {
+  try {
+    const incident = await findTenantRecord(Inc, req.params.id, T(req).tenantId, 'Incident');
+    await assertCoreRecordAccess(req, 'records.update', incident);
+    if (!incident.isMajor) throw new ApiError(422, 'Communications require a declared major incident');
+    const message = String(req.body.message || '').trim();
+    const audience = String(req.body.audience || '');
+    if (!message) throw new ApiError(422, 'Communication message is required');
+    if (!['internal', 'customer', 'public'].includes(audience)) throw new ApiError(422, 'Invalid communication audience');
+    const Communication = require('../models/MajorIncidentCommunication');
+    const communication = await Communication.create({ company: T(req).tenantId, incident: incident._id, audience, message, actor: req.agent._id, actorName: req.agent.name });
+    incident.timeline.push({ at: communication.deliveredAt, by: req.agent.name, message: `[COMMUNICATION:${audience}] ${message}` });
+    await incident.save();
+    await auditCoreRecord(req, 'incident.communication_sent', incident, null, { communicationId: communication._id, audience, message });
+    res.status(201).json({ communication });
+  } catch (e) { res.status(e.statusCode || 400).json({ error: e.message }); }
+});
+router.get('/incidents/:id/communications', ...coreItesmGuard('records.view'), async (req, res) => {
+  try {
+    const incident = await findTenantRecord(Inc, req.params.id, T(req).tenantId, 'Incident');
+    await assertCoreRecordAccess(req, 'records.view', incident);
+    const Communication = require('../models/MajorIncidentCommunication');
+    res.json({ communications: await Communication.find({ company: T(req).tenantId, incident: incident._id }).sort({ createdAt: -1 }) });
+  } catch (e) { res.status(e.statusCode || 400).json({ error: e.message }); }
+});
+router.put('/incidents/:id', ...coreItesmGuard('records.update'), async (req, res) => {
   try {
     const inc = await findTenantRecord(Inc, req.params.id, T(req).tenantId, 'Incident');
-    const body = pick(req.body, ['title', 'description', 'summary', 'severity', 'commander', 'team', 'affectedServices', 'isMajor']);
-    if (req.body.status === 'resolved' && !inc.resolvedAt) body.resolvedAt = new Date();
+    await assertCoreRecordAccess(req, 'records.update', inc);
+    const before = { title: inc.title, summary: inc.summary, severity: inc.severity, status: inc.status };
+    if (req.body.isMajor !== undefined) throw new ApiError(422, 'Use the dedicated major-incident declaration action');
+    const body = pick(req.body, ['title', 'description', 'summary', 'severity', 'commander', 'team', 'affectedServices', 'resolution']);
+    if (req.body.status === 'resolved') {
+      if (!String(req.body.resolution || '').trim()) throw new ApiError(422, 'A resolution summary is required');
+      if (!inc.resolvedAt) body.resolvedAt = new Date();
+    }
     if (req.body.status && req.body.status !== inc.status) {
+      const previousStatus = inc.status;
       await transitionRecord({ entity: 'incident', doc: inc, to: req.body.status, stamp: body });
+      inc.timeline.push({ at: new Date(), by: req.agent.name || '', message: `Status changed from ${previousStatus} to ${inc.status}` });
+      inc.updates.push({ at: new Date(), status: inc.status, message: body.resolution || `Status changed from ${previousStatus}` });
+      await inc.save();
     } else {
       Object.assign(inc, body);
       await inc.save();
     }
+    await auditCoreRecord(req, 'incident.updated', inc, before, { title: inc.title, summary: inc.summary, severity: inc.severity, status: inc.status });
     res.json({ incident: inc });
   } catch (e) { res.status(e.statusCode === 422 ? 422 : e.statusCode || 400).json({ error: e.message }); }
 });
 
-router.get('/changes', async (req, res) => {
+router.get('/changes', ...coreItesmGuard('records.view'), requireTenantScope, async (req, res) => {
   try { res.json({ changes: await Chg.find(companyOf(req)).sort({ createdAt: -1 }).limit(300) }); } catch (e) { res.status(500).json({ error: e.message }); }
 });
-router.post('/changes', async (req, res) => {
+router.post('/changes', ...coreItesmGuard('records.create'), async (req, res) => {
   try {
+    changeInput(req.body, { creating: true });
     const chg = await Chg.create({
       number: await nextNumber(T(req).tenantId, 'CHG'),
-      title: req.body.title,
+      title: String(req.body.title).trim(),
       description: req.body.description,
       type: req.body.type || 'normal',
       risk: req.body.risk || req.body.riskLevel || 'medium',
@@ -106,6 +253,8 @@ router.post('/changes', async (req, res) => {
       windowEnd: req.body.windowEnd,
       linkedAssets: req.body.linkedAssets || [],
       linkedTickets: req.body.linkedTickets || [],
+      submittedBy: req.agent._id,
+      submittedAt: new Date(),
       ...companyOf(req),
     });
     // Score + report calendar conflicts immediately so the requester sees
@@ -131,8 +280,9 @@ router.post('/changes', async (req, res) => {
         await chg.save();
       }
     } catch (_) { /* scoring is advisory */ }
+    await auditCoreRecord(req, 'change.created', chg, null, { number: chg.number, title: chg.title, type: chg.type, risk: chg.risk, status: chg.status });
     res.json({ change: chg, conflicts });
-  } catch (e) { res.status(400).json({ error: e.message }); }
+  } catch (e) { res.status(e.statusCode || 400).json({ error: e.message }); }
 });
 
 // Change-conflict check (MD ITSM-05): overlapping scheduled changes,
@@ -148,10 +298,30 @@ router.get('/changes/conflicts', async (req, res) => {
     res.json({ conflicts });
   } catch (e) { res.status(400).json({ error: e.message }); }
 });
-router.put('/changes/:id', async (req, res) => {
+router.put('/changes/:id', ...coreItesmGuard('records.update'), async (req, res) => {
   try {
     const chg = await findTenantRecord(Chg, req.params.id, T(req).tenantId, 'Change');
+    await assertCoreRecordAccess(req, 'records.update', chg);
+    changeInput(req.body);
+    const before = { title: chg.title, type: chg.type, risk: chg.risk, status: chg.status, implementationPlan: chg.implementationPlan, rollbackPlan: chg.rollbackPlan, validationPlan: chg.validationPlan };
     const body = pick(req.body, ['title', 'description', 'type', 'risk', 'implementationPlan', 'rollbackPlan', 'windowStart', 'windowEnd', 'linkedAssets', 'linkedTickets']);
+    if (body.title !== undefined) {
+      body.title = String(body.title).trim();
+      requiredEvidence(body.title, 'Change title');
+    }
+    if (req.body.validationPlan !== undefined) body.validationPlan = req.body.validationPlan;
+    const targetStatus = req.body.status;
+    if (targetStatus === 'scheduled') {
+      requiredEvidence(body.implementationPlan ?? chg.implementationPlan, 'Implementation plan');
+      requiredEvidence(body.rollbackPlan ?? chg.rollbackPlan, 'Rollback plan');
+    }
+    if (targetStatus === 'closed') requiredEvidence(body.validationPlan ?? chg.validationPlan, 'Validation plan');
+    if (targetStatus === 'implementing') {
+      body.implementedBy = req.agent._id;
+      body.implementedAt = new Date();
+    }
+    if (targetStatus === 'validating') body.validatedAt = new Date();
+    if (targetStatus === 'closed') body.closedAt = new Date();
     const apply = async () => {
       if (req.body.status && req.body.status !== chg.status) {
         await transitionRecord({ entity: 'change', doc: chg, to: req.body.status, stamp: body });
@@ -171,54 +341,175 @@ router.put('/changes/:id', async (req, res) => {
       chg.riskScore = scoreChangeRisk(chg, conflicts);
       await chg.save();
     } catch (_) { /* scoring is advisory */ }
+    await auditCoreRecord(req, 'change.updated', chg, before, { title: chg.title, type: chg.type, risk: chg.risk, status: chg.status, implementationPlan: chg.implementationPlan, rollbackPlan: chg.rollbackPlan, validationPlan: chg.validationPlan });
     res.json({ change: chg });
   } catch (e) { res.status(e.statusCode === 422 ? 422 : e.statusCode || 400).json({ error: e.message }); }
 });
 
-router.get('/problems', async (req, res) => {
+router.get('/problems', ...coreItesmGuard('records.view'), requireTenantScope, async (req, res) => {
   try { res.json({ problems: await Prb.find(companyOf(req)).sort({ createdAt: -1 }).limit(300) }); } catch (e) { res.status(500).json({ error: e.message }); }
 });
-router.post('/problems', async (req, res) => {
+router.post('/problems', ...coreItesmGuard('records.create'), async (req, res) => {
   try {
+    if (!String(req.body.title || '').trim()) throw new ApiError(422, 'Problem title is required');
     const prb = await Prb.create({
       number: await nextNumber(T(req).tenantId, 'PRB'),
-      title: req.body.title,
+      title: String(req.body.title).trim(),
       description: req.body.description,
       rootCause: req.body.rootCause,
       workaround: req.body.workaround,
       knownError: !!req.body.knownError,
       status: 'open',
+      createdBy: req.agent._id,
       ...companyOf(req),
     });
+    await auditCoreRecord(req, 'problem.created', prb, null, { number: prb.number, title: prb.title, status: prb.status, knownError: prb.knownError });
     res.json({ problem: prb });
-  } catch (e) { res.status(400).json({ error: e.message }); }
+  } catch (e) { res.status(e.statusCode || 400).json({ error: e.message }); }
 });
-router.put('/problems/:id', async (req, res) => {
+router.put('/problems/:id', ...coreItesmGuard('records.update'), async (req, res) => {
   try {
     const prb = await findTenantRecord(Prb, req.params.id, T(req).tenantId, 'Problem');
+    await assertCoreRecordAccess(req, 'records.update', prb);
+    const before = { title: prb.title, status: prb.status, rootCause: prb.rootCause, workaround: prb.workaround, permanentSolution: prb.permanentSolution, postmortem: prb.postmortem, knownError: prb.knownError };
     const body = pick(req.body, ['title', 'description', 'rootCause', 'workaround', 'permanentSolution', 'postmortem', 'knownError', 'linkedIncidents', 'linkedChanges', 'linkedTickets']);
+    if (body.title !== undefined) {
+      body.title = String(body.title).trim();
+      requiredEvidence(body.title, 'Problem title');
+    }
+    if (req.body.status === 'known_error') {
+      requiredEvidence(body.rootCause ?? prb.rootCause, 'Root cause');
+      requiredEvidence(body.workaround ?? prb.workaround, 'Workaround');
+      body.knownError = true;
+    }
+    if (req.body.status === 'fixed') requiredEvidence(body.permanentSolution ?? prb.permanentSolution, 'Permanent solution');
+    if (req.body.status === 'closed') {
+      requiredEvidence(body.postmortem ?? prb.postmortem, 'Postmortem');
+      body.closedAt = new Date();
+    }
     if (req.body.status && req.body.status !== prb.status) {
       await transitionRecord({ entity: 'problem', doc: prb, to: req.body.status, stamp: body });
     } else {
       Object.assign(prb, body);
       await prb.save();
     }
+    await auditCoreRecord(req, 'problem.updated', prb, before, { title: prb.title, status: prb.status, rootCause: prb.rootCause, workaround: prb.workaround, permanentSolution: prb.permanentSolution, postmortem: prb.postmortem, knownError: prb.knownError });
     res.json({ problem: prb });
   } catch (e) { res.status(e.statusCode === 422 ? 422 : e.statusCode || 400).json({ error: e.message }); }
 });
 
-router.get('/assets', async (req, res) => {
+// Canonical, audited REQ/RITM checkout. Portal users can only request for
+// themselves; agents need an explicit create grant and must identify both
+// requester and fulfilled-for users within their tenant.
+const cartCheckoutGuard = [
+  moduleRequired('helpdesk'),
+  async (req, _res, next) => {
+    try {
+      if (!req.user) throw new ApiError(401, 'Not authorized');
+      if (req.agent) await authorizeAgentCommand({ req, permission: 'records.create', resource: { type: 'service_request' } });
+      next();
+    } catch (error) { next(error); }
+  },
+];
+const auditServiceRequest = (req, action, request, before = null, after = null) => auditRequired({
+  company: T(req).tenantId, actorType: req.agent ? 'agent' : 'user', actor: (req.agent || req.user)._id,
+  actorName: (req.agent || req.user).name, action, entityType: 'service_request', entityId: request._id, before, after, req,
+});
+router.post('/requests/cart', ...cartCheckoutGuard, async (req, res) => {
+  let parent;
+  try {
+    const items = Array.isArray(req.body.items) ? req.body.items : [];
+    if (!items.length || items.length > 20) throw new ApiError(422, 'Cart must contain between 1 and 20 items');
+    if (req.agent && !req.body.fulfilledFor) throw new ApiError(422, 'fulfilledFor is required when an agent submits a request');
+    const requesterId = req.agent ? req.body.requester || req.user._id : req.user._id;
+    const fulfilledForId = req.body.fulfilledFor || requesterId;
+    if (!req.agent && (req.body.requester && String(req.body.requester) !== String(req.user._id) || String(fulfilledForId) !== String(req.user._id))) throw new ApiError(403, 'Requesters may only request for themselves');
+    const [requester, fulfilledFor] = await Promise.all([User.findOne({ _id: requesterId, company: T(req).tenantId }), User.findOne({ _id: fulfilledForId, company: T(req).tenantId })]);
+    if (!requester || !fulfilledFor) throw new ApiError(404, 'Requester or fulfilled-for user not found in this tenant');
+    const ids = items.map((item) => String(item.catalogItemId || '')).filter(Boolean);
+    if (ids.length !== items.length || new Set(ids).size !== ids.length) throw new ApiError(422, 'Every cart item needs a unique catalog item');
+    const catalogItems = await ServiceCatalogItem.find({ _id: { $in: ids }, company: T(req).tenantId, isActive: true, visibleInPortal: true });
+    if (catalogItems.length !== ids.length) throw new ApiError(404, 'One or more catalog items are unavailable for this tenant');
+    for (const item of items) {
+      const quantity = Number(item.quantity ?? 1);
+      if (!Number.isInteger(quantity) || quantity < 1 || quantity > 10) throw new ApiError(422, 'Item quantity must be between 1 and 10');
+      if (item.answers !== undefined && (typeof item.answers !== 'object' || Array.isArray(item.answers))) throw new ApiError(422, 'Catalog item answers must be an object');
+    }
+    parent = await ServiceRequest.create({ number: await nextNumber(T(req).tenantId, 'REQ'), company: T(req).tenantId, requester: requester._id, fulfilledFor: fulfilledFor._id, status: 'pending' });
+    const catalogById = new Map(catalogItems.map((item) => [String(item._id), item]));
+    const requestedItems = await Promise.all(items.map(async (item) => RequestedItem.create({
+      number: await nextNumber(T(req).tenantId, 'RITM'), catalogItem: catalogById.get(String(item.catalogItemId))._id,
+      requester: requester._id, fulfilledFor: fulfilledFor._id, status: catalogById.get(String(item.catalogItemId)).requiresApproval ? 'pending' : 'in_progress',
+      formData: { answers: item.answers || {}, quantity: Number(item.quantity ?? 1), request: parent._id }, tenantId: T(req).tenantId,
+    })));
+    parent.requestedItems = requestedItems.map((item) => item._id); await parent.save();
+    await auditServiceRequest(req, 'service_request.created', parent, null, { number: parent.number, requester: parent.requester, fulfilledFor: parent.fulfilledFor, requestedItemCount: requestedItems.length });
+    res.status(201).json({ request: { id: parent._id, number: parent.number, status: parent.status }, requestedItems: parent.requestedItems });
+  } catch (error) { res.status(error.statusCode || 400).json({ error: error.message }); }
+});
+const serviceRequestQuery = (req) => {
+  const tenant = { company: T(req).tenantId };
+  if (!req.agent) return { ...tenant, $or: [{ requester: req.user._id }, { fulfilledFor: req.user._id }] };
+  return isAggregateAdmin(req.agent) || grantedScopes(req.agent).includes('TENANT') ? tenant : { ...tenant, _id: null };
+};
+router.get('/requests/:id', moduleRequired('helpdesk'), async (req, res) => {
+  try {
+    if (req.agent) await authorizeAgentCommand({ req, permission: 'records.view', resource: { type: 'service_request' } });
+    const request = await ServiceRequest.findOne({ _id: req.params.id, ...serviceRequestQuery(req) });
+    if (!request) throw new ApiError(404, 'Service request not found');
+    const requestedItems = await RequestedItem.find({ _id: { $in: request.requestedItems }, tenantId: T(req).tenantId });
+    res.json({ request, requestedItems });
+  } catch (error) { res.status(error.statusCode || 400).json({ error: error.message }); }
+});
+router.post('/requests/:id/requested-items/:itemId/fulfill', ...coreItesmGuard('records.update'), requireTenantScope, async (req, res) => {
+  try {
+    const request = await ServiceRequest.findOne({ _id: req.params.id, company: T(req).tenantId });
+    const item = await RequestedItem.findOne({ _id: req.params.itemId, tenantId: T(req).tenantId });
+    if (!request || !item || !request.requestedItems.some((itemId) => String(itemId) === String(item._id))) throw new ApiError(404, 'Requested item not found');
+    if (item.status !== 'in_progress') throw new ApiError(409, 'Only in-progress requested items can be fulfilled');
+    const before = { status: item.status, fulfilledAt: item.fulfilledAt }; item.status = 'fulfilled'; item.fulfilledAt = new Date(); await item.save();
+    const unfinished = await RequestedItem.exists({ _id: { $in: request.requestedItems }, tenantId: T(req).tenantId, status: { $ne: 'fulfilled' } });
+    const requestBefore = { status: request.status }; if (!unfinished) { request.status = 'fulfilled'; await request.save(); }
+    await auditRequired({ company: T(req).tenantId, actorType: 'agent', actor: req.agent._id, actorName: req.agent.name, action: 'requested_item.fulfilled', entityType: 'requested_item', entityId: item._id, before, after: { status: item.status, fulfilledAt: item.fulfilledAt, requestId: request._id }, req });
+    await auditServiceRequest(req, 'service_request.fulfillment_updated', request, requestBefore, { status: request.status, requestedItem: item._id });
+    res.json({ request: { id: request._id, number: request.number, status: request.status }, requestedItem: item });
+  } catch (error) { res.status(error.statusCode || 400).json({ error: error.message }); }
+});
+
+router.get('/assets', ...coreItesmGuard('records.view'), requireTenantScope, async (req, res) => {
   try { const q = { ...companyOf(req) }; if (req.query.type) q.type = req.query.type; if (req.query.search) q.$or = [{ name: RegExp(String(req.query.search), 'i') }, { serial: RegExp(String(req.query.search), 'i') }, { hostname: RegExp(String(req.query.search), 'i') }];
     res.json({ assets: await Ast.find(q).limit(300) }); } catch (e) { res.status(500).json({ error: e.message }); }
 });
-router.get('/assets/:id', async (req, res) => {
-  try { res.json({ asset: await Ast.findOne({ _id: req.params.id, ...companyOf(req) }) }); } catch (e) { res.status(500).json({ error: e.message }); }
-});
-router.post('/assets', async (req, res) => {
+router.get('/assets/:id', ...coreItesmGuard('records.view'), async (req, res) => {
   try {
-    const ast = await Ast.create({ ...pick(req.body, ['name', 'type', 'serial', 'ip', 'hostname', 'environment', 'criticality', 'location', 'status', 'warrantyUntil', 'purchaseDate', 'tags', 'notes']), company: T(req).tenantId, createdBy: req.agent?._id || null });
+    const asset = await findTenantRecord(Ast, req.params.id, T(req).tenantId, 'Asset');
+    await assertCoreRecordAccess(req, 'records.view', asset);
+    res.json({ asset });
+  } catch (e) { res.status(e.statusCode || 400).json({ error: e.message }); }
+});
+router.post('/assets', ...coreItesmGuard('records.create'), async (req, res) => {
+  try {
+    const body = pick(req.body, ['name', 'owner', 'type', 'serial', 'ip', 'hostname', 'environment', 'criticality', 'location', 'status', 'warrantyUntil', 'purchaseDate', 'tags', 'notes']);
+    if (!String(body.name || '').trim()) throw new ApiError(422, 'Asset name is required');
+    if (body.owner && !(await User.exists({ _id: body.owner, company: T(req).tenantId }))) throw new ApiError(404, 'Asset owner not found in this tenant');
+    body.name = String(body.name).trim();
+    const ast = await Ast.create({ ...body, company: T(req).tenantId, createdBy: req.agent._id });
+    await auditCoreRecord(req, 'asset.created', ast, null, { name: ast.name, type: ast.type, serial: ast.serial, status: ast.status, owner: ast.owner });
     res.status(201).json({ asset: ast });
-  } catch (e) { res.status(400).json({ error: e.message }); }
+  } catch (e) { res.status(e.statusCode || 400).json({ error: e.message }); }
+});
+router.put('/assets/:id', ...coreItesmGuard('records.update'), async (req, res) => {
+  try {
+    const asset = await findTenantRecord(Ast, req.params.id, T(req).tenantId, 'Asset');
+    await assertCoreRecordAccess(req, 'records.update', asset);
+    const before = { name: asset.name, owner: asset.owner, type: asset.type, serial: asset.serial, status: asset.status, criticality: asset.criticality };
+    const body = pick(req.body, ['name', 'owner', 'type', 'serial', 'ip', 'hostname', 'environment', 'criticality', 'location', 'status', 'warrantyUntil', 'purchaseDate', 'tags', 'notes']);
+    if (body.name !== undefined) { body.name = String(body.name).trim(); if (!body.name) throw new ApiError(422, 'Asset name is required'); }
+    if (body.owner && !(await User.exists({ _id: body.owner, company: T(req).tenantId }))) throw new ApiError(404, 'Asset owner not found in this tenant');
+    Object.assign(asset, body); await asset.save();
+    await auditCoreRecord(req, 'asset.updated', asset, before, { name: asset.name, owner: asset.owner, type: asset.type, serial: asset.serial, status: asset.status, criticality: asset.criticality });
+    res.json({ asset });
+  } catch (e) { res.status(e.statusCode || 400).json({ error: e.message }); }
 });
 
 router.get('/audit', async (req, res) => {
@@ -237,7 +528,7 @@ router.put('/calls/:id', callsCtrl.updateCallLog);
 router.post('/calls/:id/log-to-ticket', callsCtrl.logCallToTicket);
 router.get('/realtime', async (req, res) => {
   try {
-    const Ticket = require('../models/Ticket');
+    const Ticket = require('../models/helpdesk/tickets/Ticket');
     const [openTickets, openIncidents, pendingChanges] = await Promise.all([
       Ticket.countDocuments({ ...T(req), status: { $nin: ['closed'] } }),
       Inc.countDocuments({ ...T(req), status: { $nin: ['resolved', 'closed'] } }),
@@ -248,7 +539,7 @@ router.get('/realtime', async (req, res) => {
 });
 router.get('/reports/overview', async (req, res) => {
   try {
-    const Ticket = require('../models/Ticket');
+    const Ticket = require('../models/helpdesk/tickets/Ticket');
     const [total, resolved, open] = await Promise.all([
       Ticket.countDocuments(T(req)),
       Ticket.countDocuments({ ...T(req), status: 'closed' }),
@@ -497,7 +788,7 @@ router.post('/procurement/requisitions/:id/approve', async (req, res) => {
 });
 router.post('/procurement/requisitions/:id/create-po', async (req, res) => {
   try {
-    const Procurement = require('../models/Stockroom').Procurement;
+    const Procurement = require('../models/stockroom').Procurement;
     const r = await E.Requisition.findOne({ _id: req.params.id, ...T(req) }).populate('lines.preferredSupplier');
     if (r.status !== 'approved') return res.status(422).json({ error: 'Requisition not approved' });
     const number = `PO-${Date.now().toString(36).toUpperCase()}`;
@@ -646,7 +937,7 @@ router.post('/modules/preview', async (req, res) => {
 });
 
 router.get('/modules/history', async (req, res) => {
-  try { const P5 = require('../models/Platform5'); res.json(await P5.ActivationHistory.find(T(req)).sort({ createdAt: -1 }).limit(100)); } catch (e) { res.status(500).json({ error: e.message }); }
+  try { const P5 = require('../models/platformServices'); res.json(await P5.ActivationHistory.find(T(req)).sort({ createdAt: -1 }).limit(100)); } catch (e) { res.status(500).json({ error: e.message }); }
 });
 router.get('/modules/dependencies', async (req, res) => {
   try { res.json(Object.entries(MODULE_CATALOG_META).map(([key, m]) => ({ moduleKey: key, dependsOn: m.dependencies || [], incompatibleWith: m.incompatibleWith || [] }))); } catch (e) { res.status(500).json({ error: e.message }); }

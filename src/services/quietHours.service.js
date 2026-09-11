@@ -27,7 +27,7 @@ const NotificationQueue =
   mongoose.models.QueuedNotification || mongoose.model('QueuedNotification', queuedSchema);
 
 async function getPref(recipientType, recipient) {
-  const P5 = require('../models/Platform5');
+  const P5 = require('../models/platformServices');
   if (recipientType !== 'user') return null; // agent prefs handled separately
   return P5.NotificationPref.findOne({ user: recipient }).lean();
 }

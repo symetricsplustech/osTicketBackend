@@ -1,10 +1,30 @@
 const express = require('express');
 const { protectTenantPrincipal } = require('../middleware/auth');
-const P5 = require('../models/Platform5');
+const { moduleRequired } = require('../middleware/module');
+const { authorize } = require('../services/authorization.service');
+const { auditRequired } = require('../services/audit.service');
+const ApiError = require('../utils/ApiError');
+const P5 = require('../models/platformServices');
 
 const router = express.Router();
 router.use(protectTenantPrincipal);
 const T = req => ({ tenantId: req.user.tenantId || req.user.companyId });
+const worklogGuard = (permission) => [
+  moduleRequired('helpdesk'),
+  async (req, res, next) => {
+    try {
+      if (!req.agent) throw new ApiError(403, 'Agent access required');
+      const result = await authorize({ principal: req.agent, permission, tenant: T(req).tenantId, resource: { type: 'ticket_worklog' }, req });
+      if (result.decision !== 'ALLOW') throw new ApiError(403, 'Permission denied');
+      const Ticket = require('../models/helpdesk/tickets/Ticket');
+      const ticket = await Ticket.findOne({ number: String(req.params.ticketNumber).trim().toUpperCase(), company: T(req).tenantId, status: { $ne: Ticket.STATUSES.DELETED } });
+      if (!ticket) throw new ApiError(404, 'Ticket not found');
+      if (!(await require('../controllers/helpdesk').canAccessTicket(req.agent, ticket))) throw new ApiError(403, 'No access to this ticket');
+      req.worklogTicket = ticket;
+      next();
+    } catch (error) { next(error); }
+  },
+];
 function crud(path, Model) {
   router.get(path, async (req, res) => { try { res.json(await Model.find(T(req)).sort({ createdAt: -1 }).limit(300)); } catch (e) { res.status(500).json({ error: e.message }); } });
   router.post(path, async (req, res) => { try { res.status(201).json(await Model.create({ ...req.body, ...T(req) })); } catch (e) { res.status(400).json({ error: e.message }); } });
@@ -26,7 +46,7 @@ router.post('/retention-policies/:id/run', async (req, res) => {
   try {
     const pol = await P5.RetentionPolicy.findOne({ _id: req.params.id, ...T(req) });
     if (!pol) return res.status(404).json({});
-    const Ticket = require('../models/Ticket');
+    const Ticket = require('../models/helpdesk/tickets/Ticket');
     const cutoff = new Date(Date.now() - (pol.retainDays || 365) * 86400000);
     const q = { ...T(req), createdAt: { $lt: cutoff } };
     if (pol.action === 'archive') { const n = (await Ticket.updateMany(q, { $set: { archived: true } }).catch(() => ({ modifiedCount: 0 }))).modifiedCount || 0; pol.lastRunAt = new Date(); await pol.save(); res.json({ archived: n }); }
@@ -42,9 +62,9 @@ router.get('/dsar/:id/export', async (req, res) => {
   try {
     const d = await P5.DsarRequest.findOne({ _id: req.params.id, ...T(req) });
     if (!d) return res.status(404).json({});
-    const Ticket = require('../models/Ticket');
+    const Ticket = require('../models/helpdesk/tickets/Ticket');
     const tickets = await Ticket.find({ ...T(req), email: d.subjectEmail }).limit(200).lean().catch(() => []);
-    const P7r = require('../models/Platform7');
+    const P7r = require('../models/platformIdentity');
     const pols = await P7r.RegionalPolicy.find({ tenantId: d.tenantId });
     const block = new Set(pols.flatMap(p2 => p2.piiExportBlocklistFields || []));
     const scrubbed = tickets.map(t2 => { const c2 = { ...t2 }; block.forEach(f => { delete c2[f]; }); return c2; });
@@ -136,7 +156,7 @@ crud('/soar-playbooks', P5.SoarPlaybook);
 router.post('/soar-playbooks/:id/run', async (req, res) => {
   try {
     const pb = await P5.SoarPlaybook.findOne({ _id: req.params.id, ...T(req) });
-    const SI = require('../models/Enterprise').SecurityIncident;
+    const SI = require('../models/enterprise').SecurityIncident;
     const si = await SI.findOne({ _id: req.body.incidentId, ...T(req) });
     if (!pb || !si) return res.status(404).json({});
     const executed = [];
@@ -157,7 +177,7 @@ router.post('/soar-playbooks/:id/run', async (req, res) => {
 crud('/threat-feeds', P5.ThreatFeed);
 router.post('/threat-enrich/:incidentId', async (req, res) => {
   try {
-    const SI = require('../models/Enterprise').SecurityIncident;
+    const SI = require('../models/enterprise').SecurityIncident;
     const si = await SI.findOne({ _id: req.params.incidentId, ...T(req) });
     const feeds = await P5.ThreatFeed.find({ ...T(req) });
     const known = new Map(feeds.flatMap(f => f.indicators.map(i => [i.value, i.reputation])));
@@ -189,7 +209,7 @@ crud('/rate-cards', P5.RateCard);
 router.get('/manager-hub', async (req, res) => {
   try {
     const HrCase = require('../models/HrCase');
-    const OnboardingChecklist = require('../models/Remaining').OnboardingChecklist;
+    const OnboardingChecklist = require('../models/domain').OnboardingChecklist;
     const [openCases, onboardings] = await Promise.all([
       HrCase.countDocuments({ ...T(req), status: { $nin: ['closed'] } }),
       OnboardingChecklist.countDocuments({ ...T(req), status: { $ne: 'completed' } }),
@@ -222,8 +242,8 @@ crud('/clause-items', P5.ClauseItem);
 // ---- ITAM governance ----
 router.post('/software-import', async (req, res) => {
   try {
-    const InstalledSoftware = require('../models/License').InstalledSoftware;
-    const SoftwareProduct = require('../models/License').SoftwareProduct;
+    const InstalledSoftware = require('../models/license').InstalledSoftware;
+    const SoftwareProduct = require('../models/license').SoftwareProduct;
     const AssetLifecycle = null;
     const rows = req.body.rows || [];
     let matched = 0, createdProducts = 0; const results = [];
@@ -240,7 +260,7 @@ router.post('/software-import', async (req, res) => {
 });
 router.post('/reclamations', async (req, res) => {
   try {
-    const LicenseAllocation = require('../models/License').LicenseAllocation;
+    const LicenseAllocation = require('../models/license').LicenseAllocation;
     const alloc = await LicenseAllocation.findOne({ license: req.body.licenseId, user: req.body.userId, status: 'active', ...T(req) });
     const rec = await P5.LicenseReclamation.create({ ...req.body, lastUsedDays: req.body.lastUsedDays ?? null, managerConfirmed: false, tenantId: T(req).tenantId });
     rec.allocFound = !!alloc; await rec.save();
@@ -251,7 +271,7 @@ router.post('/reclamations/:id/confirm', async (req, res) => {
   try {
     const rec = await P5.LicenseReclamation.findOne({ _id: req.params.id, ...T(req) });
     if (req.body.confirmed) {
-      const { License, LicenseAllocation } = require('../models/License');
+      const { License, LicenseAllocation } = require('../models/license');
       await LicenseAllocation.findOneAndUpdate({ license: rec.license, user: rec.user, status: 'active' }, { status: 'deactivated', deactivatedDate: new Date() });
       await License.findByIdAndUpdate(rec.license, { $inc: { usedSeats: -1 } }).catch(() => {});
       rec.status = 'reclaimed'; rec.reclaimedAt = new Date();
@@ -261,8 +281,8 @@ router.post('/reclamations/:id/confirm', async (req, res) => {
 });
 router.get('/saas-roster', async (req, res) => {
   try {
-    const LicenseAllocation = require('../models/License').LicenseAllocation;
-    const UsageMeter = require('../models/License').UsageMeter;
+    const LicenseAllocation = require('../models/license').LicenseAllocation;
+    const UsageMeter = require('../models/license').UsageMeter;
     const allocations = await LicenseAllocation.find({ ...T(req), status: 'active' }).populate('license user');
     const roster = [];
     for (const a of allocations) {
@@ -289,11 +309,21 @@ router.get('/five-whys/:problemId', async (req, res) => { try { res.json(await P
 router.put('/five-whys/:problemId', async (req, res) => {
   try { const fw = await P5.FiveWhys.findOneAndUpdate({ problem: req.params.problemId, ...T(req) }, { whys: req.body.whys, rootCauseConclusion: req.body.rootCauseConclusion }, { new: true, upsert: true }); res.json(fw); } catch (e) { res.status(400).json({ error: e.message }); }
 });
-router.get('/worklogs/:ticketNumber', async (req, res) => {
+router.get('/worklogs/:ticketNumber', ...worklogGuard('tickets.view'), async (req, res) => {
   try { const logs = await P5.TicketWorklog.find({ ticketNumber: req.params.ticketNumber, ...T(req) });
     res.json({ entries: logs, totalMinutes: logs.reduce((s, l) => s + l.minutes, 0), billableMinutes: logs.filter(l => l.billable).reduce((s, l) => s + l.minutes, 0) }); } catch (e) { res.status(500).json({ error: e.message }); }
 });
-router.post('/worklogs/:ticketNumber', async (req, res) => { try { res.status(201).json(await P5.TicketWorklog.create({ ticketNumber: req.params.ticketNumber, agent: req.user.id, ...req.body, ...T(req) })); } catch (e) { res.status(400).json({ error: e.message }); } });
+router.post('/worklogs/:ticketNumber', ...worklogGuard('tickets.note'), async (req, res) => {
+  try {
+    const minutes = Number(req.body.minutes);
+    const note = String(req.body.note || req.body.description || '').trim();
+    if (!Number.isInteger(minutes) || minutes < 1 || minutes > 1440) throw new ApiError(422, 'Worklog minutes must be between 1 and 1440');
+    if (!note || note.length > 4000) throw new ApiError(422, 'A worklog note up to 4000 characters is required');
+    const worklog = await P5.TicketWorklog.create({ ticketNumber: req.worklogTicket.number, agent: req.agent._id, minutes, note, billable: !!req.body.billable, ...T(req) });
+    await auditRequired({ company: T(req).tenantId, actorType: 'agent', actor: req.agent._id, actorName: req.agent.name, action: 'ticket.worklog_created', entityType: 'ticket', entityId: req.worklogTicket._id, after: { worklogId: worklog._id, minutes, billable: worklog.billable }, req });
+    res.status(201).json(worklog);
+  } catch (e) { res.status(e.statusCode || 400).json({ error: e.message }); }
+});
 router.get('/drafts/:key', async (req, res) => { try { res.json(await P5.DraftAutosave.findOne({ user: req.user.id, contextKey: req.params.key }) || { content: '' }); } catch (e) { res.status(500).json({ error: e.message }); } });
 router.put('/drafts/:key', async (req, res) => {
   try { const d = await P5.DraftAutosave.findOneAndUpdate({ user: req.user.id, contextKey: req.params.key }, { content: req.body.content, updatedAt: new Date() }, { new: true, upsert: true }); res.json(d); } catch (e) { res.status(400).json({ error: e.message }); }
@@ -315,7 +345,7 @@ router.get('/inbound-messages', async (req, res) => { try { const q = { ...T(req
 router.post('/channels/webhook', async (req, res) => {
   try {
     if (req.headers['x-ingest-token'] !== (process.env.INGEST_TOKEN || 'dev-ingest')) return res.status(401).json({ error: 'bad token' });
-    const Ticket = require('../models/Ticket');
+    const Ticket = require('../models/helpdesk/tickets/Ticket');
     const User = require('../models/User');
     const sender = String(req.body.from || '');
     const customer = await User.findOne({ phone: sender }).select('_id').catch(() => null);
@@ -349,13 +379,13 @@ router.get('/kg', async (req, res) => {
   try {
     const type = req.query.type || 'cis';
     if (type === 'accounts') {
-      const CH = require('../models/CustomerService').CompanyHierarchy;
+      const CH = require('../models/customerService').CompanyHierarchy;
       const rels = await CH.find(T(req));
       const nodes = [...new Set(rels.flatMap(r => [String(r.company), String(r.parentCompany)].filter(Boolean)))];
       const edges = rels.filter(r => r.parentCompany).map(r => ({ from: String(r.parentCompany), to: String(r.company), label: r.relationship }));
       return res.json({ nodes, edges });
     }
-    const CI = require('../models/Enterprise').CI;
+    const CI = require('../models/enterprise').CI;
     const cis = await CI.find(T(req)).select('name ciClass relationships');
     const idName = new Map(cis.map(c => [String(c._id), c.name]));
     const edges = cis.flatMap(c => (c.relationships || []).map(r => ({ from: String(c._id), to: String(r.target), label: r.type })));
@@ -364,10 +394,10 @@ router.get('/kg', async (req, res) => {
 });
 
 // ---- ESG extras ----
-crud('/supplier-esg', P5.ThirdParty ? require('../models/Enterprise').ThirdParty : P5.ThirdParty);
+crud('/supplier-esg', P5.ThirdParty ? require('../models/enterprise').ThirdParty : P5.ThirdParty);
 router.get('/esg-disclosure.md', async (req, res) => {
   try {
-    const EsgMetric = require('../models/Enterprise').EsgMetric;
+    const EsgMetric = require('../models/enterprise').EsgMetric;
     const metrics = await EsgMetric.find(T(req)).populate('dataPoints.emissionFactorId');
     let md = `# Sustainability Disclosure Snapshot\n\n_Generated ${new Date().toISOString()}_\n\n| Metric | Framework | Scope | Last value | CO₂e (kg) |\n|---|---|---|---|---|\n`;
     for (const m of metrics) {
@@ -380,16 +410,16 @@ router.get('/esg-disclosure.md', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 router.get('/supplier-esg', async (req, res) => {
-  try { const SE = require('../models/Enterprise').ThirdParty; res.json(await SE.find(T(req))); } catch (e) { res.status(500).json({ error: e.message }); }
+  try { const SE = require('../models/enterprise').ThirdParty; res.json(await SE.find(T(req))); } catch (e) { res.status(500).json({ error: e.message }); }
 });
-router.post('/supplier-esg', async (req, res) => { try { const SE = require('../models/Enterprise').ThirdParty; res.status(201).json(await SE.create({ ...req.body, ...T(req) })); } catch (e) { res.status(400).json({ error: e.message }); } });
+router.post('/supplier-esg', async (req, res) => { try { const SE = require('../models/enterprise').ThirdParty; res.status(201).json(await SE.create({ ...req.body, ...T(req) })); } catch (e) { res.status(400).json({ error: e.message }); } });
 
 // ---- Usage vs plan limits (§1.13) ----
 router.get('/usage-summary', async (req, res) => {
   try {
     const Agent = require('../models/Agent');
     const User = require('../models/User');
-    const Ticket = require('../models/Ticket');
+    const Ticket = require('../models/helpdesk/tickets/Ticket');
     const Plan = require('../models/Plan');
     const monthStart = new Date(); monthStart.setDate(1); monthStart.setHours(0,0,0,0);
     const [agents, contacts, ticketsThisMonth] = await Promise.all([

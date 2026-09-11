@@ -1,5 +1,5 @@
 const express = require('express');
-const { License, LicenseAllocation, SoftwareProduct, InstalledSoftware, UsageMeter } = require('../models/License.js');
+const { License, LicenseAllocation, SoftwareProduct, InstalledSoftware, UsageMeter } = require('../models/license');
 const { protectTenantAgent } = require('../middleware/auth');
 const router = express.Router();
 router.use(protectTenantAgent);

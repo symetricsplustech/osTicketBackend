@@ -1,5 +1,5 @@
 const Agent = require('../models/Agent');
-const Ticket = require('../models/Ticket');
+const Ticket = require('../models/helpdesk/tickets/Ticket');
 const Department = require('../models/Department');
 const { fetchTrainingSet, suggest } = require('./suggestion.service');
 

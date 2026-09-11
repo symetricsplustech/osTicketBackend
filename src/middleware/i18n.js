@@ -8,7 +8,7 @@
  *   3. Accept-Language header
  *   4. Fallback 'en'
  */
-const { MessageBundle, TenantLocalePreference, UserLocalePreference } = require('../models/Locale');
+const { MessageBundle, TenantLocalePreference, UserLocalePreference } = require('../models/i18n');
 
 const bundleCache = new Map(); // `${locale}:${namespace}` -> Map(key->value)
 const CACHE_TTL_MS = 60 * 1000; // 1 minute

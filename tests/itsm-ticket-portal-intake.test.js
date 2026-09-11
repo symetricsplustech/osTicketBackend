@@ -6,8 +6,8 @@ const Company = require('../src/models/Company');
 const User = require('../src/models/User');
 const HelpTopic = require('../src/models/HelpTopic');
 const Priority = require('../src/models/Priority');
-const Ticket = require('../src/models/Ticket');
-const TicketThread = require('../src/models/TicketThread');
+const Ticket = require('../src/models/helpdesk/tickets/Ticket');
+const TicketThread = require('../src/models/helpdesk/tickets/TicketThread');
 const AuditEvent = require('../src/models/AuditEvent');
 
 const port = 5107;
@@ -44,6 +44,14 @@ const assert = (condition, message) => {
       Company.create({ name: `Portal intake A ${suffix}`, status: 'active' }),
       Company.create({ name: `Portal intake B ${suffix}`, status: 'active' }),
     ]);
+    const now = new Date();
+    for (const company of [companyA, companyB]) {
+      await mongoose.connection.db.collection('tenant_modules').updateOne(
+        { tenantId: company._id, moduleKey: 'helpdesk' },
+        { $set: { status: 'active', activatedAt: now, updatedAt: now }, $setOnInsert: { moduleKey: 'helpdesk', createdAt: now } },
+        { upsert: true }
+      );
+    }
     [userA, userB] = await Promise.all([
       User.create({ name: 'Portal requester A', email: `portal-a-${suffix}@osticket.local`, password: 'Pass@1234', company: companyA._id, isRegistered: true, status: 'active' }),
       User.create({ name: 'Portal requester B', email: `portal-b-${suffix}@osticket.local`, password: 'Pass@1234', company: companyB._id, isRegistered: true, status: 'active' }),
@@ -64,6 +72,11 @@ const assert = (condition, message) => {
     ]);
     assert(loginA.status === 200 && loginA.data.token, 'registered requester can sign in to the portal');
     assert(loginB.status === 200 && loginB.data.token, 'second-tenant requester can sign in to the portal');
+    await mongoose.connection.db.collection('tenant_modules').updateOne(
+      { tenantId: companyB._id, moduleKey: 'helpdesk' },
+      { $set: { status: 'inactive' } }
+    );
+    assert((await request('GET', '/tickets/open-form', { token: loginB.data.token })).status === 403, 'portal ticket routes deny a disabled Helpdesk module');
 
     const formA = await request('GET', '/tickets/open-form', { token: loginA.data.token });
     assert(formA.status === 200 && formA.data.topics.some((item) => String(item._id) === String(topicA._id)), 'requester receives their tenant help topics');
@@ -101,6 +114,7 @@ const assert = (condition, message) => {
     if (server) await new Promise((resolve) => server.close(resolve));
     const companies = [companyA?._id, companyB?._id].filter(Boolean);
     if (companies.length) {
+      await mongoose.connection.db.collection('tenant_modules').deleteMany({ tenantId: { $in: companies } });
       const tickets = await Ticket.find({ company: { $in: companies } }).select('_id').lean();
       await TicketThread.deleteMany({ ticket: { $in: tickets.map((item) => item._id) } });
       await Ticket.deleteMany({ company: { $in: companies } });

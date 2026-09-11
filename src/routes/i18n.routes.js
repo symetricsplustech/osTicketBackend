@@ -1,6 +1,6 @@
 const express = require('express');
 const { protectTenantPrincipal, protectAdmin } = require('../middleware/auth');
-const { Locale, MessageBundle, TenantLocalePreference, UserLocalePreference } = require('../models/Locale');
+const { Locale, MessageBundle, TenantLocalePreference, UserLocalePreference } = require('../models/i18n');
 const { invalidateCache } = require('../middleware/i18n');
 
 const router = express.Router();

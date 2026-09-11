@@ -1,0 +1,26 @@
+/* eslint-disable no-console */
+const mongoose = require('mongoose'); const app = require('../src/app'); const config = require('../src/config/config');
+const Company = require('../src/models/Company'); const Agent = require('../src/models/Agent'); const User = require('../src/models/User'); const Ticket = require('../src/models/helpdesk/tickets/Ticket'); const CallLog = require('../src/models/CallLog'); const AuditEvent = require('../src/models/AuditEvent');
+const port = 5124; const base = `http://127.0.0.1:${port}/api/v1`; const assert = (v, m) => { if (!v) throw new Error(m); console.log(`PASS ${m}`); };
+const request = async (method, path, { token, body } = {}) => { const response = await fetch(`${base}${path}`, { method, headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) }, body: body === undefined ? undefined : JSON.stringify(body) }); return { status: response.status, data: await response.json().catch(() => ({})) }; };
+(async () => { let server; const companies = []; const suffix = Date.now(); try {
+  await mongoose.connect(config.mongoUri, { serverSelectionTimeoutMS: 15000 }); server = app.listen(port);
+  const [a, b] = await Promise.all([Company.create({ name: `Call A ${suffix}`, status: 'active' }), Company.create({ name: `Call B ${suffix}`, status: 'active' })]); companies.push(a._id, b._id); const now = new Date();
+  await Promise.all([a, b].map((company) => mongoose.connection.db.collection('tenant_modules').updateOne({ tenantId: company._id, moduleKey: 'helpdesk' }, { $set: { status: 'active', activatedAt: now }, $setOnInsert: { moduleKey: 'helpdesk', createdAt: now } }, { upsert: true })));
+  const [adminA, deniedA, adminB, userA, userB] = await Promise.all([
+    Agent.create({ name: 'Call admin A', email: `call-admin-a-${suffix}@osticket.local`, password: 'Pass@1234', company: a._id, isAdmin: true, isActive: true, permissions: ['records.view', 'records.create', 'records.update', 'tickets.note'] }),
+    Agent.create({ name: 'Call denied A', email: `call-denied-a-${suffix}@osticket.local`, password: 'Pass@1234', company: a._id, isActive: true }),
+    Agent.create({ name: 'Call admin B', email: `call-admin-b-${suffix}@osticket.local`, password: 'Pass@1234', company: b._id, isAdmin: true, isActive: true, permissions: ['records.view', 'records.create', 'records.update', 'tickets.note'] }),
+    User.create({ name: 'Call user A', email: `call-user-a-${suffix}@osticket.local`, password: 'Pass@1234', company: a._id }), User.create({ name: 'Call user B', email: `call-user-b-${suffix}@osticket.local`, password: 'Pass@1234', company: b._id }),
+  ]);
+  const [ticketA, ticketB] = await Promise.all([Ticket.create({ number: `CALL-A-${suffix}`, company: a._id, user: userA._id, subject: 'Call A', status: 'open' }), Ticket.create({ number: `CALL-B-${suffix}`, company: b._id, user: userB._id, subject: 'Call B', status: 'open' })]);
+  const login = async (email) => (await request('POST', '/auth/agent/login', { body: { email, password: 'Pass@1234' } })).data.token; const [aToken, deniedToken, bToken] = await Promise.all([login(adminA.email), login(deniedA.email), login(adminB.email)]);
+  assert((await request('POST', '/enterprise/calls', { body: { ticketNumber: ticketA.number } })).status === 401, 'anonymous call creation is denied');
+  assert((await request('POST', '/enterprise/calls', { token: deniedToken, body: { ticketNumber: ticketA.number } })).status === 403, 'agent without records.create cannot create a call');
+  assert((await request('POST', '/enterprise/calls', { token: aToken, body: { ticketNumber: ticketB.number } })).status === 404, 'cross-tenant ticket cannot be attached to a call');
+  const created = await request('POST', '/enterprise/calls', { token: aToken, body: { ticketNumber: ticketA.number, direction: 'inbound', status: 'completed', durationSec: 60 } }); assert(created.status === 201, 'authorized agent can create a tenant call');
+  const call = await CallLog.findById(created.data.item._id); assert(await AuditEvent.exists({ company: a._id, actor: adminA._id, action: 'call.created', entityId: call._id }), 'call creation has audit evidence');
+  assert([403, 404].includes((await request('PUT', `/enterprise/calls/${call._id}`, { token: bToken, body: { notes: 'cross tenant' } })).status), 'cross-tenant agent cannot update a call');
+  assert((await request('PUT', `/enterprise/calls/${call._id}`, { token: aToken, body: { status: 'invalid' } })).status === 422, 'invalid call status is rejected');
+  console.log('ITSM-14 CALL SECURITY TESTS PASSED');
+} catch (e) { console.error('ITSM-14 CALL SECURITY TEST FAILED:', e.message); process.exitCode = 1; } finally { if (server) await new Promise((resolve) => server.close(resolve)); if (companies.length) { await AuditEvent.deleteMany({ company: { $in: companies } }); await CallLog.deleteMany({ company: { $in: companies } }); await Ticket.deleteMany({ company: { $in: companies } }); await User.deleteMany({ company: { $in: companies } }); await Agent.deleteMany({ company: { $in: companies } }); await mongoose.connection.db.collection('tenant_modules').deleteMany({ tenantId: { $in: companies } }); await Company.deleteMany({ _id: { $in: companies } }); } await mongoose.disconnect(); } })();

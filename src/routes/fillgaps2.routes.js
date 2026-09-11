@@ -1,11 +1,54 @@
 const express = require('express');
 const crypto = require('crypto');
 const { protectTenantPrincipal } = require('../middleware/auth');
-const P6 = require('../models/Platform6');
+const { moduleRequired } = require('../middleware/module');
+const { authorize } = require('../services/authorization.service');
+const { auditRequired } = require('../services/audit.service');
+const ApiError = require('../utils/ApiError');
+const P6 = require('../models/platformData');
 
 const router = express.Router();
 router.use(protectTenantPrincipal);
 const T = req => ({ tenantId: req.user.tenantId || req.user.companyId });
+const routingGuard = async (req, res, next) => {
+  try {
+    if (!req.agent) throw new ApiError(403, 'Agent access required');
+    const result = await authorize({ principal: req.agent, permission: 'tickets.assign', tenant: T(req).tenantId, resource: { type: 'ticket_routing' }, req });
+    if (result.decision !== 'ALLOW') throw new ApiError(403, 'Permission denied');
+    next();
+  } catch (error) { next(error); }
+};
+const approvalGuard = async (req, res, next) => {
+  try {
+    if (!req.agent) throw new ApiError(403, 'Agent access required');
+    const result = await authorize({ principal: req.agent, permission: 'approvals.decide', tenant: T(req).tenantId, resource: { type: 'approval' }, req });
+    if (result.decision !== 'ALLOW') throw new ApiError(403, 'Permission denied');
+    next();
+  } catch (error) { next(error); }
+};
+const approvalManageGuard = async (req, res, next) => {
+  try {
+    if (!req.agent) throw new ApiError(403, 'Agent access required');
+    const result = await authorize({ principal: req.agent, permission: 'approvals.manage', tenant: T(req).tenantId, resource: { type: 'approval' }, req });
+    if (result.decision !== 'ALLOW') throw new ApiError(403, 'Permission denied');
+    next();
+  } catch (error) { next(error); }
+};
+const canDecideApprovalStep = (agent, step) => {
+  const required = String(step.approverRole || '').trim().toLowerCase();
+  if (!required) return false;
+  if (required === 'admin' || required === 'any_admin') return !!agent.isAdmin;
+  const roles = [agent.role?.name, ...(agent.roles || []).map((role) => role?.name || role)].filter(Boolean).map((role) => String(role).toLowerCase());
+  return roles.includes(required);
+};
+const catalogGuard = (permission) => async (req, res, next) => {
+  try {
+    if (!req.agent) throw new ApiError(403, 'Agent access required');
+    const result = await authorize({ principal: req.agent, permission, tenant: T(req).tenantId, resource: { type: 'service_catalog' }, req });
+    if (result.decision !== 'ALLOW') throw new ApiError(403, 'Permission denied');
+    next();
+  } catch (error) { next(error); }
+};
 
 async function execToolSafe(tool, input) {
   if (tool === 'echo') return { tool, output: input };
@@ -33,7 +76,7 @@ const idempotent = scope => async (req, res, next) => {
 // Quiet-hours gate (respects NotificationPref when deciding non-urgent sends)
 async function quietGate(userId, tenantId) {
   try {
-    const P5 = require('../models/Platform5');
+    const P5 = require('../models/platformServices');
     const pref = await P5.NotificationPref.findOne({ user: userId });
     if (!pref?.quietHours?.enabled) return true;
     const nowT = new Date().toLocaleTimeString('en-GB', { hour12: false, timeZone: pref.quietHours.tz || 'UTC' }).slice(0, 5);
@@ -96,7 +139,7 @@ router.post('/tickets/:number/blocking', async (req, res) => { try { res.status(
 router.get('/tickets/:number/blocking', async (req, res) => { try { res.json(await P6.TicketRelationExtra.find({ ticketNumber: req.params.number, ...T(req) })); } catch (e) { res.status(500).json({ error: e.message }); } });
 router.post('/tickets/:number/clone', async (req, res) => {
   try {
-    const Ticket = require('../models/Ticket');
+    const Ticket = require('../models/helpdesk/tickets/Ticket');
     const src = await Ticket.findOne({ number: req.params.number, ...T(req) }).lean();
     if (!src) return res.status(404).json({});
     delete src._id; delete src.number; delete src.createdAt; delete src.updatedAt;
@@ -116,39 +159,80 @@ router.delete('/tickets/:number', async (req, res) => { try { res.json(await P6.
 router.post('/tickets/:number/restore', async (req, res) => { try { res.json(await P6.SoftDeleteMeta.findOneAndUpdate({ ticketNumber: req.params.number, ...T(req) }, { restoredAt: new Date(), deletedAt: null }, { new: true })); } catch (e) { res.status(400).json({ error: e.message }); } });
 router.get('/tickets-trash', async (req, res) => { try { res.json(await P6.SoftDeleteMeta.find({ ...T(req), deletedAt: { $ne: null } })); } catch (e) { res.status(500).json({ error: e.message }); } });
 
-router.post('/routing/next-agent', async (req, res) => {
+router.post('/routing/next-agent', moduleRequired('helpdesk'), routingGuard, async (req, res) => {
   try {
     const Agent = require('../models/Agent');
-    const Ticket = require('../models/Ticket');
-    const agents = await Agent.find({ tenantId: req.user.tenantId }).select('name skills').limit(200);
+    const Ticket = require('../models/helpdesk/tickets/Ticket');
+    const tenantId = T(req).tenantId;
+    const strategy = String(req.body.strategy || 'round_robin');
+    if (!['round_robin', 'skills', 'least_loaded'].includes(strategy)) throw new ApiError(422, 'Invalid routing strategy');
+    const requiredSkills = Array.isArray(req.body.requiredSkills) ? req.body.requiredSkills.map(String).slice(0, 25) : [];
+    let ticket = null;
+    if (req.body.ticketNumber) {
+      ticket = await Ticket.findOne({ number: String(req.body.ticketNumber).trim().toUpperCase(), company: tenantId, status: { $ne: Ticket.STATUSES.DELETED } });
+      if (!ticket) throw new ApiError(404, 'Ticket not found in this tenant');
+      if (!(await require('../controllers/helpdesk').canAccessTicket(req.agent, ticket))) throw new ApiError(403, 'No access to this ticket');
+    }
+    const agents = await Agent.find({ company: tenantId, isActive: true }).select('name skills').limit(200);
     if (!agents.length) return res.json({ strategy: 'none', overflowQueue: true });
-    const caps = await P6.WorkScheduleCap.find({ ...T(req), agent: { $in: agents.map(a => a._id) } });
+    const caps = await P6.WorkScheduleCap.find({ tenantId, agent: { $in: agents.map(a => a._id) } });
     const capMap = new Map(caps.map(c => [String(c.agent), c.dailyMaxOpen ?? 10]));
     const load = {};
-    for (const a of agents) load[String(a._id)] = await Ticket.countDocuments({ assignedTo: a._id, status: { $nin: ['closed', 'resolved'] } });
+    for (const a of agents) load[String(a._id)] = await Ticket.countDocuments({ company: tenantId, agent: a._id, status: { $nin: ['closed', 'resolved', 'deleted'] } });
     const underCap = agents.filter(a => load[String(a._id)] < (capMap.get(String(a._id)) ?? 10));
-    const strategy = req.body.strategy || 'round_robin';
     let chosen = null;
-    if (strategy === 'skills' && req.body.requiredSkills?.length) {
-      const scored = underCap.map(a => ({ a, score: (a.skills || []).filter(s => req.body.requiredSkills.includes(s)).length })).filter(x => x.score > 0).sort((x, y) => y.score - x.score);
+    if (strategy === 'skills' && requiredSkills.length) {
+      const scored = underCap.map(a => ({ a, score: (a.skills || []).map(String).filter(s => requiredSkills.includes(s)).length })).filter(x => x.score > 0).sort((x, y) => y.score - x.score || String(x.a._id).localeCompare(String(y.a._id)));
       chosen = scored[0]?.a;
     }
     if (!chosen && strategy === 'round_robin') {
-      const scopeKey = `rr:${req.body.departmentKey || 'default'}`;
-      let st = await P6.RoutingState.findOne({ scopeKey, ...T(req) });
-      if (!st) st = await P6.RoutingState.create({ scopeKey, lastIndex: 0, ...T(req) });
+      const scopeKey = `rr:${tenantId}:${String(req.body.departmentKey || 'default').slice(0, 100)}`;
       const pool = underCap.length ? underCap : agents;
-      st.lastIndex = (st.lastIndex + 1) % pool.length;
-      chosen = pool[st.lastIndex]; await st.save();
+      const st = await P6.RoutingState.findOneAndUpdate({ scopeKey }, { $inc: { lastIndex: 1 }, $setOnInsert: { tenantId } }, { new: true, upsert: true });
+      chosen = pool[Math.abs(st.lastIndex) % pool.length];
     }
     if (!chosen && underCap.length) chosen = [...underCap].sort((a, b) => load[String(a._id)] - load[String(b._id)])[0];
     if (!chosen) return res.json({ strategy, overflowQueue: true, note: 'all agents at capacity — route to overflow queue' });
-    if (req.body.ticketNumber) await P6.AssignmentHistory.create({ ticketNumber: req.body.ticketNumber, toAgent: chosen._id, strategy, ...T(req) });
+    if (ticket) await P6.AssignmentHistory.create({ ticketNumber: ticket.number, fromAgent: ticket.agent || null, toAgent: chosen._id, strategy, tenantId });
+    await auditRequired({ company: tenantId, actorType: 'agent', actor: req.agent._id, actorName: req.agent.name, action: 'routing.next_agent_selected', entityType: ticket ? 'ticket' : 'routing', entityId: ticket?._id || null, after: { strategy, selectedAgent: chosen._id, ticketNumber: ticket?.number || null }, req });
     res.json({ strategy, agent: { id: chosen._id, name: chosen.name, openLoad: load[String(chosen._id)] }, overflowQueue: false });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(e.statusCode || 500).json({ error: e.message }); }
 });
-crud('/routing/caps', P6.WorkScheduleCap);
-router.get('/assignments/history/:ticketNumber', async (req, res) => { try { res.json(await P6.AssignmentHistory.find({ ticketNumber: req.params.ticketNumber, ...T(req) })); } catch (e) { res.status(500).json({ error: e.message }); } });
+router.get('/routing/caps', moduleRequired('helpdesk'), routingGuard, async (req, res) => {
+  try { res.json(await P6.WorkScheduleCap.find(T(req)).sort({ createdAt: -1 }).limit(200)); } catch (e) { res.status(500).json({ error: e.message }); }
+});
+router.post('/routing/caps', moduleRequired('helpdesk'), routingGuard, async (req, res) => {
+  try {
+    const Agent = require('../models/Agent');
+    const agentId = String(req.body.agent || '');
+    const dailyMaxOpen = Number(req.body.dailyMaxOpen);
+    const weeklyHours = req.body.weeklyHours === undefined ? undefined : Number(req.body.weeklyHours);
+    if (!agentId || !Number.isInteger(dailyMaxOpen) || dailyMaxOpen < 1 || dailyMaxOpen > 100) throw new ApiError(422, 'agent and dailyMaxOpen (1-100) are required');
+    if (weeklyHours !== undefined && (!Number.isFinite(weeklyHours) || weeklyHours < 0 || weeklyHours > 168)) throw new ApiError(422, 'weeklyHours must be between 0 and 168');
+    if (!(await Agent.exists({ _id: agentId, company: T(req).tenantId, isActive: true }))) throw new ApiError(404, 'Agent not found in this tenant');
+    const cap = await P6.WorkScheduleCap.findOneAndUpdate({ agent: agentId, tenantId: T(req).tenantId }, { $set: { dailyMaxOpen, ...(weeklyHours === undefined ? {} : { weeklyHours }) }, $setOnInsert: T(req) }, { new: true, upsert: true, runValidators: true });
+    await auditRequired({ company: T(req).tenantId, actorType: 'agent', actor: req.agent._id, actorName: req.agent.name, action: 'routing.capacity_set', entityType: 'routing_capacity', entityId: cap._id, after: { agent: cap.agent, dailyMaxOpen: cap.dailyMaxOpen, weeklyHours: cap.weeklyHours }, req });
+    res.status(201).json(cap);
+  } catch (e) { res.status(e.statusCode || 400).json({ error: e.message }); }
+});
+router.delete('/routing/caps/:id', moduleRequired('helpdesk'), routingGuard, async (req, res) => {
+  try {
+    const cap = await P6.WorkScheduleCap.findOne({ _id: req.params.id, ...T(req) });
+    if (!cap) return res.status(404).json({ error: 'Routing capacity not found' });
+    await auditRequired({ company: T(req).tenantId, actorType: 'agent', actor: req.agent._id, actorName: req.agent.name, action: 'routing.capacity_deleted', entityType: 'routing_capacity', entityId: cap._id, before: { agent: cap.agent, dailyMaxOpen: cap.dailyMaxOpen, weeklyHours: cap.weeklyHours }, req });
+    await cap.deleteOne();
+    res.json({ success: true });
+  } catch (e) { res.status(e.statusCode || 400).json({ error: e.message }); }
+});
+router.get('/assignments/history/:ticketNumber', moduleRequired('helpdesk'), routingGuard, async (req, res) => {
+  try {
+    const Ticket = require('../models/helpdesk/tickets/Ticket');
+    const ticket = await Ticket.findOne({ number: String(req.params.ticketNumber).trim().toUpperCase(), company: T(req).tenantId });
+    if (!ticket) return res.status(404).json({ error: 'Ticket not found' });
+    if (!(await require('../controllers/helpdesk').canAccessTicket(req.agent, ticket))) return res.status(403).json({ error: 'No access to this ticket' });
+    res.json(await P6.AssignmentHistory.find({ ticketNumber: ticket.number, ...T(req) }));
+  } catch (e) { res.status(e.statusCode || 500).json({ error: e.message }); }
+});
 
 router.post('/incidents/:id/cis', async (req, res) => { try { res.json(await P6.IncidentCiMeta.findOneAndUpdate({ incident: req.params.id, ...T(req) }, { cis: req.body.cis }, { new: true, upsert: true })); } catch (e) { res.status(400).json({ error: e.message }); } });
 router.post('/incidents/:id/communication-plan', async (req, res) => {
@@ -164,7 +248,7 @@ router.post('/incidents/:id/communication-due', async (req, res) => {
 });
 router.get('/reports/major-incidents-exec', async (req, res) => {
   try {
-    const Inc = require('../models/Incident'); const Outage = require('../models/Remaining').Outage;
+    const Inc = require('../models/helpdesk/incidents/Incident'); const Outage = require('../models/domain').Outage;
     const [majors, outages] = await Promise.all([
       Inc.find({ ...T(req), isMajor: true }).sort({ createdAt: -1 }).limit(20),
       Outage.find(T(req)).sort({ startedAt: -1 }).limit(20),
@@ -177,54 +261,137 @@ router.get('/reports/major-incidents-exec', async (req, res) => {
 });
 
 // ---- Catalogue: bundles / eligibility / cart / parallel approvals ----
-crud('/catalog/bundles', P6.CatalogBundle);
-crud('/catalog/eligibility', P6.CatalogEligibility);
-router.post('/catalog/cart', idempotent('cart'), async (req, res) => {
-  try {
-    const RequestedItem = require('../models/Remaining').RequestedItem;
-    const Ticket = require('../models/Ticket');
-    const items = req.body.items || [];
-    if (!items.length) return res.status(400).json({ error: 'items required' });
-    for (const it of items) {
-      if (it.catalogItemId && it.maxPerUserPerMonth) {
-        const monthStart = new Date(); monthStart.setDate(1);
-        const prior = await RequestedItem.countDocuments({ ...T(req), requester: req.user.id, catalogItem: it.catalogItemId, createdAt: { $gte: monthStart } });
-        if (prior >= it.maxPerUserPerMonth) return res.status(422).json({ error: `Quota exceeded for item ${it.catalogItemId}` });
-      }
-    }
-    const parentNumber = `RITM-${Date.now().toString(36).toUpperCase()}`;
-    const parent = await RequestedItem.create({ number: parentNumber, requester: req.user.id, status: 'pending', formData: { cart: true }, tenantId: T(req).tenantId });
-    const children = [];
-    for (const it of items) {
-      const t = await Ticket.create({ title: `[Cart] ${it.name || 'Catalogue item'}`, body: JSON.stringify(it.answers || {}), source: 'portal', status: 'open', tenantId: T(req).tenantId });
-      const child = await RequestedItem.create({ number: `RITM-${Date.now().toString(36).toUpperCase()}-${children.length}`, catalogItem: it.catalogItemId || undefined, ticket: t._id, requester: req.user.id, fulfilledFor: req.body.fulfilledFor || req.user.id, parentRequestRef: parent._id, tenantId: T(req).tenantId });
-      children.push(child.number);
-    }
-    parent.formData.childNumbers = children; await parent.save();
-    res.status(201).json({ parent: parent.number, children });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+router.get('/catalog/bundles', moduleRequired('helpdesk'), catalogGuard('records.view'), async (req, res) => {
+  try { res.json(await P6.CatalogBundle.find(T(req)).sort({ createdAt: -1 }).limit(200)); } catch (e) { res.status(500).json({ error: e.message }); }
 });
-crud('/approval-chains', P6.ApprovalChain);
-router.post('/approval-chains/:id/decide', async (req, res) => {
+router.post('/catalog/bundles', moduleRequired('helpdesk'), catalogGuard('records.create'), async (req, res) => {
+  try {
+    const name = String(req.body.name || '').trim(); const items = Array.isArray(req.body.items) ? [...new Set(req.body.items.map(String))] : [];
+    const discountPct = Number(req.body.discountPct || 0);
+    if (!name || name.length > 160 || !items.length || items.length > 50) throw new ApiError(422, 'A name and 1-50 catalog items are required');
+    if (!Number.isFinite(discountPct) || discountPct < 0 || discountPct > 100) throw new ApiError(422, 'discountPct must be between 0 and 100');
+    const Item = require('../models/ServiceCatalogItem');
+    if ((await Item.countDocuments({ _id: { $in: items }, company: T(req).tenantId })) !== items.length) throw new ApiError(404, 'One or more catalog items are not in this tenant');
+    const bundle = await P6.CatalogBundle.create({ name, items, discountPct, ...T(req) });
+    await auditRequired({ company: T(req).tenantId, actorType: 'agent', actor: req.agent._id, actorName: req.agent.name, action: 'catalog_bundle.created', entityType: 'catalog_bundle', entityId: bundle._id, after: { name, itemCount: items.length, discountPct }, req });
+    res.status(201).json(bundle);
+  } catch (e) { res.status(e.statusCode || 400).json({ error: e.message }); }
+});
+router.put('/catalog/bundles/:id', moduleRequired('helpdesk'), catalogGuard('records.update'), async (req, res) => {
+  try {
+    const bundle = await P6.CatalogBundle.findOne({ _id: req.params.id, ...T(req) });
+    if (!bundle) return res.status(404).json({ error: 'Catalog bundle not found' });
+    const before = { name: bundle.name, items: bundle.items, discountPct: bundle.discountPct };
+    if (req.body.name !== undefined) { const name = String(req.body.name).trim(); if (!name || name.length > 160) throw new ApiError(422, 'Invalid bundle name'); bundle.name = name; }
+    if (req.body.discountPct !== undefined) { const discountPct = Number(req.body.discountPct); if (!Number.isFinite(discountPct) || discountPct < 0 || discountPct > 100) throw new ApiError(422, 'discountPct must be between 0 and 100'); bundle.discountPct = discountPct; }
+    if (req.body.items !== undefined) {
+      const items = Array.isArray(req.body.items) ? [...new Set(req.body.items.map(String))] : [];
+      if (!items.length || items.length > 50) throw new ApiError(422, 'Bundle needs 1-50 catalog items');
+      const Item = require('../models/ServiceCatalogItem');
+      if ((await Item.countDocuments({ _id: { $in: items }, company: T(req).tenantId })) !== items.length) throw new ApiError(404, 'One or more catalog items are not in this tenant');
+      bundle.items = items;
+    }
+    await bundle.save();
+    await auditRequired({ company: T(req).tenantId, actorType: 'agent', actor: req.agent._id, actorName: req.agent.name, action: 'catalog_bundle.updated', entityType: 'catalog_bundle', entityId: bundle._id, before, after: { name: bundle.name, items: bundle.items, discountPct: bundle.discountPct }, req });
+    res.json(bundle);
+  } catch (e) { res.status(e.statusCode || 400).json({ error: e.message }); }
+});
+router.delete('/catalog/bundles/:id', moduleRequired('helpdesk'), catalogGuard('records.delete'), async (req, res) => {
+  try {
+    const bundle = await P6.CatalogBundle.findOne({ _id: req.params.id, ...T(req) });
+    if (!bundle) return res.status(404).json({ error: 'Catalog bundle not found' });
+    await auditRequired({ company: T(req).tenantId, actorType: 'agent', actor: req.agent._id, actorName: req.agent.name, action: 'catalog_bundle.deleted', entityType: 'catalog_bundle', entityId: bundle._id, before: { name: bundle.name, items: bundle.items, discountPct: bundle.discountPct }, req });
+    await bundle.deleteOne(); res.json({ success: true });
+  } catch (e) { res.status(e.statusCode || 400).json({ error: e.message }); }
+});
+router.get('/catalog/eligibility', moduleRequired('helpdesk'), catalogGuard('records.view'), async (req, res) => {
+  try { res.json(await P6.CatalogEligibility.find(T(req)).sort({ createdAt: -1 }).limit(200)); } catch (e) { res.status(500).json({ error: e.message }); }
+});
+router.post('/catalog/eligibility', moduleRequired('helpdesk'), catalogGuard('records.create'), async (req, res) => {
+  try {
+    const Item = require('../models/ServiceCatalogItem'); const itemId = String(req.body.itemId || ''); const maxPerUserPerMonth = Number(req.body.maxPerUserPerMonth || 0);
+    if (!itemId || !(await Item.exists({ _id: itemId, company: T(req).tenantId }))) throw new ApiError(404, 'Catalog item not found in this tenant');
+    if (!Number.isInteger(maxPerUserPerMonth) || maxPerUserPerMonth < 0 || maxPerUserPerMonth > 1000) throw new ApiError(422, 'maxPerUserPerMonth must be between 0 and 1000');
+    const departments = Array.isArray(req.body.departments) ? req.body.departments.map(String).slice(0, 100) : [];
+    const locations = Array.isArray(req.body.locations) ? req.body.locations.map(String).slice(0, 100) : [];
+    const rule = await P6.CatalogEligibility.create({ itemId, departments, locations, maxPerUserPerMonth, ...T(req) });
+    await auditRequired({ company: T(req).tenantId, actorType: 'agent', actor: req.agent._id, actorName: req.agent.name, action: 'catalog_eligibility.created', entityType: 'catalog_eligibility', entityId: rule._id, after: { itemId, departments, locations, maxPerUserPerMonth }, req });
+    res.status(201).json(rule);
+  } catch (e) { res.status(e.statusCode || 400).json({ error: e.message }); }
+});
+router.put('/catalog/eligibility/:id', moduleRequired('helpdesk'), catalogGuard('records.update'), async (req, res) => {
+  try {
+    const rule = await P6.CatalogEligibility.findOne({ _id: req.params.id, ...T(req) });
+    if (!rule) return res.status(404).json({ error: 'Catalog eligibility rule not found' });
+    const before = { departments: rule.departments, locations: rule.locations, maxPerUserPerMonth: rule.maxPerUserPerMonth };
+    if (req.body.departments !== undefined) rule.departments = Array.isArray(req.body.departments) ? req.body.departments.map(String).slice(0, 100) : [];
+    if (req.body.locations !== undefined) rule.locations = Array.isArray(req.body.locations) ? req.body.locations.map(String).slice(0, 100) : [];
+    if (req.body.maxPerUserPerMonth !== undefined) { const max = Number(req.body.maxPerUserPerMonth); if (!Number.isInteger(max) || max < 0 || max > 1000) throw new ApiError(422, 'maxPerUserPerMonth must be between 0 and 1000'); rule.maxPerUserPerMonth = max; }
+    await rule.save();
+    await auditRequired({ company: T(req).tenantId, actorType: 'agent', actor: req.agent._id, actorName: req.agent.name, action: 'catalog_eligibility.updated', entityType: 'catalog_eligibility', entityId: rule._id, before, after: { departments: rule.departments, locations: rule.locations, maxPerUserPerMonth: rule.maxPerUserPerMonth }, req });
+    res.json(rule);
+  } catch (e) { res.status(e.statusCode || 400).json({ error: e.message }); }
+});
+router.delete('/catalog/eligibility/:id', moduleRequired('helpdesk'), catalogGuard('records.delete'), async (req, res) => {
+  try {
+    const rule = await P6.CatalogEligibility.findOne({ _id: req.params.id, ...T(req) });
+    if (!rule) return res.status(404).json({ error: 'Catalog eligibility rule not found' });
+    await auditRequired({ company: T(req).tenantId, actorType: 'agent', actor: req.agent._id, actorName: req.agent.name, action: 'catalog_eligibility.deleted', entityType: 'catalog_eligibility', entityId: rule._id, before: { itemId: rule.itemId, departments: rule.departments, locations: rule.locations, maxPerUserPerMonth: rule.maxPerUserPerMonth }, req });
+    await rule.deleteOne(); res.json({ success: true });
+  } catch (e) { res.status(e.statusCode || 400).json({ error: e.message }); }
+});
+// Retired: this duplicate checkout path trusted client catalog metadata and
+// bypassed the canonical, audited REQ/RITM checkout at /enterprise/requests/cart.
+router.post('/catalog/cart', moduleRequired('helpdesk'), (_req, res) => {
+  res.status(410).json({ error: 'This checkout endpoint is retired; use /enterprise/requests/cart' });
+});
+router.get('/approval-chains', moduleRequired('helpdesk'), approvalManageGuard, async (req, res) => {
+  try { res.json(await P6.ApprovalChain.find(T(req)).sort({ createdAt: -1 }).limit(200)); } catch (e) { res.status(500).json({ error: e.message }); }
+});
+router.post('/approval-chains', moduleRequired('helpdesk'), approvalManageGuard, async (req, res) => {
+  try {
+    const entityType = String(req.body.entityType || '').trim();
+    const entityId = req.body.entityId;
+    const mode = String(req.body.mode || 'sequential');
+    const rawSteps = Array.isArray(req.body.steps) ? req.body.steps : [];
+    if (!entityType || !entityId) throw new ApiError(422, 'entityType and entityId are required');
+    if (!['sequential', 'all_of', 'any_of'].includes(mode)) throw new ApiError(422, 'Invalid approval mode');
+    if (!rawSteps.length || rawSteps.length > 20 || rawSteps.some((step) => !String(step?.approverRole || '').trim())) throw new ApiError(422, 'One to twenty approver-role steps are required');
+    const chain = await P6.ApprovalChain.create({ entityType, entityId, mode, status: 'pending', steps: rawSteps.map((step) => ({ approverRole: String(step.approverRole).trim() })), createdBy: req.agent._id, tenantId: T(req).tenantId });
+    await auditRequired({ company: T(req).tenantId, actorType: 'agent', actor: req.agent._id, actorName: req.agent.name, action: 'approval_chain.created', entityType: 'approval_chain', entityId: chain._id, after: { entityType, entityId, mode, stepCount: chain.steps.length }, req });
+    res.status(201).json(chain);
+  } catch (e) { res.status(e.statusCode || 400).json({ error: e.message }); }
+});
+router.post('/approval-chains/:id/decide', moduleRequired('helpdesk'), approvalGuard, async (req, res) => {
   try {
     const ch = await P6.ApprovalChain.findOne({ _id: req.params.id, ...T(req) });
     if (!ch) return res.status(404).json({});
-    const step = ch.steps.find(s => !s.decision);
+    if (ch.status !== 'pending') return res.status(409).json({ error: 'approval chain is no longer pending' });
+    if (ch.createdBy && String(ch.createdBy) === String(req.agent._id)) return res.status(403).json({ error: 'Separation of duties: a chain creator cannot decide its own approval' });
+    const decision = String(req.body.decision || '').toLowerCase();
+    if (!['approved', 'rejected'].includes(decision)) return res.status(422).json({ error: 'decision must be approved or rejected' });
+    const pendingSteps = ch.steps.filter(s => !s.decision);
+    const step = ch.mode === 'sequential' ? pendingSteps[0] : pendingSteps.find((candidate) => canDecideApprovalStep(req.agent, candidate));
     if (!step) return res.status(422).json({ error: 'no pending step' });
-    step.decidedBy = req.user.id; step.decision = req.body.decision; step.decidedAt = new Date();
+    if (!canDecideApprovalStep(req.agent, step)) return res.status(403).json({ error: 'You are not the active approver for this step' });
+    const before = { status: ch.status, stepRole: step.approverRole, decision: null };
+    step.decidedBy = req.agent._id; step.decision = decision; step.decidedAt = new Date();
     const pendingAfter = ch.steps.filter(s => !s.decision).length;
     const rejected = ch.steps.some(s => s.decision === 'rejected');
     if (rejected) ch.status = 'rejected';
     else if (!pendingAfter) ch.status = 'approved';
-    else if (ch.mode === 'any_of') ch.status = req.body.decision === 'approved' ? 'approved' : 'pending';
-    await ch.save(); res.json(ch);
-  } catch (e) { res.status(400).json({ error: e.message }); }
+    else if (ch.mode === 'any_of') ch.status = decision === 'approved' ? 'approved' : 'pending';
+    if (ch.status !== 'pending') ch.completedAt = new Date();
+    await ch.save();
+    await auditRequired({ company: T(req).tenantId, actorType: 'agent', actor: req.agent._id, actorName: req.agent.name, action: 'approval_chain.decided', entityType: 'approval_chain', entityId: ch._id, before, after: { status: ch.status, stepRole: step.approverRole, decision }, req });
+    res.json(ch);
+  } catch (e) { res.status(e.statusCode || 400).json({ error: e.message }); }
 });
 crud('/blackout-windows', P6.BlackoutWindow);
 crud('/ola-targets', P6.OlaTarget);
 router.get('/ola-breaches', async (req, res) => {
   try {
-    const Ticket = require('../models/Ticket');
+    const Ticket = require('../models/helpdesk/tickets/Ticket');
     const olas = await P6.OlaTarget.find(T(req));
     const open = await Ticket.find({ ...T(req), status: { $nin: ['closed'] } }).select('number subject createdAt assignedTo').limit(500);
     const breaches = [];
@@ -251,7 +418,7 @@ router.post('/community-threads/:id/accept/:answerIdx', async (req, res) => {
 router.post('/cases/create-with-validation', async (req, res) => {
   try {
     const Entitlement = require('../models/Entitlement');
-    const Ticket = require('../models/Ticket');
+    const Ticket = require('../models/helpdesk/tickets/Ticket');
     const companyId = req.body.companyId;
     const ent = await Entitlement.findOne({ company: companyId, tenantId: T(req).tenantId }).sort({ createdAt: -1 });
     if (!ent) return res.status(402).json({ error: 'No active entitlement for this account — case not created', code: 'NO_ENTITLEMENT' });
@@ -263,7 +430,7 @@ router.post('/cases/create-with-validation', async (req, res) => {
 });
 router.get('/unified-inbox', async (req, res) => {
   try {
-    const InboundMessage = require('../models/Platform5').InboundMessage;
+    const InboundMessage = require('../models/platformServices').InboundMessage;
     const ChatMessage = require('../models/ChatMessage');
     const [socials, chats] = await Promise.all([
       InboundMessage.find(T(req)).sort({ receivedAt: -1 }).limit(100),
@@ -279,8 +446,8 @@ router.get('/unified-inbox', async (req, res) => {
 router.get('/customer-health/churn-risk', async (req, res) => {
   try {
     const Company = require('../models/Company');
-    const Ticket = require('../models/Ticket');
-    const Complaint = require('../models/CustomerService').Complaint;
+    const Ticket = require('../models/helpdesk/tickets/Ticket');
+    const Complaint = require('../models/customerService').Complaint;
     const companies = await Company.find(T(req)).limit(100);
     const out = [];
     for (const c of companies) {
@@ -331,7 +498,7 @@ router.post('/assets/:id/lost-stolen', async (req, res) => {
     const rep = await LS.create({ asset: req.params.id, type: req.body.type, policeRef: req.body.policeRef, actions: ['reported'], ...T(req) });
     let securityIncident = null;
     if (req.body.type === 'stolen') {
-      const SI = require('../models/Enterprise').SecurityIncident;
+      const SI = require('../models/enterprise').SecurityIncident;
       securityIncident = await SI.create({ number: `SEC-${Date.now().toString(36).toUpperCase()}`, title: `Stolen asset report ${req.params.id}`, category: 'unauthorized_access', severity: 'high', tenantId: T(req).tenantId });
     }
     res.status(201).json({ report: rep, securityIncident });
@@ -339,7 +506,7 @@ router.post('/assets/:id/lost-stolen', async (req, res) => {
 });
 router.get('/assets/:id/disposal-certificate.md', async (req, res) => {
   try {
-    const AL = require('../models/Stockroom').AssetLifecycle;
+    const AL = require('../models/stockroom').AssetLifecycle;
     const lc = await AL.findOne({ asset: req.params.id, ...T(req) }).sort({ createdAt: -1 });
     if (!lc || !['retired', 'disposed'].includes(lc.status)) return res.status(404).json({ error: 'Asset not retired/disposed' });
     const disposalEntry = [...(lc.history || [])].reverse().find(h => h.status === 'disposed' || h.status === 'retired');
@@ -349,7 +516,7 @@ router.get('/assets/:id/disposal-certificate.md', async (req, res) => {
 });
 router.get('/itam/calendar', async (req, res) => {
   try {
-    const Loaner = require('../models/Stockroom').Loaner;
+    const Loaner = require('../models/stockroom').Loaner;
     const month = req.query.month || new Date().toISOString().slice(0, 7);
     const loaners = await Loaner.find({ ...T(req), loanDate: { $gte: new Date(`${month}-01`), $lt: new Date(new Date(`${month}-01`).setMonth(new Date(`${month}-01`).getMonth() + 1)) } });
     res.json({ month, entries: loaners.map(l => ({ asset: l.asset, out: l.loanDate, due: l.expectedReturnDate, status: l.status })) });
@@ -357,8 +524,8 @@ router.get('/itam/calendar', async (req, res) => {
 });
 router.get('/software/spend-optimisation', async (req, res) => {
   try {
-    const License = require('../models/License').License;
-    const SoftwareProduct = require('../models/License').SoftwareProduct;
+    const License = require('../models/license').License;
+    const SoftwareProduct = require('../models/license').SoftwareProduct;
     const licenses = await License.find(T(req));
     const spendByVendor = {};
     for (const l of licenses) { const v = l.vendor || 'unknown'; spendByVendor[v] = (spendByVendor[v] || 0) + (l.cost || 0); }
@@ -393,7 +560,7 @@ router.post('/cmdb/reconcile', async (req, res) => {
 });
 router.post('/cmdb/cis/dedupe-merge', async (req, res) => {
   try {
-    const CI = require('../models/Enterprise').CI;
+    const CI = require('../models/enterprise').CI;
     const dupes = await CI.find({ ...T(req), identificationKey: req.body.identificationKey }).sort({ createdAt: 1 });
     if (dupes.length < 2) return res.json({ duplicatesFound: dupes.length, merged: false });
     const primary = dupes[0]; const others = dupes.slice(1);
@@ -404,7 +571,7 @@ router.post('/cmdb/cis/dedupe-merge', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 router.post('/cmdb/cis/:id/snapshot', async (req, res) => {
-  try { const CI = require('../models/Enterprise').CI; const ci = await CI.findById(req.params.id); res.status(201).json(await P6.CiSnapshot.create({ ci: ci._id, state: ci.toObject(), takenBy: req.user.id, ...T(req) })); } catch (e) { res.status(500).json({ error: e.message }); }
+  try { const CI = require('../models/enterprise').CI; const ci = await CI.findById(req.params.id); res.status(201).json(await P6.CiSnapshot.create({ ci: ci._id, state: ci.toObject(), takenBy: req.user.id, ...T(req) })); } catch (e) { res.status(500).json({ error: e.message }); }
 });
 router.get('/cmdb/cis/:id/diff', async (req, res) => {
   try {
@@ -422,7 +589,7 @@ router.post('/cmdb/attestations/:id/certify', async (req, res) => {
   try {
     const c = await P6.AttestationCampaign.findOne({ _id: req.params.id, ...T(req) });
     c.responses.push({ ci: req.body.ciId, certified: !!req.body.certified, notes: req.body.notes, at: new Date() });
-    const CI = require('../models/Enterprise').CI;
+    const CI = require('../models/enterprise').CI;
     if (req.body.certified) await CI.findByIdAndUpdate(req.body.ciId, { lastCertifiedAt: new Date() });
     if (c.cis.every(id => c.responses.some(r => String(r.ci) === String(id)))) c.status = 'closed';
     await c.save(); res.json(c);
@@ -431,7 +598,7 @@ router.post('/cmdb/attestations/:id/certify', async (req, res) => {
 router.post('/cmdb/cis/:id/relate-checked', async (req, res) => {
   try {
     const CARDINALITY = { part_of: { maxIncoming: 3 }, runs_on: { maxOutgoing: 5 } };
-    const CI = require('../models/Enterprise').CI;
+    const CI = require('../models/enterprise').CI;
     const ci = await CI.findOne({ _id: req.params.id, ...T(req) });
     const rule = CARDINALITY[req.body.type]?.maxOutgoing;
     if (rule && ci.relationships.filter(r => r.type === req.body.type).length >= rule) return res.status(422).json({ error: `Cardinality exceeded for ${req.body.type} (max ${rule})` });
@@ -462,7 +629,7 @@ router.post('/events/normalize', async (req, res) => {
     const severity = sevMap[String(raw.severity || '').toLowerCase()] || raw.severity || 'medium';
     const dedupeKey = crypto.createHash('sha1').update(`${raw.source}|${raw.resource}|${raw.title}`).digest('hex').slice(0, 16);
     const existing = await Alert.findOne({ ...T(req), 'metadata.dedupeKey': dedupeKey, status: { $in: ['open', 'acknowledged'] } });
-    const MW = require('../models/Platform2').MaintenanceWindow;
+    const MW = require('../models/platformGovernance').MaintenanceWindow;
     const suppressed = await MW.countDocuments({ ...T(req), start: { $lte: new Date() }, end: { $gte: new Date() }, suppressAlerts: true });
     if (suppressed) return res.json({ suppressed: true, reason: 'maintenance_window' });
     if (existing) { existing.metadata = existing.metadata || {}; existing.metadata.repeatCount = (existing.metadata.repeatCount || 0) + 1; await existing.save(); return res.json({ deduplicated: true, alertId: existing._id, repeatCount: existing.metadata.repeatCount }); }
@@ -498,7 +665,7 @@ router.post('/scenarios/:id/compute', async (req, res) => {
     const total = projects.reduce((s, p) => s + (p.budget || 0), 0);
     sc.computedTotalBudget = Math.round(total * (1 + (sc.budgetShiftPct || 0) / 100));
     const risks = await P6.RiskItem ? null : null; // risks live in Enterprise
-    const RiskItem = require('../models/Enterprise').RiskItem;
+    const RiskItem = require('../models/enterprise').RiskItem;
     const rList = await RiskItem.find({ ...T(req) }).limit(200);
     sc.computedRiskAvg = rList.length ? Math.round(rList.reduce((s2, r) => s2 + (r.residualScore || 0), 0) / rList.length) : 0;
     await sc.save(); res.json(sc);
@@ -561,7 +728,7 @@ router.post('/three-way-match', async (req, res) => {
 router.get('/storefront', async (req, res) => {
   try {
     const CatalogItem = require('../models/ServiceCatalogItem');
-    const Product = require('../models/Product').Product || require('../models/Product');
+    const Product = require('../models/product').Product || require('../models/product');
     const [items, products] = await Promise.all([
       CatalogItem.find(T(req)).limit(50),
       typeof Product === 'function' ? Product.find(T(req)).limit(50) : [],
@@ -571,7 +738,7 @@ router.get('/storefront', async (req, res) => {
 });
 router.get('/sourcing-events/:id/bid-grid', async (req, res) => {
   try {
-    const SE = require('../models/Enterprise') && require('../models/Enterprise').SourcingEvent;
+    const SE = require('../models/enterprise') && require('../models/enterprise').SourcingEvent;
     const ev = await SE.findOne({ _id: req.params.id, ...T(req) }).populate('responses.supplier suppliersInvited');
     if (!ev) return res.status(404).json({});
     const weights = ev.weightedCriteria || [];
@@ -587,11 +754,11 @@ router.get('/sourcing-events/:id/bid-grid', async (req, res) => {
 
 // ---- Finance SoD + duplicate check ----
 router.post('/finance-cases-v2', idempotent('finance-case'), async (req, res) => {
-  try { const FC = require('../models/Platform5').FinanceCase; res.status(201).json(await FC.create({ ...req.body, createdBy: req.user.id, tenantId: T(req).tenantId })); } catch (e) { res.status(400).json({ error: e.message }); }
+  try { const FC = require('../models/platformServices').FinanceCase; res.status(201).json(await FC.create({ ...req.body, createdBy: req.user.id, tenantId: T(req).tenantId })); } catch (e) { res.status(400).json({ error: e.message }); }
 });
 router.post('/finance/cases-safe-decide', async (req, res) => {
   try {
-    const FC = require('../models/Platform5').FinanceCase;
+    const FC = require('../models/platformServices').FinanceCase;
     const fc = await FC.findOne({ _id: req.body.caseId, ...T(req) });
     if (!fc) return res.status(404).json({});
     if (String(fc.createdBy) === String(req.user.id)) return res.status(403).json({ error: 'Segregation of duties: creator cannot approve own case' });
@@ -603,7 +770,7 @@ router.post('/finance/cases-safe-decide', async (req, res) => {
 router.post('/finance/duplicate-invoice-check', async (req, res) => {
   try {
     const crypto2 = require('crypto');
-    const FC = require('../models/Platform5').FinanceCase;
+    const FC = require('../models/platformServices').FinanceCase;
     const hash = crypto2.createHash('sha1').update(`${req.body.supplierId}|${req.body.amount}|${req.body.period}`).digest('hex').slice(0, 12);
     const dup = await FC.findOne({ ...T(req), dedupeHash: hash }).limit(1);
     res.json({ duplicateSuspected: !!dup, fingerprint: hash, priorCaseNumber: dup?.number || null });
@@ -613,7 +780,7 @@ router.post('/finance/duplicate-invoice-check', async (req, res) => {
 // ---- ESG restatement + questionnaires + composer ----
 router.post('/esg/metrics/:id/restate', async (req, res) => {
   try {
-    const EsgMetric = require('../models/Enterprise').EsgMetric;
+    const EsgMetric = require('../models/enterprise').EsgMetric;
     const m = await EsgMetric.findOne({ _id: req.params.id, ...T(req) });
     const idx = m.dataPoints.length - 1;
     m.dataPoints.push({ period: m.dataPoints[idx].period, value: req.body.newValue, co2e: m.dataPoints[idx].co2e != null ? req.body.newValue : undefined, evidenceUrl: req.body.evidenceUrl, validatedBy: req.user.name, restatedFrom: idx });
@@ -630,7 +797,7 @@ router.post('/esg/supplier-responses', async (req, res) => {
 router.get('/esg/disclosure-composer.md', async (req, res) => {
   try {
     const framework = String(req.query.framework || 'GRI').toUpperCase();
-    const EsgMetric = require('../models/Enterprise').EsgMetric;
+    const EsgMetric = require('../models/enterprise').EsgMetric;
     const metrics = (await EsgMetric.find({ ...T(req) })).filter(m => m.framework.toUpperCase() === framework);
     let md = `# ${framework} Disclosure Report\n\nGenerated: ${new Date().toISOString()}\n\n`;
     for (const pillar of ['environmental', 'social', 'governance']) {
@@ -682,7 +849,7 @@ router.get('/search/fuzzy', async (req, res) => {
     const q = String(req.query.q || '').toLowerCase().trim(); if (!q) return res.json({ expanded: [], results: [] });
     const syn = await P6.SynonymMap.findOne({ ...T(req), term: q });
     const variants = [...new Set([q, ...(syn?.synonyms || [])])];
-    const Ticket = require('../models/Ticket');
+    const Ticket = require('../models/helpdesk/tickets/Ticket');
     const results = [];
     for (const v of variants) {
       const exact = await Ticket.find({ ...T(req), title: new RegExp(v, 'i') }).limit(10).select('number title status');
@@ -736,8 +903,8 @@ router.post('/agent-chains/:id/run', async (req, res) => {
 // ---- Analytics depth ----
 router.post('/reports/matrix', async (req, res) => {
   try {
-    const map = { tickets: () => require('../models/Ticket'), leads: () => require('../models/Lead') };
-    const M = (map[req.body.dataset] || (() => require('../models/Ticket')))();
+    const map = { tickets: () => require('../models/helpdesk/tickets/Ticket'), leads: () => require('../models/Lead') };
+    const M = (map[req.body.dataset] || (() => require('../models/helpdesk/tickets/Ticket')))();
     const rowsA = await M.aggregate([{ $match: { tenantId: req.user.tenantId } }, { $group: { _id: `$${req.body.groupByA}` , c: { $sum: 1 } } }]);
     const rowsB = await M.aggregate([{ $match: { tenantId: req.user.tenantId } }, { $group: { _id: `$${req.body.groupByB}`, c: { $sum: 1 } } }]);
     res.json({ pivot: { rowKeys: rowsA.map(r => r._id).filter(Boolean), colKeys: rowsB.map(r => r._id).filter(Boolean), note: 'cell counts via drilldown/detail per intersection' }, rowTotals: rowsA });
@@ -745,7 +912,7 @@ router.post('/reports/matrix', async (req, res) => {
 });
 router.post('/reports/period-compare', async (req, res) => {
   try {
-    const Ticket = require('../models/Ticket');
+    const Ticket = require('../models/helpdesk/tickets/Ticket');
     const now = new Date(); const prevStart = new Date(now.getFullYear(), now.getMonth() - 1, 1); const curStart = new Date(now.getFullYear(), now.getMonth(), 1);
     const [cur, prev] = await Promise.all([
       Ticket.countDocuments({ ...T(req), createdAt: { $gte: curStart } }),
@@ -767,10 +934,10 @@ router.post('/reports/share', async (req, res) => {
 router.get('/employee-360/:userId', async (req, res) => {
   try {
     const uid = req.params.userId;
-    const Ticket = require('../models/Ticket');
-    const AssetLifecycle = require('../models/Stockroom').AssetLifecycle;
-    const TimesheetM = require('../models/Remaining').Timesheet;
-    const Reservation = require('../models/Enterprise') && require('../models/Enterprise').Reservation;
+    const Ticket = require('../models/helpdesk/tickets/Ticket');
+    const AssetLifecycle = require('../models/stockroom').AssetLifecycle;
+    const TimesheetM = require('../models/domain').Timesheet;
+    const Reservation = require('../models/enterprise') && require('../models/enterprise').Reservation;
     const [tickets, assets, timesheets, reservations] = await Promise.all([
       Ticket.find({ ...T(req), requester: uid }).sort({ createdAt: -1 }).limit(20).select('number title status createdAt'),
       AssetLifecycle.find({ ...T(req), assignedTo: uid }).limit(20).populate('asset', 'name'),
@@ -782,7 +949,7 @@ router.get('/employee-360/:userId', async (req, res) => {
 });
 router.post('/incidents/:id/to-problem', async (req, res) => {
   try {
-    const Inc = def('../models/Incident'); const Problem = require('../models/Problem');
+    const Inc = def('../models/helpdesk/incidents/Incident'); const Problem = require('../models/helpdesk/incidents/Problem');
     const inc = await Inc.findOne({ _id: req.params.id, ...T(req) });
     if (!inc) return res.status(404).json({});
     const prb = await Problem.create({ title: `[Problem] ${inc.title}`, description: inc.description, status: 'open', tenantId: T(req).tenantId });
@@ -792,9 +959,9 @@ router.post('/incidents/:id/to-problem', async (req, res) => {
 function def(p) { const m = require(p); return typeof m === 'function' ? m : (m[Object.keys(m).find(k => typeof m[k] === 'function')] || m[Object.keys(m)[0]]); }
 router.post('/hardware-request-chain', async (req, res) => {
   try {
-    const StockItem = require('../models/Stockroom').StockItem;
-    const Requisition = require('../models/Enterprise').Requisition;
-    const AL = require('../models/Stockroom').AssetLifecycle;
+    const StockItem = require('../models/stockroom').StockItem;
+    const Requisition = require('../models/enterprise').Requisition;
+    const AL = require('../models/stockroom').AssetLifecycle;
     const steps = [];
     let stockItem = req.body.stockItemId ? await StockItem.findById(req.body.stockItemId) : null;
     if (stockItem && stockItem.quantity > 0) {
@@ -809,25 +976,17 @@ router.post('/hardware-request-chain', async (req, res) => {
     res.json({ completed: false, pendingProcurement: true, steps });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
-router.post('/csat-negative-recovery-sweep', async (req, res) => {
-  try {
-    const SurveyResponse = require('../models/SurveyResponse');
-    const Task = require('../models/Task');
-    const since = new Date(Date.now() - 7 * 86400000);
-    const negatives = await SurveyResponse.find({ ...T(req), score: { $lte: 2 }, createdAt: { $gte: since } }).limit(50);
-    let created = 0;
-    for (const sr of negatives) {
-      const existing = await Task.findOne({ title: { $regex: `Recovery for survey ${sr._id}` } });
-      if (!existing) { await Task.create({ title: `Recovery for survey ${sr._id}`, description: `Negative feedback score ${sr.score} — follow up`, status: 'open', tenantId: T(req).tenantId }); created++; }
-    }
-    res.json({ negativesFound: negatives.length, recoveryTasksCreated: created });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+// Retired: this path was not permission-scoped and created incomplete generic
+// Task records. Negative-feedback recovery will be reinstated through the
+// shared task/ownership workflow (ITSM-11/17).
+router.post('/csat-negative-recovery-sweep', moduleRequired('helpdesk'), (_req, res) => {
+  res.status(410).json({ error: 'CSAT recovery sweep is retired pending the shared task workflow' });
 });
 
 router.post('/problems/:id/generate-change', async (req, res) => {
   try {
-    const Problem = require('../models/Problem');
-    const Change = require('../models/Change').Change || require('../models/Change');
+    const Problem = require('../models/helpdesk/incidents/Problem');
+    const Change = require('../models/helpdesk/incidents/Change').Change || require('../models/helpdesk/incidents/Change');
     const prb = await Problem.findOne({ _id: req.params.id, ...T(req) });
     if (!prb) return res.status(404).json({});
     const chg = await Change.create({ title: `[Fix] ${prb.title}`, description: `Permanent fix for problem. Root cause: ${prb.rootCause || 'pending'}. Workaround: ${prb.workaround || 'n/a'}`, type: 'normal', riskLevel: 'medium', status: 'pending_approval', implementationPlan: req.body.implementationPlan || 'Deploy permanent fix per problem record', rollbackPlan: 'Revert deployment', requestedBy: req.user.id, tenantId: T(req).tenantId });
@@ -838,7 +997,7 @@ router.post('/problems/:id/generate-change', async (req, res) => {
 // Outbound social/WA reply on an inbound message
 router.post('/inbound-messages/:id/reply', async (req, res) => {
   try {
-    const InboundMessage = require('../models/Platform5').InboundMessage;
+    const InboundMessage = require('../models/platformServices').InboundMessage;
     const msg = await InboundMessage.findOne({ _id: req.params.id });
     if (!msg) return res.status(404).json({ error: 'Not found' });
     if (!msg.from) return res.status(422).json({ error: 'No sender address' });
@@ -853,7 +1012,7 @@ router.post('/inbound-messages/:id/reply', async (req, res) => {
 // Vendor negotiation pack markdown
 router.get('/licenses/vendor-pack.md', async function(req, res) {
   try {
-    var LicenseM = require('../models/License').License;
+    var LicenseM = require('../models/license').License;
     var licenses = await LicenseM.find({ tenantId: req.user.tenantId });
     var byVendor = {};
     for (var li of licenses) {

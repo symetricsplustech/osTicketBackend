@@ -1,13 +1,13 @@
 const express = require('express');
 const authRoutes = require('./auth.routes');
 const userRoutes = require('./user.routes');
-const ticketRoutes = require('./ticket.routes');
-const kbRoutes = require('./kb.routes');
-const agentRoutes = require('./agent.routes');
+const ticketRoutes = require('./helpdesk/tickets/customer.routes');
+const kbRoutes = require('./helpdesk/knowledge');
+const agentRoutes = require('./helpdesk/tickets/agent.routes');
 const adminRoutes = require('./admin.routes');
 const superadminRoutes = require('./superadmin.routes');
 const enterpriseRoutes = require('./enterprise.routes');
-const publicRoutes = require('./public.routes');
+const publicRoutes = require('./helpdesk/public');
 const crmRoutes = require('./crm.routes');
 const itomRoutes = require('./itom.routes');
 const projectsRoutes = require('./projects.routes');
@@ -28,7 +28,7 @@ const crudRoutes = require('./crud.routes');
 const rbacRoutes = require('./rbac.routes');
 const i18nRoutes = require('./i18n.routes');
 const gapsRoutes = require('./backendGaps.routes');
-const { MaintenanceFlag } = require('../models/Platform6');
+const { MaintenanceFlag } = require('../models/platformData');
 
 // Maintenance-mode gate: 503 for non-admins when tenant flag enabled
 async function maintenanceGate(req, res, next) {

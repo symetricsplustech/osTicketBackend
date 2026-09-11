@@ -1,11 +1,11 @@
-const Ticket = require('../models/Ticket');
+const Ticket = require('../models/helpdesk/tickets/Ticket');
 const User = require('../models/User');
 const Organization = require('../models/Organization');
 const Agent = require('../models/Agent');
-const Faq = require('../models/Faq');
+const Faq = require('../models/helpdesk/knowledge/Faq');
 const Asset = require('../models/Asset');
 const Invoice = require('../models/Invoice');
-const CannedResponse = require('../models/CannedResponse');
+const CannedResponse = require('../models/helpdesk/knowledge/CannedResponse');
 
 const ESCAPE = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 

@@ -1,10 +1,12 @@
 const express = require('express');
 const { protectTenantPrincipal } = require('../middleware/auth');
-const { hasPermission: authzHasPermission } = require('../services/authorization.service');
+const { authorize } = require('../services/authorization.service');
+const { moduleRequired } = require('../middleware/module');
 const { getOrgOwner, hasPermission: hasUserPerm, USER_PERMISSIONS } = require('../utils/userPermissions');
 const ApiError = require('../utils/ApiError');
 
 const router = express.Router();
+router.use(protectTenantPrincipal, moduleRequired('helpdesk'));
 
 const MAX_BULK = 100;
 
@@ -13,13 +15,17 @@ const requireCompany = (req) => {
   return req.companyId;
 };
 
-const agentCan = (req, perm) => req.agent && authzHasPermission(req.agent, perm);
+const requireAgentAction = async (req, permission) => {
+  if (!req.agent) throw new ApiError(403, 'Permission denied');
+  const result = await authorize({ principal: req.agent, permission, tenant: req.companyId, resource: { type: 'ticket_bulk' }, req });
+  if (result.decision !== 'ALLOW') throw new ApiError(403, 'Permission denied');
+};
 
 // Bulk status change with the same transitions, SLA handling, mails, events
 // and audit as the single-ticket endpoint (ticket.service.applyStatusChange).
 // Agents act company-wide; customers only on their own tickets and only
 // close (their open tickets) / reopen (their resolved+closed tickets).
-router.post('/status', protectTenantPrincipal, async (req, res) => {
+router.post('/status', async (req, res) => {
   try {
     const { ticketIds, status, reason, resolution } = req.body;
     if (!Array.isArray(ticketIds) || !ticketIds.length || !status) {
@@ -33,10 +39,14 @@ router.post('/status', protectTenantPrincipal, async (req, res) => {
     if (!isAgent && !hasUserPerm(req.user, USER_PERMISSIONS.TICKET_REPLY)) {
       return res.status(403).json({ error: 'You do not have permission to change tickets' });
     }
+    if (isAgent) {
+      const target = String(status).toLowerCase();
+      await requireAgentAction(req, ['resolved', 'closed'].includes(target) ? 'tickets.close' : 'tickets.edit');
+    }
 
-    const Ticket = require('../models/Ticket');
+    const Ticket = require('../models/helpdesk/tickets/Ticket');
     const ticketService = require('../services/ticket.service');
-    const { canAccessTicket } = require('../controllers/agent.controller');
+    const { canAccessTicket } = require('../controllers/helpdesk');
     const tickets = await Ticket.find({ _id: { $in: ticketIds }, company: companyId })
       .populate('user', 'name email');
     const found = new Set(tickets.map((t) => String(t._id)));
@@ -79,8 +89,8 @@ router.post('/status', protectTenantPrincipal, async (req, res) => {
           ticket,
           status,
           isAgent
-            ? { actorType: 'agent', actorId: req.agent._id, actorName: req.agent.name, reason: reason || 'bulk update', resolution: resolution || null }
-            : { actorType: 'user', actorId: req.user._id, actorName: req.user.name, reason: reason || 'bulk update', resolution: resolution || null }
+            ? { actorType: 'agent', actorId: req.agent._id, actorName: req.agent.name, reason: reason || 'bulk update', resolution: resolution || null, req }
+            : { actorType: 'user', actorId: req.user._id, actorName: req.user.name, reason: reason || 'bulk update', resolution: resolution || null, req }
         );
         updated.push(ticket.number);
       } catch (err) {
@@ -91,7 +101,7 @@ router.post('/status', protectTenantPrincipal, async (req, res) => {
   } catch (err) { res.status(err.statusCode || 500).json({ error: err.message }); }
 });
 
-router.post('/assign', protectTenantPrincipal, async (req, res) => {
+router.post('/assign', async (req, res) => {
   try {
     const { ticketIds, assignedTo } = req.body;
     if (!ticketIds?.length || !assignedTo) {
@@ -101,15 +111,13 @@ router.post('/assign', protectTenantPrincipal, async (req, res) => {
       return res.status(400).json({ error: `At most ${MAX_BULK} tickets per bulk request` });
     }
     const companyId = requireCompany(req);
-    if (!agentCan(req, 'tickets.assign')) {
-      return res.status(403).json({ error: 'Permission denied' });
-    }
-    const Ticket = require('../models/Ticket');
+    await requireAgentAction(req, 'tickets.assign');
+    const Ticket = require('../models/helpdesk/tickets/Ticket');
     const Agent = require('../models/Agent');
     const { notifyAgent } = require('../services/notification.service');
     const { emit } = require('../services/events');
     const ticketService = require('../services/ticket.service');
-    const { canAccessTicket } = require('../controllers/agent.controller');
+    const { canAccessTicket } = require('../controllers/helpdesk');
     const assignee = await Agent.findOne({ _id: assignedTo, company: companyId, isActive: true });
     if (!assignee) return res.status(404).json({ error: 'Agent not found in this tenant' });
     const tickets = await Ticket.find({ _id: { $in: ticketIds }, company: companyId });
@@ -130,6 +138,7 @@ router.post('/assign', protectTenantPrincipal, async (req, res) => {
         ticket.isOverdue = false;
         await ticket.save();
         await ticketService.addSystemEvent({ ticket, message: `Ticket bulk-assigned to ${assignee.name} by ${req.agent.name}` });
+        await require('../services/audit.service').auditRequired({ company: ticket.company, actorType: 'agent', actor: req.agent._id, actorName: req.agent.name, action: 'ticket.assigned', entityType: 'ticket', entityId: ticket._id, after: { agentId: assignee._id, bulk: true }, req });
         emit('ticket.assigned', { company: ticket.company, ticketId: ticket._id, ticketNumber: ticket.number, agentId: assignee._id, teamId: null, actor: req.agent._id });
         await notifyAgent({ agentId: assignee._id, company: ticket.company, type: 'assignment', message: `Ticket ${ticket.number} assigned to you`, link: `/tickets/${ticket.number}`, ticket: ticket._id }).catch(() => {});
         updated.push(ticket.number);
@@ -141,7 +150,7 @@ router.post('/assign', protectTenantPrincipal, async (req, res) => {
   } catch (err) { res.status(err.statusCode || 500).json({ error: err.message }); }
 });
 
-router.post('/priority', protectTenantPrincipal, async (req, res) => {
+router.post('/priority', async (req, res) => {
   try {
     const { ticketIds, priority } = req.body;
     if (!ticketIds?.length || !priority) {
@@ -151,15 +160,14 @@ router.post('/priority', protectTenantPrincipal, async (req, res) => {
       return res.status(400).json({ error: `At most ${MAX_BULK} tickets per bulk request` });
     }
     const companyId = requireCompany(req);
-    if (!agentCan(req, 'tickets.edit')) {
-      return res.status(403).json({ error: 'Permission denied' });
-    }
+    await requireAgentAction(req, 'tickets.edit');
     const { isValidPriority } = require('../services/priority.service');
     if (!(await isValidPriority(priority, companyId))) {
       return res.status(422).json({ error: 'Invalid ticket priority' });
     }
-    const Ticket = require('../models/Ticket');
+    const Ticket = require('../models/helpdesk/tickets/Ticket');
     const ticketService = require('../services/ticket.service');
+    const { canAccessTicket } = require('../controllers/helpdesk');
     const tickets = await Ticket.find({ _id: { $in: ticketIds }, company: companyId });
     const found = new Set(tickets.map((t) => String(t._id)));
     const skipped = ticketIds
@@ -168,9 +176,15 @@ router.post('/priority', protectTenantPrincipal, async (req, res) => {
     const updated = [];
     for (const ticket of tickets) {
       try {
+        if (!(await canAccessTicket(req.agent, ticket))) {
+          skipped.push({ id: ticket._id, number: ticket.number, reason: 'no access to this ticket' });
+          continue;
+        }
+        const before = { priority: ticket.priority };
         ticket.priority = priority;
         await ticket.save();
         await ticketService.addSystemEvent({ ticket, message: `Priority bulk-changed to ${priority} by ${req.agent.name}` });
+        await require('../services/audit.service').auditRequired({ company: ticket.company, actorType: 'agent', actor: req.agent._id, actorName: req.agent.name, action: 'ticket.priority_changed', entityType: 'ticket', entityId: ticket._id, before, after: { priority, bulk: true }, req });
         updated.push(ticket.number);
       } catch (err) {
         skipped.push({ id: ticket._id, number: ticket.number, reason: err.message });
@@ -180,7 +194,7 @@ router.post('/priority', protectTenantPrincipal, async (req, res) => {
   } catch (err) { res.status(err.statusCode || 500).json({ error: err.message }); }
 });
 
-router.post('/tag', protectTenantPrincipal, async (req, res) => {
+router.post('/tag', async (req, res) => {
   try {
     const { ticketIds, tags } = req.body;
     if (!ticketIds?.length || !tags?.length) {
@@ -189,22 +203,31 @@ router.post('/tag', protectTenantPrincipal, async (req, res) => {
     if (ticketIds.length > MAX_BULK) {
       return res.status(400).json({ error: `At most ${MAX_BULK} tickets per bulk request` });
     }
-    requireCompany(req);
-    if (!agentCan(req, 'tickets.edit')) {
-      return res.status(403).json({ error: 'Permission denied' });
+    const companyId = requireCompany(req);
+    await requireAgentAction(req, 'tickets.edit');
+    const Ticket = require('../models/helpdesk/tickets/Ticket');
+    const { canAccessTicket } = require('../controllers/helpdesk');
+    const tickets = await Ticket.find({ _id: { $in: ticketIds }, company: companyId });
+    const updated = [];
+    const skipped = [];
+    for (const ticket of tickets) {
+      if (!(await canAccessTicket(req.agent, ticket))) {
+        skipped.push({ id: ticket._id, number: ticket.number, reason: 'no access to this ticket' });
+        continue;
+      }
+      const before = { tags: [...(ticket.tags || [])] };
+      ticket.tags = [...new Set([...(ticket.tags || []), ...tags.map(String)])];
+      await ticket.save();
+      await require('../services/audit.service').auditRequired({ company: ticket.company, actorType: 'agent', actor: req.agent._id, actorName: req.agent.name, action: 'ticket.tags_changed', entityType: 'ticket', entityId: ticket._id, before, after: { tags: ticket.tags, bulk: true }, req });
+      updated.push(ticket.number);
     }
-    const Ticket = require('../models/Ticket');
-    const result = await Ticket.updateMany(
-      { _id: { $in: ticketIds }, company: req.companyId },
-      { $addToSet: { tags: { $each: tags } } }
-    );
-    res.json({ success: true, modified: result.modifiedCount });
+    res.json({ success: true, modified: updated.length, updated, skipped });
   } catch (err) { res.status(err.statusCode || 500).json({ error: err.message }); }
 });
 
 // Bulk soft-delete (mirrors the single delete: status tombstone + audit
 // trail, never a hard remove).
-router.post('/delete', protectTenantPrincipal, async (req, res) => {
+router.post('/delete', async (req, res) => {
   try {
     const { ticketIds } = req.body;
     if (!ticketIds?.length) {
@@ -215,14 +238,13 @@ router.post('/delete', protectTenantPrincipal, async (req, res) => {
     }
     const companyId = requireCompany(req);
     const isAgent = !!req.agent;
-    if (isAgent && !agentCan(req, 'tickets.delete')) {
-      return res.status(403).json({ error: 'Permission denied' });
-    }
+    if (isAgent) await requireAgentAction(req, 'tickets.delete');
     if (!isAgent && !hasUserPerm(req.user, USER_PERMISSIONS.TICKET_DELETE)) {
       return res.status(403).json({ error: 'Permission denied' });
     }
-    const Ticket = require('../models/Ticket');
+    const Ticket = require('../models/helpdesk/tickets/Ticket');
     const ticketService = require('../services/ticket.service');
+    const { canAccessTicket } = require('../controllers/helpdesk');
     const tickets = await Ticket.find({ _id: { $in: ticketIds }, company: companyId });
     const found = new Set(tickets.map((t) => String(t._id)));
     const skipped = ticketIds
@@ -233,18 +255,23 @@ router.post('/delete', protectTenantPrincipal, async (req, res) => {
     for (const ticket of tickets) {
       const tag = { id: ticket._id, number: ticket.number };
       try {
-        if (!isAgent) {
+        if (isAgent && !(await canAccessTicket(req.agent, ticket))) {
+          skipped.push({ ...tag, reason: 'no access to this ticket' });
+          continue;
+        } else if (!isAgent) {
           const ticketOwner = String(ticket.user?._id || ticket.user || '');
           if (!ownerId || ticketOwner !== String(ownerId)) {
             skipped.push({ ...tag, reason: 'not your ticket' });
             continue;
           }
         }
+        const before = { status: ticket.status };
         ticket.status = Ticket.STATUSES.DELETED;
         ticket.lockedBy = null;
         ticket.lockExpiresAt = null;
         await ticket.save();
         await ticketService.addSystemEvent({ ticket, message: `Ticket bulk-deleted by ${isAgent ? req.agent.name : req.user.name}` });
+        await require('../services/audit.service').auditRequired({ company: ticket.company, actorType: isAgent ? 'agent' : 'user', actor: isAgent ? req.agent._id : req.user._id, actorName: isAgent ? req.agent.name : req.user.name, action: 'ticket.deleted', entityType: 'ticket', entityId: ticket._id, before, after: { status: ticket.status, bulk: true }, req });
         updated.push(ticket.number);
       } catch (err) {
         skipped.push({ ...tag, reason: err.message });

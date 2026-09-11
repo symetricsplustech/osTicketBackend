@@ -1,6 +1,6 @@
 const Conversation = require('../models/Conversation');
 const ChatMessage = require('../models/ChatMessage');
-const Ticket = require('../models/Ticket');
+const Ticket = require('../models/helpdesk/tickets/Ticket');
 const { getIO } = require('../config/socket');
 const { emit } = require('./events');
 

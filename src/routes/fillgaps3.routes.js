@@ -1,8 +1,8 @@
 const express = require('express');
 const { protectTenantPrincipal } = require('../middleware/auth');
-const P7 = require('../models/Platform7');
+const P7 = require('../models/platformIdentity');
 const mongoose = require('mongoose');
-const P5 = require('../models/Platform5');
+const P5 = require('../models/platformServices');
 const config = require('../config/config');
 
 const router = express.Router();
@@ -125,7 +125,7 @@ async function enforceLimit(req, metric) {
   let used;
   if (metric === 'agents') used = await require('../models/Agent').countDocuments({ company: tenantId });
   else if (metric === 'contacts') used = await require('../models/User').countDocuments({ company: tenantId, role: 'client' }).catch(() => 0);
-  else { const ms = new Date(); ms.setUTCDate(1); ms.setUTCHours(0, 0, 0, 0); used = await require('../models/Ticket').countDocuments({ company: tenantId, createdAt: { $gte: ms } }); }
+  else { const ms = new Date(); ms.setUTCDate(1); ms.setUTCHours(0, 0, 0, 0); used = await require('../models/helpdesk/tickets/Ticket').countDocuments({ company: tenantId, createdAt: { $gte: ms } }); }
   if (used >= cap) { const err = new Error(`Plan limit reached for ${metric} (${used}/${cap})`); err.status = 402; throw err; }
   return { used, cap };
 }
@@ -232,14 +232,14 @@ router.post('/retention-policies/:id/execute', async (req, res) => {
     const pol = await P5.RetentionPolicy.findOne({ _id: req.params.id, ...T(req) });
     if (!pol) return res.status(404).json({});
     if (!req.body.confirmToken || req.body.confirmToken !== `CONFIRM-${pol._id}`) return res.status(422).json({ error: 'Provide confirmToken=CONFIRM-<policyId> after review' });
-    const Ticket = require('../models/Ticket');
-    const LegalInvestigationM = require('../models/Platform6').LegalInvestigation;
+    const Ticket = require('../models/helpdesk/tickets/Ticket');
+    const LegalInvestigationM = require('../models/platformData').LegalInvestigation;
     const holdsActive = await LegalInvestigationM ? false : false; // legal hold lives on matters; check custodian-level below
     const cutoff = new Date(Date.now() - (pol.retainDays || 365) * 86400000);
     const candidates = await Ticket.find({ ...T(req), createdAt: { $lt: cutoff } }).limit(pol.action === 'delete' ? 500 : 0).select('_id number requester').lean();
     let deleted = 0, blockedByHold = 0;
     for (const t of candidates) {
-      const holdHit = await require('../models/Enterprise').LegalMatter.countDocuments({ ...T(req), 'holds.0': { $exists: true }, status: { $nin: ['closed'] } }).catch(() => 0);
+      const holdHit = await require('../models/enterprise').LegalMatter.countDocuments({ ...T(req), 'holds.0': { $exists: true }, status: { $nin: ['closed'] } }).catch(() => 0);
       if (holdHit && pol.legalHoldOverride === false) { blockedByHold++; continue; }
       await Ticket.deleteOne({ _id: t._id }); deleted++;
     }
@@ -273,7 +273,7 @@ router.get('/metrics.prometheus', async (_req, res) => {
 router.post('/channels/voice-call', async (req, res) => {
   try {
     try { const lim = await enforceLimit(req, 'ticketsPerMonth'); if (lim && lim.cap != null && lim.used >= lim.cap) return res.status(402).json({ error: 'Monthly ticket limit reached' }); } catch(e2) {}
-    const CallLog = require('../models/CallLog'); const Ticket = require('../models/Ticket');
+    const CallLog = require('../models/CallLog'); const Ticket = require('../models/helpdesk/tickets/Ticket');
     const log = typeof CallLog === 'function' ? await CallLog.create({ callerNumber: req.body.callerNumber, disposition: 'ticket_created', agent: req.user.id }) : null;
     const ticket = await Ticket.create({ title: `[Phone] ${req.body.summary || 'Inbound call'}`, body: req.body.notes || '', source: 'phone', requesterNumber: req.body.callerNumber, status: 'open', tenantId: T(req).tenantId });
     res.status(201).json({ ticket, callLog: log });
@@ -299,7 +299,7 @@ router.post('/priority-matrix/compute', async (req, res) => {
 crud('/work-schedules', P7.WorkSchedule);
 router.post('/reassignment/sweep', async (req, res) => {
   try {
-    const Ticket = require('../models/Ticket');
+    const Ticket = require('../models/helpdesk/tickets/Ticket');
     const cutoff = new Date(Date.now() - (req.body.inactivityHours || 24) * 3600000);
     const stale = await Ticket.find({ ...T(req), status: { $in: ['open'] }, $or: [{ assignedTo: null }, { assignedTo: { $exists: false } }], createdAt: { $lt: cutoff } }).limit(50);
     const reassigned = [];
@@ -317,7 +317,7 @@ router.post('/reassignment/sweep', async (req, res) => {
 // ---- §3.63/3.64 knowledge scheduling + gap analytics ----
 router.post('/kb/publish-sweep', async (req, res) => {
   try {
-    const Faq = require('../models/Faq');
+    const Faq = require('../models/helpdesk/knowledge/Faq');
     const F = typeof Faq === 'function' ? Faq : Faq.Faq;
     const now = new Date();
     const toPublish = await F.find({ ...T(req), publishAt: { $lte: now }, published: false }).limit(50);
@@ -349,7 +349,7 @@ crud('/territories-assign', (() => { const m = require('mongoose'); return m.mod
 router.get('/accounts/with-team-visibility', async (req, res) => {
   try {
     const Company = require('../models/Company');
-    const AccountTeamMember = require('../models/Platform5').AccountTeamMember;
+    const AccountTeamMember = require('../models/platformServices').AccountTeamMember;
     const TerritoryAssign = require('mongoose').model('TerritoryAssign');
     const teams = await AccountTeamMember.find({ user: req.user.id, ...T(req) }).select('company');
     const terrs = await TerritoryAssign.find({ owner: req.user.id }).select('company');
@@ -363,8 +363,8 @@ router.post('/campaigns-dnc-safe-add', async (req, res) => {
   try {
     const prefs = await P7.ContactPrefs.findOne({ contact: req.body.contactId });
     if (prefs?.doNotCall && req.body.channel === 'call') return res.status(422).json({ error: 'Contact is Do-Not-Call' });
-    const CampaignM = require('../models/Platform6') && null; // campaigns live in Platform5? use Platform5 Campaign
-    const Campaign = require('../models/Platform5').Campaign;
+    const CampaignM = require('../models/platformData') && null; // campaigns live in Platform5? use Platform5 Campaign
+    const Campaign = require('../models/platformServices').Campaign;
     const c = await Campaign.findById(req.body.campaignId);
     if (!c) return res.status(404).json({});
     c.members.push({ contact: req.body.contactId }); await c.save();
@@ -405,7 +405,7 @@ router.post('/quotes/:id/export.pdf', async (req, res) => {
     const Quote = require('../models/Quote');
     const q = await Quote.findOne({ _id: req.params.id, ...T(req) }).lean();
     if (!q) return res.status(404).json({});
-    const brand = await P6_Brand(); function P6_Brand() { return require('../models/Platform6').BrandSetting.findOne({ tenantId: T(req).tenantId }).lean(); }
+    const brand = await P6_Brand(); function P6_Brand() { return require('../models/platformData').BrandSetting.findOne({ tenantId: T(req).tenantId }).lean(); }
     const lines = [`${brand?.loginHeadline || 'Proposal'} — ${q.number || ''}`, `Account: ${q.accountName || ''}`, '', ...(q.items || []).map(i => `${i.description}  x${i.quantity}  @${i.unitPrice}`), '', `Total: ${q.total ?? ''}`];
     const content = lines.map((l, i) => `BT /F1 10 Tf 60 ${700 - i * 16} Td (${String(l).replace(/([()\\])/g, '\\$1')}) Tj ET`).join('\n');
     const objs = ['<< /Type /Catalog /Pages 2 0 R >>', '<< /Type /Pages /Kids [3 0 R] /Count 1 >>', `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>`, `<< /Length ${Buffer.byteLength(content)} >>\nstream\n${content}\nendstream`, '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>'];
@@ -421,7 +421,7 @@ router.post('/quotes/:id/export.pdf', async (req, res) => {
 // ---- §4.18 redlines / §4.19 order decomposition ----
 router.put('/legal-contracts/:id/redline', async (req, res) => {
   try {
-    const CL = require('../models/Enterprise').ContractLifecycle;
+    const CL = require('../models/enterprise').ContractLifecycle;
     const cl = await CL.findOne({ _id: req.params.id, ...T(req) });
     cl.redlines = cl.redlines || [];
     cl.redlines.push({ clauseRef: req.body.clauseRef, before: req.body.before, after: req.body.after, status: req.body.status || 'proposed' });
@@ -430,22 +430,22 @@ router.put('/legal-contracts/:id/redline', async (req, res) => {
 });
 router.post('/orders/:id/decompose', async (req, res) => {
   try {
-    const Order = require('../models/CustomerService').Order;
+    const Order = require('../models/customerService').Order;
     const o = await Order.findOne({ _id: req.params.id, ...T(req) });
     if (!o) return status404(res);
-    const OF = require('../models/Platform5') && require('../models/Platform7').OrderLineFulfilment;
+    const OF = require('../models/platformServices') && require('../models/platformIdentity').OrderLineFulfilment;
     const lines = (o.items || []).map(i => ({ sku: i.name || String(i.product), qtyTotal: i.quantity, qtyFulfilled: 0, warehouse: req.body.warehouse || 'main', backordered: !!i.backordered }));
     const doc = await OF.create({ order: o._id, lines, exception: lines.some(l => l.backordered) ? 'backorder' : undefined, tenantId: T(req).tenantId });
     res.status(201).json(doc);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 function status404(res) { return res.status(404).json({}); }
-router.get('/orders/fallout-queue', async (req, res) => { try { const OF = require('../models/Platform7').OrderLineFulfilment; res.json(await OF.find({ ...T(req), exception: { $ne: null } }).populate('order')); } catch (e) { res.status(500).json({ error: e.message }); } });
+router.get('/orders/fallout-queue', async (req, res) => { try { const OF = require('../models/platformIdentity').OrderLineFulfilment; res.json(await OF.find({ ...T(req), exception: { $ne: null } }).populate('order')); } catch (e) { res.status(500).json({ error: e.message }); } });
 
 // ---- CMDB stale review + discovery ----
 router.post('/cmdb/stale-review-sweep', async (req, res) => {
   try {
-    const CI = require('../models/Enterprise').CI;
+    const CI = require('../models/enterprise').CI;
     const Task = require('../models/Task');
     const cutoff = new Date(Date.now() - (req.body.days || 180) * 86400000);
     const stales = await CI.find({ ...T(req), updatedAt: { $lt: cutoff }, status: { $nin: ['retired'] } }).limit(100);
@@ -494,7 +494,7 @@ router.get('/programmes/:id/rollup', async (req, res) => {
 });
 crud('/app-portfolio', P7.AppPortfolioItem);
 router.post('/benefits/:id/realize', async (req, res) => {
-  try { const B = require('../models/Platform6').Benefit; res.json(await B.findByIdAndUpdate(req.params.id, { realizedValue: req.body.realizedValue, measuredAt: new Date() }, { new: true })); } catch (e) { res.status(400).json({ error: e.message }); }
+  try { const B = require('../models/platformData').Benefit; res.json(await B.findByIdAndUpdate(req.params.id, { realizedValue: req.body.realizedValue, measuredAt: new Date() }, { new: true })); } catch (e) { res.status(400).json({ error: e.message }); }
 });
 
 // ---- HR: promotion + manager visibility of journeys ----
@@ -563,7 +563,7 @@ router.get('/dispatcher/board', async (req, res) => {
   try {
     const WO = require('../models/WorkOrder').WorkOrder || require('../models/WorkOrder');
     const wos = await WO.find(T(req)).select('number status scheduledDate assignedTo location priority').limit(200);
-    const TechAvail = require('../models/Platform2').TechnicianAvailability;
+    const TechAvail = require('../models/platformGovernance').TechnicianAvailability;
     const techs = await TechAvail.find(T(req)).populate('technician', 'name');
     res.json({ columns: ['ready_for_dispatch', 'scheduled', 'assigned', 'en_route', 'on_site', 'in_progress', 'completed'], workOrders: wos, technicians: techs.map(t => ({ id: t.technician?._id, name: t.technician?.name, slots: t.slots?.length || 0 })) });
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -572,7 +572,7 @@ router.get('/dispatcher/board', async (req, res) => {
 // ---- SecOps: vuln dedupe/match, patch campaigns, cloud/OT findings ----
 router.post('/secops/vulns/import-dedupe', async (req, res) => {
   try {
-    const V = require('../models/Enterprise').Vulnerability;
+    const V = require('../models/enterprise').Vulnerability;
     const rows = req.body.vulns || []; let imported = 0, dupesSkipped = 0, matchedAssets = 0;
     for (const r of rows.slice(0, 300)) {
       const hashKey = `${r.cveId}|${r.assetId || ''}`;
@@ -599,7 +599,7 @@ router.post('/patch-campaigns/:id/schedule-remediations', async (req, res) => {
 });
 router.post('/secops/findings/cloud-ot', async (req, res) => {
   try {
-    const V = require('../models/Enterprise').Vulnerability;
+    const V = require('../models/enterprise').Vulnerability;
     const v = await V.create({ title: req.body.title, source: 'api', severity: req.body.severity || 'medium', ci: req.body.ciId, metadataSourceKind: req.body.kind, tenantId: T(req).tenantId });
     res.status(201).json(v);
   } catch (e) { res.status(400).json({ error: e.message }); }
@@ -633,7 +633,7 @@ router.post('/workplace/devices/ingest-by-key', async (req, res) => {
     const dev = await P7.SensorDevice.findOne({ apiKey: req.headers['x-device-key'] });
     if (!dev) return res.status(401).json({ error: 'unknown device' });
     dev.lastSeenAt = new Date(); await dev.save();
-    const O = require('../models/Platform6').OccupancyReading;
+    const O = require('../models/platformData').OccupancyReading;
     res.status(201).json(await O.create({ space: dev.space, count: req.body.count, capacity: req.body.capacity, ...T(req) }));
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -826,7 +826,7 @@ router.get('/my-approvals', async function(req, res) {
   try {
     var pending = [];
     try {
-      var ChangeM = require('../models/Change'); var Chg = typeof ChangeM === 'function' ? ChangeM : ChangeM.Change;
+      var ChangeM = require('../models/helpdesk/incidents/Change'); var Chg = typeof ChangeM === 'function' ? ChangeM : ChangeM.Change;
       var changes = await Chg.countDocuments({ tenantId: req.user.tenantId || req.user.companyId, status: 'pending_approval' });
       if (changes > 0) pending.push({ source: 'change', count: changes, label: 'Changes awaiting CAB approval' });
     } catch(_) {}
@@ -836,7 +836,7 @@ router.get('/my-approvals', async function(req, res) {
       if (quotes > 0) pending.push({ source: 'quote', count: quotes, label: 'Quotes awaiting approval' });
     } catch(_) {}
     try {
-      var FC = require('../models/Platform5').FinanceCase;
+      var FC = require('../models/platformServices').FinanceCase;
       var fcs = await FC.countDocuments({ tenantId: req.user.tenantId || req.user.companyId, status: 'pending_approval' });
       if (fcs > 0) pending.push({ source: 'finance_case', count: fcs, label: 'Finance cases awaiting approval' });
     } catch(_) {}

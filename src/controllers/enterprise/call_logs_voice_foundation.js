@@ -1,9 +1,9 @@
 const Skill = require('../../models/Skill');
 const Workflow = require('../../models/Workflow');
 const Approval = require('../../models/Approval');
-const Incident = require('../../models/Incident');
-const Problem = require('../../models/Problem');
-const Change = require('../../models/Change');
+const Incident = require('../../models/helpdesk/incidents/Incident');
+const Problem = require('../../models/helpdesk/incidents/Problem');
+const Change = require('../../models/helpdesk/incidents/Change');
 const Asset = require('../../models/Asset');
 const Dependency = require('../../models/Dependency');
 const ServiceCatalogItem = require('../../models/ServiceCatalogItem');
@@ -15,14 +15,14 @@ const StatusPage = require('../../models/StatusPage');
 const StatusIncident = require('../../models/StatusIncident');
 const Webhook = require('../../models/Webhook');
 const ApiKey = require('../../models/ApiKey');
-const TicketLink = require('../../models/TicketLink');
-const Ticket = require('../../models/Ticket');
+const TicketLink = require('../../models/helpdesk/tickets/TicketLink');
+const Ticket = require('../../models/helpdesk/tickets/Ticket');
 const Agent = require('../../models/Agent');
 const User = require('../../models/User');
 const Organization = require('../../models/Organization');
 const Department = require('../../models/Department');
 const Team = require('../../models/Team');
-const CannedResponse = require('../../models/CannedResponse');
+const CannedResponse = require('../../models/helpdesk/knowledge/CannedResponse');
 const CallLog = require('../../models/CallLog');
 const ApiError = require('../../utils/ApiError');
 const asyncHandler = require('../../utils/asyncHandler');
@@ -279,13 +279,19 @@ exports.createCallLog = asyncHandler(async (req, res) => {
   let ticket = null;
   if (ticketNumber) {
     const t = await Ticket.findOne({ number: String(ticketNumber).toUpperCase(), ...scope(req) });
-    if (t) ticket = t;
+    if (!t) throw new ApiError(404, 'Ticket not found in this tenant');
+    ticket = t;
   }
   let user = null;
   if (userEmail) {
     const u = await User.findOne({ email: String(userEmail).toLowerCase(), ...scope(req) });
-    if (u) user = u;
+    if (!u) throw new ApiError(404, 'User not found in this tenant');
+    user = u;
   }
+  if (agent && !(await Agent.exists({ _id: agent, ...scope(req), isActive: true }))) throw new ApiError(404, 'Agent not found in this tenant');
+  if (direction !== undefined && !['inbound', 'outbound'].includes(direction)) throw new ApiError(422, 'Invalid call direction');
+  if (status !== undefined && !['ringing', 'in_progress', 'completed', 'missed', 'failed', 'cancelled'].includes(status)) throw new ApiError(422, 'Invalid call status');
+  if (durationSec !== undefined && (!Number.isFinite(Number(durationSec)) || Number(durationSec) < 0)) throw new ApiError(422, 'durationSec must be a non-negative number');
   const call = await CallLog.create({
     company: req.companyId,
     callId: callId || '',
@@ -296,23 +302,29 @@ exports.createCallLog = asyncHandler(async (req, res) => {
     agent: agent || null,
     direction: direction || 'inbound',
     status: status || 'completed',
-    durationSec: durationSec || 0,
+    durationSec: durationSec === undefined ? 0 : Number(durationSec),
     recordingUrl: recordingUrl || '',
     transcription: transcription || '',
     callbackScheduled: callbackScheduled || null,
     notes: notes || '',
     createdBy: req.agent._id,
   });
+  await auditService.auditRequired({ company: call.company, actorType: 'agent', actor: req.agent._id, actorName: req.agent.name, action: 'call.created', entityType: 'call', entityId: call._id, after: { ticket: call.ticket, user: call.user, agent: call.agent, direction: call.direction, status: call.status, durationSec: call.durationSec }, req });
   res.status(201).json({ success: true, item: call });
 });
 exports.updateCallLog = asyncHandler(async (req, res) => {
   const call = await CallLog.findOne({ _id: req.params.id, ...scope(req) });
   if (!call) throw new ApiError(404, 'Call not found');
   const KEYS = ['status', 'durationSec', 'recordingUrl', 'transcription', 'aiSummary', 'callbackScheduled', 'notes', 'agent'];
+  const before = { status: call.status, durationSec: call.durationSec, recordingUrl: call.recordingUrl, transcription: call.transcription, aiSummary: call.aiSummary, callbackScheduled: call.callbackScheduled, notes: call.notes, agent: call.agent };
+  if (req.body.status !== undefined && !['ringing', 'in_progress', 'completed', 'missed', 'failed', 'cancelled'].includes(req.body.status)) throw new ApiError(422, 'Invalid call status');
+  if (req.body.durationSec !== undefined && (!Number.isFinite(Number(req.body.durationSec)) || Number(req.body.durationSec) < 0)) throw new ApiError(422, 'durationSec must be a non-negative number');
+  if (req.body.agent !== undefined && req.body.agent !== null && !(await Agent.exists({ _id: req.body.agent, ...scope(req), isActive: true }))) throw new ApiError(404, 'Agent not found in this tenant');
   for (const key of KEYS) {
     if (req.body[key] !== undefined) call[key] = req.body[key];
   }
   await call.save();
+  await auditService.auditRequired({ company: call.company, actorType: 'agent', actor: req.agent._id, actorName: req.agent.name, action: 'call.updated', entityType: 'call', entityId: call._id, before, after: { status: call.status, durationSec: call.durationSec, recordingUrl: call.recordingUrl, transcription: call.transcription, aiSummary: call.aiSummary, callbackScheduled: call.callbackScheduled, notes: call.notes, agent: call.agent }, req });
   res.json({ success: true, item: call });
 });
 
@@ -349,5 +361,6 @@ exports.logCallToTicket = asyncHandler(async (req, res) => {
   }
   call.ticket = ticket._id;
   await call.save();
+  await auditService.auditRequired({ company: call.company, actorType: 'agent', actor: req.agent._id, actorName: req.agent.name, action: 'call.logged_to_ticket', entityType: 'call', entityId: call._id, after: { ticket: ticket._id, publicReply: !!publicReply }, req });
   res.json({ success: true, ticketNumber: ticket.number, public: !!publicReply });
 });

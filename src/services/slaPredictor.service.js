@@ -1,4 +1,4 @@
-const Ticket = require('../models/Ticket');
+const Ticket = require('../models/helpdesk/tickets/Ticket');
 
 const clamp = (v) => Math.max(0, Math.min(1, v));
 
@@ -27,9 +27,13 @@ function etaLabel(remainingMs) {
 }
 
 async function predictTicket(ticket) {
-  if (!ticket || !ticket.slaDueAt) return null;
+  // Tickets use separate resolution/response clocks; older records use
+  // `dueDate`. `slaDueAt` was never a Ticket schema field, so relying on it
+  // made this monitor silently return an empty result set.
+  const dueAt = ticket?.resolutionDueAt || ticket?.dueDate || ticket?.slaDueAt;
+  if (!ticket || !dueAt) return null;
   const now = Date.now();
-  const slaDue = new Date(ticket.slaDueAt).getTime();
+  const slaDue = new Date(dueAt).getTime();
   const created = new Date(ticket.createdAt).getTime();
   const remainingMs = slaDue - now;
   const totalWindowMs = slaDue - created;
@@ -58,11 +62,18 @@ async function predictBreach({ company, ticketId }) {
   return predictTicket(ticket);
 }
 
-async function predictBreachMany({ company, limit = 50 }) {
+// `scope` is supplied by the caller after its record-scope policy has been
+// evaluated.  Keeping it in this service prevents dashboard-style callers
+// from accidentally widening a tenant query to every ticket.
+async function predictBreachMany({ company, limit = 50, scope = {} }) {
   const tickets = await Ticket.find({
+    ...scope,
     company,
     status: { $nin: ['resolved', 'closed', 'cancelled', 'rejected', 'duplicate', 'spam', 'archived', 'deleted'] },
-    slaDueAt: { $ne: null },
+    $or: [
+      { resolutionDueAt: { $ne: null } },
+      { dueDate: { $ne: null } },
+    ],
   })
     .sort({ slaDueAt: 1 })
     .limit(limit)

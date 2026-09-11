@@ -7,7 +7,7 @@
  *
  * Install: app.use(maskingMiddleware) after auth.
  */
-const P5 = () => require('../models/Platform5');
+const P5 = () => require('../models/platformServices');
 
 // Map model names → mongoose model (lazy to avoid circular deps)
 const registry = new Map();

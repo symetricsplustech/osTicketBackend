@@ -5,7 +5,7 @@
  * requests with HTTP 429 when a hardBlock limit is exceeded.
  * Attached via app.js → usageGuard('apiCalls') style.
  */
-const { UsageMeter, UsageLimit } = require('../models/UsageLimit');
+const { UsageMeter, UsageLimit } = require('../models/usage');
 const ApiError = require('../utils/ApiError');
 
 function currentPeriod() {

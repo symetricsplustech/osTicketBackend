@@ -1,7 +1,7 @@
 const StatusPage = require('../models/StatusPage');
 const StatusIncident = require('../models/StatusIncident');
-const Incident = require('../models/Incident');
-const Ticket = require('../models/Ticket');
+const Incident = require('../models/helpdesk/incidents/Incident');
+const Ticket = require('../models/helpdesk/tickets/Ticket');
 const User = require('../models/User');
 const Organization = require('../models/Organization');
 const { notifyUser, notifyAgent } = require('./notification.service');

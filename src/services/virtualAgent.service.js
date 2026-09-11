@@ -174,7 +174,7 @@ async function virtualAgent({ company, userText, userId, conversationId }) {
 }
 
 async function findRelevantTickets({ company, userId, userText, intent }) {
-  const Ticket = require('../models/Ticket');
+  const Ticket = require('../models/helpdesk/tickets/Ticket');
   const query = { company };
   if (userId) query.user = userId;
   const recent = await Ticket.find(query).sort('-updatedAt').limit(20).lean();
@@ -188,7 +188,7 @@ async function findRelevantTickets({ company, userId, userText, intent }) {
 }
 
 async function findKnowledge({ company, userText }) {
-  const Faq = require('../models/Faq');
+  const Faq = require('../models/helpdesk/knowledge/Faq');
   const all = await Faq.find({ company, isPublished: true }).select('subject answer content category').limit(200).lean();
   const words = tokenize(userText);
   const scored = all

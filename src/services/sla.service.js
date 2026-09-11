@@ -3,6 +3,7 @@ const Holiday = require('../models/Holiday');
 const SystemSetting = require('../models/SystemSetting');
 const { emit } = require('./events');
 const SlaEvent = require('../models/SlaEvent');
+const { auditRequired } = require('./audit.service');
 
 const SLA_TYPES = ['assignment', 'first_response', 'next_response', 'resolution', 'update', 'escalation', 'callback', 'approval', 'task', 'vendor', 'closure'];
 
@@ -208,7 +209,7 @@ const predictBreachRisk = async (ticket) => {
     : Math.max(remaining, 1);
   let risk = Math.max(0, Math.min(100, 100 - (remaining / Math.max(total, 1)) * 100));
   // workload penalty
-  const Ticket = require('../models/Ticket');
+  const Ticket = require('../models/helpdesk/tickets/Ticket');
   if (ticket.agent) {
     const workload = await Ticket.countDocuments({ agent: ticket.agent, status: { $in: ['new', 'open', 'triaged', 'assigned', 'in_progress', 'pending_customer', 'pending_vendor', 'pending_approval', 'on_hold', 'escalated', 'overdue'] } });
     if (workload > 8) risk += 10;
@@ -227,7 +228,7 @@ const predictBreachRisk = async (ticket) => {
  * Mark overdue + emit breach events (sla.breached) + optional template email.
  */
 const markOverdueTickets = async () => {
-  const Ticket = require('../models/Ticket');
+  const Ticket = require('../models/helpdesk/tickets/Ticket');
   const now = new Date();
   const candidates = await Ticket.find({
     dueDate: { $ne: null, $lte: now },
@@ -237,16 +238,43 @@ const markOverdueTickets = async () => {
   }).lean();
   if (!candidates.length) return { modified: 0 };
 
-  const ids = candidates.map((t) => t._id);
-  await Ticket.updateMany(
-    { _id: { $in: ids } },
-    { $set: { isOverdue: true, status: Ticket.STATUSES.OVERDUE } }
-  );
-
   const { sendFromTemplate } = require('./email.service');
   const { notifyAgent, notifyAdminRoom } = require('./notification.service');
 
-  for (const t of candidates) {
+  let modified = 0;
+  for (const candidate of candidates) {
+    // Claim the breach atomically. Multiple scheduler instances may see the
+    // same candidate, but only the winner emits evidence and notifications.
+    const t = await Ticket.findOneAndUpdate(
+      {
+        _id: candidate._id,
+        isOverdue: false,
+        slaPaused: false,
+        dueDate: { $lte: now },
+        status: { $nin: [Ticket.STATUSES.RESOLVED, Ticket.STATUSES.CLOSED, Ticket.STATUSES.ARCHIVED, Ticket.STATUSES.DELETED] },
+      },
+      { $set: { isOverdue: true, status: Ticket.STATUSES.OVERDUE } },
+      { new: true },
+    ).lean();
+    if (!t) continue;
+    try {
+      await auditRequired({
+        company: t.company, actorType: 'system', actor: null, actorName: 'SLA scheduler',
+        action: 'ticket.sla_breached', entityType: 'ticket', entityId: t._id,
+        before: { isOverdue: false, status: candidate.status },
+        after: { isOverdue: true, status: Ticket.STATUSES.OVERDUE, dueDate: t.dueDate },
+        reason: 'Resolution SLA due date reached',
+      });
+    } catch (error) {
+      // Do not leave the authoritative breach state set if its required audit
+      // record could not be persisted. A later scheduler run can safely retry.
+      await Ticket.updateOne(
+        { _id: t._id, isOverdue: true, status: Ticket.STATUSES.OVERDUE },
+        { $set: { isOverdue: false, status: candidate.status } },
+      ).catch(() => {});
+      throw error;
+    }
+    modified += 1;
     emit('sla.breached', { company: t.company, ticketId: t._id, ticketNumber: t.number, dueDate: t.dueDate });
     await recordSlaEvent(t, 'breached', 'resolution', { completedAt: now, actual: new Date(t.dueDate).getTime() - new Date(t.slaStartedAt || t.createdAt).getTime(), unit: 'milliseconds' });
     emit('ticket.overdue', { company: t.company, ticketId: t._id, ticketNumber: t.number });
@@ -273,14 +301,14 @@ const markOverdueTickets = async () => {
       }
     }
   }
-  return { modified: ids.length };
+  return { modified };
 };
 
 /**
  * Emit sla.at_risk warnings for tickets approaching their due date.
  */
 const checkAtRiskTickets = async () => {
-  const Ticket = require('../models/Ticket');
+  const Ticket = require('../models/helpdesk/tickets/Ticket');
   const config = require('../config/config');
   const threshold = config.sla.warningThresholdHours || 2;
   const windowStart = new Date(Date.now() + threshold * 60 * 60 * 1000);
@@ -296,7 +324,7 @@ const checkAtRiskTickets = async () => {
 };
 
 const executeEscalationRules = async () => {
-  const Ticket = require('../models/Ticket');
+  const Ticket = require('../models/helpdesk/tickets/Ticket');
   const open = await Ticket.find({ sla: { $ne: null }, slaPaused: false, status: { $nin: ['resolved', 'closed', 'archived', 'deleted'] } }).populate('sla').limit(1000);
   let executed = 0;
   for (const ticket of open) {
@@ -327,7 +355,7 @@ const executeEscalationRules = async () => {
  * clock gets its own trackable event stream.
  */
 const markResponseBreaches = async () => {
-  const Ticket = require('../models/Ticket');
+  const Ticket = require('../models/helpdesk/tickets/Ticket');
   const now = new Date();
   const open = await Ticket.find({
     responseDueAt: { $ne: null, $lte: now },
@@ -337,14 +365,39 @@ const markResponseBreaches = async () => {
   }).lean();
   if (!open.length) return { modified: 0 };
 
-  await Ticket.updateMany(
-    { _id: { $in: open.map((t) => t._id) } },
-    { $set: { responseBreached: true } }
-  );
-
   const { sendFromTemplate } = require('./email.service');
   const { notifyAgent } = require('./notification.service');
-  for (const t of open) {
+  let modified = 0;
+  for (const candidate of open) {
+    const t = await Ticket.findOneAndUpdate(
+      {
+        _id: candidate._id,
+        responseBreached: { $ne: true },
+        responseMetAt: null,
+        slaPaused: { $ne: true },
+        responseDueAt: { $lte: now },
+        status: { $nin: ['resolved', 'closed', 'archived', 'deleted'] },
+      },
+      { $set: { responseBreached: true } },
+      { new: true },
+    ).lean();
+    if (!t) continue;
+    try {
+      await auditRequired({
+        company: t.company, actorType: 'system', actor: null, actorName: 'SLA scheduler',
+        action: 'ticket.response_sla_breached', entityType: 'ticket', entityId: t._id,
+        before: { responseBreached: false },
+        after: { responseBreached: true, responseDueAt: t.responseDueAt },
+        reason: 'First-response SLA due date reached',
+      });
+    } catch (error) {
+      await Ticket.updateOne(
+        { _id: t._id, responseBreached: true, responseMetAt: null },
+        { $set: { responseBreached: false } },
+      ).catch(() => {});
+      throw error;
+    }
+    modified += 1;
     emit('sla.breached', { company: t.company, ticketId: t._id, ticketNumber: t.number, clock: 'response', dueDate: t.responseDueAt });
     await recordSlaEvent(t, 'breached', 'first_response', { completedAt: now, actual: new Date(t.responseDueAt).getTime() - new Date(t.slaStartedAt || t.createdAt).getTime(), unit: 'milliseconds' });
     if (t.agent) {
@@ -369,7 +422,7 @@ const markResponseBreaches = async () => {
       }
     }
   }
-  return { modified: open.length };
+  return { modified };
 };
 
 const scheduleOverdueCheck = () => {

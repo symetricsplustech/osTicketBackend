@@ -5,7 +5,7 @@ const config = require('../src/config/config');
 const Company = require('../src/models/Company');
 const User = require('../src/models/User');
 const Agent = require('../src/models/Agent');
-const { Product } = require('../src/models/Product');
+const { Product } = require('../src/models/product');
 const AuditEvent = require('../src/models/AuditEvent');
 const { runWithTenant } = require('../src/middleware/tenantScope');
 

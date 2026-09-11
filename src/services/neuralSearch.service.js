@@ -41,7 +41,7 @@ async function fetchModel(model, query, select, shape, limit) {
  * Returns top-ranked cross-table matches: [{ entity, label, module, id,
  * title, recordNumber, score, snippet }].
  */
-async function semanticSearch({ company, query, limit = 30, userId }) {
+async function semanticSearch({ company, query, limit = 30, userId, entities, ticketQuery }) {
   const queryTokens = tokenize(query);
   if (!queryTokens.length) return [];
 
@@ -54,11 +54,11 @@ async function semanticSearch({ company, query, limit = 30, userId }) {
   const LIMIT = 300;
 
   // Ticket
-  try {
-    const Ticket = require('../models/Ticket');
+  if (!entities || entities.includes('ticket')) try {
+    const Ticket = require('../models/helpdesk/tickets/Ticket');
     push(await fetchModel(
       Ticket,
-      { company },
+      { company, ...(ticketQuery || {}) },
       'number subject details status',
       (d) => ({
         text: pickText([d.subject, d.details, d.number]),
@@ -73,8 +73,8 @@ async function semanticSearch({ company, query, limit = 30, userId }) {
   } catch (e) { /* skip */ }
 
   // Incident
-  try {
-    const Incident = require('../models/Incident');
+  if (!entities || entities.includes('incident')) try {
+    const Incident = require('../models/helpdesk/incidents/Incident');
     push(await fetchModel(
       Incident,
       { company },
@@ -92,8 +92,8 @@ async function semanticSearch({ company, query, limit = 30, userId }) {
   } catch (e) { /* skip */ }
 
   // Faq (knowledgebase)
-  try {
-    const Faq = require('../models/Faq');
+  if (!entities || entities.includes('faq')) try {
+    const Faq = require('../models/helpdesk/knowledge/Faq');
     push(await fetchModel(
       Faq,
       { company, isPublished: true },
@@ -111,7 +111,7 @@ async function semanticSearch({ company, query, limit = 30, userId }) {
   } catch (e) { /* skip */ }
 
   // CI (Enterprise) — tenant-scoped by tenantId
-  try {
+  if (!entities || entities.includes('ci')) try {
     const CI = require('../models/enterprise/CI');
     push(await fetchModel(
       CI,
@@ -130,7 +130,7 @@ async function semanticSearch({ company, query, limit = 30, userId }) {
   } catch (e) { /* skip */ }
 
   // Asset
-  try {
+  if (!entities || entities.includes('asset')) try {
     const Asset = require('../models/Asset');
     push(await fetchModel(
       Asset,
@@ -149,8 +149,8 @@ async function semanticSearch({ company, query, limit = 30, userId }) {
   } catch (e) { /* skip */ }
 
   // Change
-  try {
-    const Change = require('../models/Change');
+  if (!entities || entities.includes('change')) try {
+    const Change = require('../models/helpdesk/incidents/Change');
     push(await fetchModel(
       Change,
       { company },
@@ -168,7 +168,7 @@ async function semanticSearch({ company, query, limit = 30, userId }) {
   } catch (e) { /* skip */ }
 
   // ActionItem (may not exist — guarded)
-  try {
+  if (!entities || entities.includes('actionitem')) try {
     const ActionItem = require('../models/ActionItem');
     push(await fetchModel(
       ActionItem,

@@ -3,7 +3,7 @@ const { protectTenantPrincipal, protectAdmin } = require('../middleware/auth');
 const SavedPage = require('../models/SavedPage');
 const { adapters, listAdapters } = require('../services/erpAdapters');
 const pitr = require('../services/pitr.service');
-const { UsageMeter, UsageLimit } = require('../models/UsageLimit');
+const { UsageMeter, UsageLimit } = require('../models/usage');
 
 const router = express.Router();
 router.use(protectTenantPrincipal);
@@ -126,7 +126,7 @@ router.post('/pitr/restore/:filename', protectAdmin, async (req, res) => {
 });
 router.get('/pitr/history', async (req, res) => {
   try {
-    const { BackupTest } = require('../models/Platform5');
+    const { BackupTest } = require('../models/platformServices');
     const tests = await BackupTest.find({ tenantId: req.companyId }).sort({ createdAt: -1 }).limit(50);
     res.json(tests);
   } catch (e) { res.status(500).json({ error: e.message }); }

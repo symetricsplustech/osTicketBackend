@@ -6,8 +6,8 @@ const Company = require('../src/models/Company');
 const Agent = require('../src/models/Agent');
 const User = require('../src/models/User');
 const Department = require('../src/models/Department');
-const Ticket = require('../src/models/Ticket');
-const TicketThread = require('../src/models/TicketThread');
+const Ticket = require('../src/models/helpdesk/tickets/Ticket');
+const TicketThread = require('../src/models/helpdesk/tickets/TicketThread');
 
 const port = 5105;
 const base = `http://127.0.0.1:${port}/api/v1`;
@@ -28,13 +28,18 @@ const assert = (condition, message) => { if (!condition) throw new Error(message
     await mongoose.connect(config.mongoUri, { serverSelectionTimeoutMS: 15000 });
     server = app.listen(port);
     company = await Company.create({ name: `Helpdesk Contract ${suffix}`, status: 'active' });
+    await mongoose.connection.db.collection('tenant_modules').updateOne(
+      { tenantId: company._id, moduleKey: 'helpdesk' },
+      { $set: { status: 'active', activatedAt: new Date(), updatedAt: new Date() }, $setOnInsert: { moduleKey: 'helpdesk', createdAt: new Date() } },
+      { upsert: true }
+    );
     [sourceDept, targetDept] = await Promise.all([
       Department.create({ name: `Helpdesk Source ${suffix}`, company: company._id }),
       Department.create({ name: `Helpdesk Target ${suffix}`, company: company._id }),
     ]);
     [admin, assignee, requester] = await Promise.all([
       Agent.create({ name: 'Helpdesk admin', email: `helpdesk-admin-${suffix}@osticket.local`, password: 'Pass@1234', company: company._id, isAdmin: true, isActive: true, departments: [{ department: sourceDept._id, isPrimary: true }] }),
-      Agent.create({ name: 'Helpdesk assignee', email: `helpdesk-assignee-${suffix}@osticket.local`, password: 'Pass@1234', company: company._id, isActive: true, departments: [{ department: targetDept._id, isPrimary: true }] }),
+      Agent.create({ name: 'Helpdesk assignee', email: `helpdesk-assignee-${suffix}@osticket.local`, password: 'Pass@1234', company: company._id, isActive: true, permissions: ['tickets.view', 'tickets.edit'], departments: [{ department: targetDept._id, isPrimary: true }] }),
       User.create({ name: 'Helpdesk requester', email: `helpdesk-requester-${suffix}@osticket.local`, company: company._id }),
     ]);
     ticket = await Ticket.create({ number: `HD-${suffix}`, company: company._id, user: requester._id, dept: sourceDept._id, subject: 'Contract test ticket', priority: 'Normal' });
@@ -46,6 +51,9 @@ const assert = (condition, message) => { if (!condition) throw new Error(message
     assert(note.status === 200, 'agent note uses POST /note with message payload');
     const assigned = await request('POST', `/agent/tickets/${ticket.number}/assign`, { token, body: { agentId: assignee._id.toString() } });
     assert(assigned.status === 200 && String(assigned.data.ticket.agent) === String(assignee._id), 'agent assignment uses POST and persists the selected agent');
+    const assigneeLogin = await request('POST', '/auth/agent/login', { body: { email: assignee.email, password: 'Pass@1234' } });
+    const deniedClose = await request('POST', `/agent/tickets/${ticket.number}/status`, { token: assigneeLogin.data.token, body: { status: 'closed' } });
+    assert(deniedClose.status === 403, 'tickets.edit cannot substitute for the tickets.close permission');
     const transferred = await request('POST', `/agent/tickets/${ticket.number}/transfer`, { token, body: { deptId: targetDept._id.toString() } });
     assert(transferred.status === 200 && String(transferred.data.ticket.dept) === String(targetDept._id), 'department transfer uses POST and deptId payload');
     const status = await request('POST', `/agent/tickets/${ticket.number}/status`, { token, body: { status: 'closed' } });
@@ -67,6 +75,7 @@ const assert = (condition, message) => { if (!condition) throw new Error(message
     if (sourceDept) await Department.deleteOne({ _id: sourceDept._id });
     if (targetDept) await Department.deleteOne({ _id: targetDept._id });
     if (company) await Company.deleteOne({ _id: company._id });
+    if (company) await mongoose.connection.db.collection('tenant_modules').deleteMany({ tenantId: company._id });
     await mongoose.disconnect();
   }
 })();

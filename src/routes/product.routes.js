@@ -1,5 +1,5 @@
 const express = require('express');
-const { Product, Service, CustomerService, InstalledProduct } = require('../models/Product.js');
+const { Product, Service, CustomerService, InstalledProduct } = require('../models/product');
 const { protectTenantAgent } = require('../middleware/auth');
 const router = express.Router();
 router.use(protectTenantAgent);

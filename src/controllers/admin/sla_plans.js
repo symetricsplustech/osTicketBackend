@@ -4,22 +4,22 @@ const Role = require('../../models/Role');
 const Department = require('../../models/Department');
 const HelpTopic = require('../../models/HelpTopic');
 const SlaPlan = require('../../models/SlaPlan');
-const TicketFilter = require('../../models/TicketFilter');
+const TicketFilter = require('../../models/helpdesk/tickets/TicketFilter');
 const EmailTemplate = require('../../models/EmailTemplate');
 const SystemSetting = require('../../models/SystemSetting');
-const Ticket = require('../../models/Ticket');
+const Ticket = require('../../models/helpdesk/tickets/Ticket');
 const User = require('../../models/User');
 const Organization = require('../../models/Organization');
-const CannedResponse = require('../../models/CannedResponse');
-const FaqCategory = require('../../models/FaqCategory');
-const Faq = require('../../models/Faq');
-const Announcement = require('../../models/Announcement');
+const CannedResponse = require('../../models/helpdesk/knowledge/CannedResponse');
+const FaqCategory = require('../../models/helpdesk/knowledge/FaqCategory');
+const Faq = require('../../models/helpdesk/knowledge/Faq');
+const Announcement = require('../../models/helpdesk/knowledge/Announcement');
 const EmailLog = require('../../models/EmailLog');
 const Notification = require('../../models/Notification');
 const Company = require('../../models/Company');
-const TicketStatus = require('../../models/TicketStatus');
+const TicketStatus = require('../../models/helpdesk/tickets/TicketStatus');
 const CustomField = require('../../models/CustomField');
-const TicketForm = require('../../models/TicketForm');
+const TicketForm = require('../../models/helpdesk/tickets/TicketForm');
 const Holiday = require('../../models/Holiday');
 const Integration = require('../../models/Integration');
 const ApiError = require('../../utils/ApiError');
@@ -441,7 +441,7 @@ exports.deleteSlaPlan = asyncHandler(async (req, res) => {
 
 exports.slaDashboard = asyncHandler(async (req, res) => {
   const SlaEvent = require('../../models/SlaEvent');
-  const Ticket = require('../../models/Ticket');
+  const Ticket = require('../../models/helpdesk/tickets/Ticket');
   const since = new Date(Date.now() - Math.min(Number(req.query.days) || 30, 365) * 86400000);
   const [events, openTickets, atRisk, breached, departments] = await Promise.all([
     SlaEvent.find({ level: 'tenant', company: req.companyId, occurredAt: { $gte: since }, event: { $in: ['met', 'breached'] } }).lean(),
@@ -459,7 +459,7 @@ exports.slaDashboard = asyncHandler(async (req, res) => {
 });
 
 exports.ticketSlaHistory = asyncHandler(async (req, res) => {
-  const Ticket = require('../../models/Ticket');
+  const Ticket = require('../../models/helpdesk/tickets/Ticket');
   const SlaEvent = require('../../models/SlaEvent');
   const ticket = await Ticket.findOne({ number: req.params.number, company: req.companyId }).select('_id number sla responseDueAt resolutionDueAt').populate('sla', 'name');
   if (!ticket) throw new ApiError(404, 'Ticket not found');

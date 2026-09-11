@@ -11,11 +11,11 @@ function M(name) {
     // Try loading from known paths
     const paths = [
       `../models/${name}`,
-      `../models/Platform2`, `../models/Platform3`, `../models/Platform4`,
-      `../models/Platform5`, `../models/Platform6`, `../models/Platform7`,
-      `../models/Product`, `../models/License`, `../models/Stockroom`,
-      `../models/CustomerService`, `../models/WorkflowExecutionLog`,
-      `../models/ScheduledReport`, `../models/Remaining`, `../models/Enterprise`,
+      `../models/platformGovernance`, `../models/platformSecurity`, `../models/platformOps`,
+      `../models/platformServices`, `../models/platformData`, `../models/platformIdentity`,
+      `../models/product`, `../models/license`, `../models/stockroom`,
+      `../models/customerService`, `../models/workflowExecution`,
+      `../models/ScheduledReport`, `../models/domain`, `../models/enterprise`,
     ];
     for (const p of paths) {
       try {

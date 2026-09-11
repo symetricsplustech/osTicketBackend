@@ -1,0 +1,66 @@
+name: Deploy API
+
+on:
+  push:
+    branches: [main, staging]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Target environment
+        required: true
+        type: choice
+        options: [staging, production]
+
+concurrency:
+  group: api-${{ github.event_name == 'workflow_dispatch' && inputs.environment || github.ref_name == 'main' && 'production' || 'staging' }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  verify-and-deploy:
+    runs-on: ubuntu-latest
+    environment: ${{ github.event_name == 'workflow_dispatch' && inputs.environment || github.ref_name == 'main' && 'production' || 'staging' }}
+    env:
+      DEPLOY_ENV: ${{ github.event_name == 'workflow_dispatch' && inputs.environment || github.ref_name == 'main' && 'production' || 'staging' }}
+      DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+      APP_PORT: ${{ vars.API_PORT }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Run API foundation checks
+        run: |
+          npm run test:authorization
+          npm run test:itsm-foundation
+      - name: Configure deployment key
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s' "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -p "${{ vars.SSH_PORT || 22 }}" -H "${{ secrets.SSH_HOST }}" >> ~/.ssh/known_hosts
+      - name: Upload immutable release
+        run: |
+          tar --exclude=.git --exclude=node_modules --exclude=.env --exclude=uploads -czf release.tgz .
+          ssh -i ~/.ssh/deploy_key -p "${{ vars.SSH_PORT || 22 }}" "${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}" "mkdir -p '$DEPLOY_PATH/releases/$GITHUB_SHA'"
+          scp -i ~/.ssh/deploy_key -P "${{ vars.SSH_PORT || 22 }}" release.tgz "${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:$DEPLOY_PATH/releases/$GITHUB_SHA/release.tgz"
+      - name: Deploy and verify health
+        run: |
+          ssh -i ~/.ssh/deploy_key -p "${{ vars.SSH_PORT || 22 }}" "${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}" <<EOF
+          set -eu
+          RELEASE='$DEPLOY_PATH/releases/$GITHUB_SHA'
+          tar -xzf "\$RELEASE/release.tgz" -C "\$RELEASE"
+          rm "\$RELEASE/release.tgz"
+          cd "\$RELEASE"
+          export DEPLOY_ENV='$DEPLOY_ENV'
+          export APP_PORT='${APP_PORT:-5000}'
+          export APP_ENV_FILE='$DEPLOY_PATH/.env'
+          docker compose -p "osticket-api-$DEPLOY_ENV" -f docker-compose.deploy.yml up --build -d --remove-orphans
+          for attempt in 1 2 3 4 5 6; do curl -fsS "http://127.0.0.1:\$APP_PORT/api/v1/health" && break || sleep 5; done
+          curl -fsS "http://127.0.0.1:\$APP_PORT/api/v1/health"
+          ln -sfn "\$RELEASE" '$DEPLOY_PATH/current'
+          EOF

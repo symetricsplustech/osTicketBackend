@@ -3,7 +3,7 @@ const mongoose = require('mongoose');
 const app = require('../src/app');
 const config = require('../src/config/config');
 const User = require('../src/models/User');
-const Ticket = require('../src/models/Ticket');
+const Ticket = require('../src/models/helpdesk/tickets/Ticket');
 
 const PORT = 5099;
 const base = `http://localhost:${PORT}`;

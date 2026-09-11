@@ -1,5 +1,5 @@
 const express = require('express');
-const { Complaint, Refund, Order, ContactRole, CompanyHierarchy } = require('../models/CustomerService.js');
+const { Complaint, Refund, Order, ContactRole, CompanyHierarchy } = require('../models/customerService');
 const { protectTenantAgent } = require('../middleware/auth');
 const router = express.Router();
 router.use(protectTenantAgent);

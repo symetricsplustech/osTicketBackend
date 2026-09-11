@@ -1,4 +1,4 @@
-const E = require('../models/Enterprise');
+const E = require('../models/enterprise');
 const Alert = require('../models/Alert');
 
 const clamp = (v, lo = 0, hi = 100) => Math.max(lo, Math.min(hi, Math.round(v)));
@@ -11,7 +11,7 @@ function scoreCI(ci) {
   return clamp(s);
 }
 
-async function fetchDownstreamBad(ciIds, depthLimit = 2, maxVisited = 200) {
+async function fetchDownstreamBad(tenantId, ciIds, depthLimit = 2, maxVisited = 200) {
   const visited = new Set();
   let frontier = ciIds.map(String);
   let depth = 0;
@@ -22,7 +22,7 @@ async function fetchDownstreamBad(ciIds, depthLimit = 2, maxVisited = 200) {
       visited.add(id);
       if (visited.size > maxVisited) return visited;
       try {
-        const ci = await E.CI.findById(id).select('relationships').lean();
+        const ci = await E.CI.findOne({ _id: id, tenantId }).select('relationships').lean();
         if (ci?.relationships) {
           for (const rel of ci.relationships) {
             if (rel.target) next.push(String(rel.target));
@@ -57,7 +57,7 @@ async function computeServiceHealth(tenantId) {
   for (const svc of services) {
     const ciIds = (svc.cis || []).map(String);
     const cis = ciIds.length
-      ? await E.CI.find({ _id: { $in: ciIds } }).lean()
+      ? await E.CI.find({ _id: { $in: ciIds }, tenantId }).lean()
       : [];
     totalCIs += cis.length;
 
@@ -79,13 +79,13 @@ async function computeServiceHealth(tenantId) {
     score = clamp(score);
 
     // Downstream / relationship propagation
-    const downstream = await fetchDownstreamBad(ciIds);
+    const downstream = await fetchDownstreamBad(tenantId, ciIds);
     // remove the original CIs themselves
     for (const cid of ciIds) downstream.delete(cid);
     // check each downstream CI for stale/maintenance
     for (const dsId of downstream) {
       try {
-        const dsCI = await E.CI.findById(dsId).select('status').lean();
+        const dsCI = await E.CI.findOne({ _id: dsId, tenantId }).select('status').lean();
         if (dsCI && (dsCI.status === 'stale' || dsCI.status === 'maintenance')) {
           score -= 5;
         }

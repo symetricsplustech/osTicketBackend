@@ -60,7 +60,7 @@ async function nextTicketNumber() {
       { new: true, upsert: true }
     );
     const number = formatTicketNumber(year, doc.seq);
-    const Ticket = require('../models/Ticket');
+    const Ticket = require('../models/helpdesk/tickets/Ticket');
     const exists = await Ticket.exists({ number });
     if (!exists) return number;
   } catch (_) {

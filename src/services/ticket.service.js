@@ -1,11 +1,11 @@
 const User = require('../models/User');
-const Ticket = require('../models/Ticket');
-const TicketThread = require('../models/TicketThread');
+const Ticket = require('../models/helpdesk/tickets/Ticket');
+const TicketThread = require('../models/helpdesk/tickets/TicketThread');
 const HelpTopic = require('../models/HelpTopic');
 const Department = require('../models/Department');
 const Team = require('../models/Team');
 const Agent = require('../models/Agent');
-const TicketFilter = require('../models/TicketFilter');
+const TicketFilter = require('../models/helpdesk/tickets/TicketFilter');
 const SystemSetting = require('../models/SystemSetting');
 const { generateConfirmationToken } = require('../utils/generators');
 const { nextTicketNumber } = require('./numbering.service');
@@ -18,10 +18,10 @@ const config = require('../config/config');
 const logger = require('../utils/logger');
 const auditService = require('./audit.service');
 const ApiError = require('../utils/ApiError');
-const TicketStatus = require('../models/TicketStatus');
+const TicketStatus = require('../models/helpdesk/tickets/TicketStatus');
 const { assertTransition } = require('./stateMachine.service');
 
-const audit = (args) => auditService.audit(args).catch(() => {});
+const auditRequired = (args) => auditService.auditRequired(args);
 
 const resolveDepartment = async (helpTopic, companyId = null) => {
   const scope = { status: 'active' };
@@ -214,7 +214,7 @@ const computeMatrixPriority = async ({ companyId, impact, urgency }) => {
   }
 };
 
-const createTicket = async ({ user, orgOwner, createdBy, subject, details, topicId, priority, impact, urgency, deptId, source = 'web', attachments = [], customData = {}, toAddresses = [] }) => {
+const createTicket = async ({ user, orgOwner, createdBy, subject, details, topicId, priority, impact, urgency, deptId, sla = null, source = 'web', attachments = [], customData = {}, toAddresses = [], skipRouting = false, auditActorType = 'user', auditActorId = null, auditActorName = '', req = null }) => {
   const companyId = user?.company || null;
   const helpTopic = topicId ? await HelpTopic.findById(topicId) : null;
   if (helpTopic && companyId && helpTopic.company && String(helpTopic.company) !== String(companyId)) {
@@ -255,7 +255,7 @@ const createTicket = async ({ user, orgOwner, createdBy, subject, details, topic
     if (matrixPriority) targetPriority = matrixPriority;
   }
 
-  let targetSla = helpTopic?.sla || dept?.sla || null;
+  let targetSla = sla || helpTopic?.sla || dept?.sla || null;
   if (filterActions.sla) targetSla = filterActions.sla;
   if (!targetSla && user.organization) {
     const org = await require('../models/Organization').findById(user.organization).lean();
@@ -300,7 +300,7 @@ const createTicket = async ({ user, orgOwner, createdBy, subject, details, topic
 
   // ---- Enterprise: smart routing (skill-based / round-robin / least-workload) ----
   const routingAlgorithm = settings.routing?.algorithm || 'skill_based';
-  if (autoAssign && !targetAgent && !targetTeam && routingAlgorithm !== 'none') {
+  if (!skipRouting && autoAssign && !targetAgent && !targetTeam && routingAlgorithm !== 'none') {
     try {
       const routing = require('./routing.service');
       const skills = await routing.skillsForTopic(helpTopic?._id);
@@ -366,7 +366,7 @@ const createTicket = async ({ user, orgOwner, createdBy, subject, details, topic
   await ticket.save();
 
   // Learned auto-routing: if no agent assigned and department set, try learned routing
-  if (!ticket.agent && ticket.dept) {
+  if (!skipRouting && !ticket.agent && ticket.dept) {
     try {
       const { autoRoute } = require('./learnedRouting.service');
       const route = await autoRoute({ company: companyId, departmentId: ticket.dept, subject: ticket.subject, details, priority: ticket.priority });
@@ -492,15 +492,16 @@ const createTicket = async ({ user, orgOwner, createdBy, subject, details, topic
     userId: user._id,
     actor: createdBy || null,
   });
-  audit({
+  await auditRequired({
     company: companyId,
-    actorType: createdBy ? 'agent' : 'user',
-    actor: createdBy || user._id || null,
-    actorName: createdBy ? String(createdBy) : `${user.name} <${user.email}>`,
+    actorType: auditActorType,
+    actor: auditActorId || user._id || null,
+    actorName: auditActorName || `${user.name} <${user.email}>`,
     action: 'ticket.created',
     entityType: 'ticket',
     entityId: ticket._id,
     after: { number: ticket.number, subject: ticket.subject, priority: ticket.priority, source },
+    req,
   });
   const realtime = require('./realtime.service');
   realtime.broadcastSnapshot({ company: companyId }).catch(() => {});
@@ -508,7 +509,7 @@ const createTicket = async ({ user, orgOwner, createdBy, subject, details, topic
   return ticket;
 };
 
-const addThreadEntry = async ({ ticket, type = 'message', posterType, user, agent, body, title, attachments = [], systemMessage }) => {
+const addThreadEntry = async ({ ticket, type = 'message', posterType, user, agent, body, title, attachments = [], systemMessage, auditContext = null }) => {
   const entry = await TicketThread.create({
     ticket: ticket._id,
     company: ticket.company || null,
@@ -525,6 +526,7 @@ const addThreadEntry = async ({ ticket, type = 'message', posterType, user, agen
   if (type === 'message' || type === 'note') {
     ticket.lastActivity = new Date();
     let reopenedByCustomerReply = false;
+    const statusBeforeReply = ticket.status;
     if (posterType === 'agent' && type === 'message') {
       ticket.stats.responses += 1;
       if (!ticket.stats.firstResponseAt) ticket.stats.firstResponseAt = new Date();
@@ -567,7 +569,20 @@ const addThreadEntry = async ({ ticket, type = 'message', posterType, user, agen
     await ticket.save();
     if (reopenedByCustomerReply) {
       await addSystemEvent({ ticket, message: 'Ticket reopened by customer reply' });
-      await handleTicketReopened(ticket).catch(() => {});
+      await handleTicketReopened(ticket);
+      await auditRequired({
+        company: ticket.company,
+        actorType: auditContext?.actorType || 'user',
+        actor: auditContext?.actorId || user?._id || null,
+        actorName: auditContext?.actorName || user?.name || 'customer',
+        action: 'ticket.status_changed',
+        entityType: 'ticket',
+        entityId: ticket._id,
+        before: { status: statusBeforeReply },
+        after: { status: ticket.status },
+        reason: 'reopened by customer reply',
+        req: auditContext?.req || null,
+      });
     }
   }
 
@@ -597,11 +612,11 @@ const handleTicketClosed = async (ticket, opts = {}) => {
     actor: opts.actor || null,
     agentId: ticket.agent || null,
   });
-  audit({
+  await auditRequired({
     company: ticket.company,
-    actorType: opts.actor ? 'agent' : 'system',
-    actor: opts.agentId || opts.actor || null,
-    actorName: opts.actor ? String(opts.actor) : 'auto-close',
+    actorType: opts.actorType || (opts.actor ? 'agent' : 'system'),
+    actor: opts.actorId || opts.agentId || opts.actor || null,
+    actorName: opts.actorName || (opts.actor ? String(opts.actor) : 'auto-close'),
     action: 'ticket.closed',
     entityType: 'ticket',
     entityId: ticket._id,
@@ -666,7 +681,7 @@ const createFollowUpTicket = async ({ ticket, user, body, attachments = [], sour
     attachments,
   });
   try {
-    const TicketLink = require('../models/TicketLink');
+    const TicketLink = require('../models/helpdesk/tickets/TicketLink');
     await TicketLink.create({
       company: ticket.company || null,
       from: created._id,
@@ -686,11 +701,11 @@ const handleTicketResolved = async (ticket, opts = {}) => {
     actor: opts.actor || null,
     agentId: ticket.resolvedBy || ticket.agent || null,
   });
-  audit({
+  await auditRequired({
     company: ticket.company,
-    actorType: opts.actor ? 'agent' : 'system',
-    actor: opts.agentId || opts.actor || null,
-    actorName: opts.actor ? String(opts.actor) : 'system',
+    actorType: opts.actorType || (opts.actor ? 'agent' : 'system'),
+    actor: opts.actorId || opts.agentId || opts.actor || null,
+    actorName: opts.actorName || (opts.actor ? String(opts.actor) : 'system'),
     action: 'ticket.resolved',
     entityType: 'ticket',
     entityId: ticket._id,
@@ -709,7 +724,7 @@ const handleTicketResolved = async (ticket, opts = {}) => {
  * mails, events and audit stay identical everywhere. Returns { ticket, prev }.
  * Throws ApiError(422) on unknown status or illegal transition.
  */
-const applyStatusChange = async (ticket, status, { actorType = 'agent', actorId = null, actorName = 'System', reason = '', resolution = null } = {}) => {
+const applyStatusChange = async (ticket, status, { actorType = 'agent', actorId = null, actorName = 'System', reason = '', resolution = null, req = null } = {}) => {
   const builtIn = Object.values(Ticket.STATUSES);
   const configured = await TicketStatus.find({ isActive: true }).select('key pauseSla waitingOn isClosed');
   const customKeys = configured.map((s) => s.key);
@@ -806,6 +821,19 @@ const applyStatusChange = async (ticket, status, { actorType = 'agent', actorId 
     ticket,
     message: `Status changed from ${prev} to ${status}${reason ? ` (${reason})` : ''} by ${actorName}`,
   });
+  await auditRequired({
+    company: ticket.company,
+    actorType,
+    actor: actorId,
+    actorName,
+    action: 'ticket.status_changed',
+    entityType: 'ticket',
+    entityId: ticket._id,
+    before: { status: prev },
+    after: { status },
+    reason,
+    req,
+  });
   emit('ticket.status_changed', { company: ticket.company, ticketId: ticket._id, ticketNumber: ticket.number, from: prev, to: status, actor: actorId });
 
   const ctx = (status === Ticket.STATUSES.RESOLVED || status === Ticket.STATUSES.CLOSED)
@@ -819,7 +847,7 @@ const applyStatusChange = async (ticket, status, { actorType = 'agent', actorId 
     } catch (err) { /* non-blocking */ }
     const { notifyUser } = require('./notification.service');
     await notifyUser({ userId: ticket.user, company: ticket.company, type: 'status_change', message: `Your ticket ${ticket.number} has been resolved — reply if the issue remains`, link: `/ticket/${ticket.number}`, ticket: ticket._id }).catch(() => {});
-    await handleTicketResolved(ticket, { actor: actorId, agentId: actorType === 'agent' ? actorId : ticket.agent });
+    await handleTicketResolved(ticket, { actor: actorId, actorId, actorType, actorName, agentId: actorType === 'agent' ? actorId : ticket.agent });
   }
   if (status === Ticket.STATUSES.CLOSED) {
     try {
@@ -829,7 +857,7 @@ const applyStatusChange = async (ticket, status, { actorType = 'agent', actorId 
     } catch (err) { /* non-blocking */ }
     const { notifyUser } = require('./notification.service');
     await notifyUser({ userId: ticket.user, company: ticket.company, type: 'status_change', message: `Your ticket ${ticket.number} has been closed`, link: `/ticket/${ticket.number}`, ticket: ticket._id }).catch(() => {});
-    await handleTicketClosed(ticket, { actor: actorId });
+    await handleTicketClosed(ticket, { actor: actorId, actorId, actorType, actorName });
   }
   if ((prev === Ticket.STATUSES.CLOSED || prev === Ticket.STATUSES.RESOLVED) && status !== Ticket.STATUSES.CLOSED && status !== Ticket.STATUSES.RESOLVED) {
     await handleTicketReopened(ticket);
@@ -872,37 +900,15 @@ const autoCloseResolvedTickets = async () => {
         if (Task && (await Task.countDocuments({ ticket: ticket._id, status: 'open' })) > 0) {
           continue; // parent waits for subtasks (§22)
         }
-        ticket.status = Ticket.STATUSES.CLOSED;
-        ticket.closedAt = new Date();
-        ticket.closedBy = null; // system
-        await ticket.save();
-        await addSystemEvent({ ticket, message: `Ticket auto-closed after ${hours}h without customer reply` });
-        try {
-          const ctx = await buildTicketContext(ticket);
-          if (ctx.user.email) {
-            await emailService.sendFromTemplate({
-              key: 'ticket_closed',
-              to: ctx.user.email,
-              data: ctx,
-              event: 'ticket_closed',
-              ticket: ticket._id,
-              user: ticket.user,
-              company: ticket.company,
-            });
-          }
-        } catch (err) {
-          logger.error(`Auto-close email failed: ${err.message}`);
-        }
-        const { notifyUser } = require('./notification.service');
-        await notifyUser({
-          userId: ticket.user,
-          company: ticket.company,
-          type: 'status_change',
-          message: `Your ticket ${ticket.number} has been closed`,
-          link: `/ticket/${ticket.number}`,
-          ticket: ticket._id,
-        }).catch(() => {});
-        await handleTicketClosed(ticket, { actor: null });
+        // Use the same audited state command as interactive closure. This keeps
+        // transition validation, durable system evidence, notifications and CSAT
+        // behavior consistent instead of silently writing status in the job.
+        await applyStatusChange(ticket, Ticket.STATUSES.CLOSED, {
+          actorType: 'system',
+          actorId: null,
+          actorName: 'Auto-close scheduler',
+          reason: `No customer reply for ${hours}h after resolution`,
+        });
         summary.closed += 1;
       } catch (err) {
         summary.errors.push(err.message);

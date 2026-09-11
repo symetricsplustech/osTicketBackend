@@ -6,8 +6,8 @@ const Company = require('../src/models/Company');
 const Agent = require('../src/models/Agent');
 const User = require('../src/models/User');
 const Department = require('../src/models/Department');
-const Ticket = require('../src/models/Ticket');
-const TicketThread = require('../src/models/TicketThread');
+const Ticket = require('../src/models/helpdesk/tickets/Ticket');
+const TicketThread = require('../src/models/helpdesk/tickets/TicketThread');
 const AuditEvent = require('../src/models/AuditEvent');
 
 const port = 5109;
@@ -55,7 +55,7 @@ const assert = (condition, message) => { if (!condition) throw new Error(message
     ]);
     [adminA, agentA] = await Promise.all([
       Agent.create({ name: 'Comment admin', email: `cmt-admin-${suffix}@osticket.local`, password: 'Pass@1234', company: coA._id, isAdmin: true, isActive: true, departments: [{ department: deptA1._id, isPrimary: true }] }),
-      Agent.create({ name: 'Comment agent', email: `cmt-agent-${suffix}@osticket.local`, password: 'Pass@1234', company: coA._id, isActive: true, departments: [{ department: deptA1._id, isPrimary: true }], permissions: ['tickets.reply', 'tickets.note'] }),
+      Agent.create({ name: 'Comment agent', email: `cmt-agent-${suffix}@osticket.local`, password: 'Pass@1234', company: coA._id, isActive: true, departments: [{ department: deptA1._id, isPrimary: true }], permissions: ['tickets.view', 'tickets.reply', 'tickets.note'] }),
     ]);
     ticket = await Ticket.create({ number: `CMT-${suffix}`, company: coA._id, user: owner._id, dept: deptA1._id, agent: agentA._id, subject: 'Comment ticket', priority: 'Normal', status: 'assigned' });
 

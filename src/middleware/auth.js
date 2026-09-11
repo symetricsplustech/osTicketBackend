@@ -7,6 +7,7 @@ const SuperAdmin = require('../models/SuperAdmin');
 const Company = require('../models/Company');
 const asyncHandler = require('../utils/asyncHandler');
 const { runWithTenant } = require('./tenantScope');
+const { registerRoute, validateAllRoutes, checkRoutePermissionMiddleware, withPermissionRegistry, lookupRequiredPermissionFromReq } = require('../services/routePermissionRegistry');
 
 const signToken = (payload) =>
   jwt.sign(payload, config.jwt.secret, { expiresIn: config.jwt.expiresIn });
@@ -261,18 +262,40 @@ const protectSuperAdmin = asyncHandler(async (req, res, next) => {
  * explicit DENY precedence, module entitlement, record scope/condition
  * checks. Internal decision reasons are audited, never sent to clients.
  *
+ * If `perm` is not provided, the required permission is looked up from the
+ * route-permission registry using `req.originalUrl` and `req.method`.
+ *
  * opts: { module, record: (req)=>record|null, requiredScope, conditions,
- *         fields, audit }
+ *         fields, audit, defaultDeny }
+ *
+ * When `defaultDeny: true`, the middleware will deny access (403) if no
+ * permission is registered for the route in the route-permission registry,
+ * enforcing default-deny action permissions instead of broad tenant-login-only access.
  */
 const requirePermission = (perm, opts = {}) =>
   asyncHandler(async (req, res, next) => {
     const principal = req.agent || req.user;
     if (!principal) throw new ApiError(401, 'Not authorized');
+
+    const requiredPermission = perm
+      ? perm
+      : lookupRequiredPermissionFromReq(req);
+
+    // Default-deny mode: if no permission is registered for this route,
+    // deny access instead of allowing broad tenant-login-only access.
+    if (opts.defaultDeny && !requiredPermission) {
+      return next(new ApiError(403, 'You do not have permission for this action'));
+    }
+
+    if (!requiredPermission) {
+      return next();
+    }
+
     const { authorize } = require('../services/authorization.service');
     const record = typeof opts.record === 'function' ? await opts.record(req) : opts.record;
     const result = await authorize({
       principal,
-      permission: perm,
+      permission: requiredPermission,
       tenant: req.companyId,
       module: opts.module,
       resource: opts.resource,

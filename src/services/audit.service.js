@@ -5,7 +5,7 @@ const AuditEvent = require('../models/AuditEvent');
  *         before, after, reason, req, source })
  * Records WHO/WHAT/WHEN/WHERE with before/after diffs. Never throws.
  */
-async function audit({
+async function writeAuditEvent({
   company = null,
   actorType = 'system',
   actor = null,
@@ -19,41 +19,50 @@ async function audit({
   req = null,
   source = '',
 }) {
-  try {
-    const changes = [];
-    if (before && after && typeof before === 'object' && typeof after === 'object') {
-      const keys = new Set([...Object.keys(before), ...Object.keys(after)]);
-      for (const k of keys) {
-        const b = before[k];
-        const a = after[k];
-        if (JSON.stringify(b) !== JSON.stringify(a)) {
-          changes.push({ field: k, from: b ?? null, to: a ?? null });
-        }
+  const changes = [];
+  if (before && after && typeof before === 'object' && typeof after === 'object') {
+    const keys = new Set([...Object.keys(before), ...Object.keys(after)]);
+    for (const k of keys) {
+      const b = before[k];
+      const a = after[k];
+      if (JSON.stringify(b) !== JSON.stringify(a)) {
+        changes.push({ field: k, from: b ?? null, to: a ?? null });
       }
     }
-    await AuditEvent.create({
-      company,
-      actorType,
-      actor,
-      actorName,
-      action,
-      entityType,
-      entityId,
-      before: before ?? null,
-      after: after ?? null,
-      changes: changes.slice(0, 50),
-      reason,
-      ip: req?.ip || req?.socket?.remoteAddress || '',
-      userAgent: req?.get?.('user-agent') || '',
-      source: source || (actorType === 'api' ? 'api' : ''),
-      privilegedSessionId: req?.privilegedSession?.sessionId || '',
-      realActor: req?.privilegedSession?.realActor || null,
-      realActorName: req?.privilegedSession?.realActorEmail || '',
-    });
+  }
+  return AuditEvent.create({
+    company,
+    actorType,
+    actor,
+    actorName,
+    action,
+    entityType,
+    entityId,
+    before: before ?? null,
+    after: after ?? null,
+    changes: changes.slice(0, 50),
+    reason,
+    ip: req?.ip || req?.socket?.remoteAddress || '',
+    userAgent: req?.get?.('user-agent') || '',
+    source: source || (actorType === 'api' ? 'api' : ''),
+    privilegedSessionId: req?.privilegedSession?.sessionId || '',
+    realActor: req?.privilegedSession?.realActor || null,
+    realActorName: req?.privilegedSession?.realActorEmail || '',
+  });
+}
+
+async function audit(args) {
+  try {
+    return await writeAuditEvent(args);
   } catch (err) {
     // audit must never break the business flow
+    return null;
   }
 }
+
+// Use for commands whose compliance contract requires durable evidence before
+// the API may report success. Unlike audit(), failures propagate to the caller.
+const auditRequired = (args) => writeAuditEvent(args);
 
 async function auditForEntity({ company, entityType, entityId, page = 1, limit = 50 }) {
   const query = { company, entityType, entityId };
@@ -65,4 +74,4 @@ async function auditForEntity({ company, entityType, entityId, page = 1, limit =
   return { items, total, page, pages: Math.ceil(total / limit) };
 }
 
-module.exports = { audit, auditForEntity };
+module.exports = { audit, auditRequired, auditForEntity };

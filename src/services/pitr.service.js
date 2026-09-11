@@ -87,7 +87,7 @@ async function backupNow(tenantId) {
   fs.writeFileSync(outfile, zlib.gzipSync(encrypted));
   fs.existsSync(outfile) || fs.writeFileSync(outfile, zlib.gzipSync(JSON.stringify(dump)));
 
-  const { BackupTest } = require('../models/Platform5');
+  const { BackupTest } = require('../models/platformServices');
   const test = await BackupTest.create({
     tenantId,
     date: new Date(),

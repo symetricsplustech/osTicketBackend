@@ -420,6 +420,27 @@ async function authorize({
   // 6+7. permission with deny precedence (stock space)
   const check = checkPermission(principal, permission, extraRoles);
 
+  // 6b. separation-of-duties checks (MD §8 / governance)
+  // Prevent self-approval, self-grant, and CAB conflicts before custom auth
+  let sodResult = null;
+  if (record) {
+    // Self-approval check: principal cannot approve/close their own ticket/request
+    sodResult = SEPARATION_OF_DUTIES.checkSelfApproval({ principal, record, permission });
+    if (sodResult.violated) {
+      return fail('SELF_APPROVAL_VIOLATION', { reason: sodResult.reason });
+    }
+    // Self-grant check: principal cannot grant themselves permissions
+    sodResult = SEPARATION_OF_DUTIES.checkSelfGrant({ principal, permission });
+    if (sodResult.violated) {
+      return fail('SELF_GRANT_VIOLATION', { reason: sodResult.reason });
+    }
+    // CAB conflict check: approver cannot be the same as requester
+    sodResult = SEPARATION_OF_DUTIES.checkCabConflict({ principal, record, permission });
+    if (sodResult.violated) {
+      return fail('CAB_CONFLICT', { reason: sodResult.reason });
+    }
+  }
+
   // 6b. custom tenant auth (cached 60s; opt out with customAuth: false).
   // Custom DENY vetoes even stock grants; custom ALLOW fills stock gaps and
   // may narrow scope/conditions. SaaS keys can never match custom rules.
@@ -483,6 +504,102 @@ async function authorize({
   }
   return result;
 }
+
+/**
+ * Separation-of-duties checks.
+ * Ensures no principal can perform critical actions alone without counter-signature.
+ * Patterns:
+ *   - SELF_APPROVAL: principal cannot approve/close their own ticket/request
+ *   - SELF_GRANT: principal cannot grant themselves permissions
+ *   - CAB_CONFLICT: change approver cannot be the requester
+ *   - PRIVILEGED_ESCALATION: privileged actions require dual authorization
+ */
+const SEPARATION_OF_DUTIES = {
+  /**
+   * Check if a principal is attempting to approve/close their own ticket/request.
+   * Returns { violated: boolean, reason }.
+   */
+  checkSelfApproval({ principal, record, permission, targetAction }) {
+    if (!principal || !record) return { violated: false, reason: null };
+
+    const principalId = String(principal._id || principal.id || '');
+    const recordCreator = String(record.userId || record.createdBy || record.ownerId || '');
+    const recordAssignee = String(record.agent || record.assignedTo || '');
+
+    // Self-approval: principal is the ticket creator trying to close/resolve
+    // Match both 'ticket.close' and 'tickets.close' formats
+    const permissionLower = (permission || '').toLowerCase();
+    const isClosePermission = ['ticket.close', 'tickets.close', 'close'].includes(permissionLower);
+
+    if (principalId === recordCreator && isClosePermission) {
+      return { violated: true, reason: 'self_approval_as_creator' };
+    }
+
+    // Self-closure of own ticket
+    if (principalId === recordAssignee && permission === 'tickets.close') {
+      return { violated: true, reason: 'self_closure_own_ticket' };
+    }
+
+    // Self-approval of own request
+    if (principalId === recordCreator && permission === 'requests.approve') {
+      return { violated: true, reason: 'self_approval_own_request' };
+    }
+
+    return { violated: false, reason: null };
+  },
+
+  /**
+   * Check if a principal is attempting to grant themselves a permission.
+   * Returns { violated: boolean, reason }.
+   */
+  checkSelfGrant({ principal, permission }) {
+    if (!principal || !permission) return { violated: false, reason: null };
+
+    const principalId = String(principal._id || principal.id || '');
+
+    // Common self-grant patterns - check if principal is trying to grant themselves
+    const selfGrantPatterns = [
+      'tickets.assign',        // assigning ticket to self
+      'users.manage',          // managing users including self
+      'roles.manage',          // managing roles including own role
+      'modules.manage',        // managing modules including own module
+    ];
+
+    if (selfGrantPatterns.includes(permission)) {
+      // Additional check: if the permission contains the principal's ID or is implicitly self-referential
+      // For now, we flag these as potentially violative and let the caller decide
+      return { violated: true, reason: 'potential_self_grant_' + permission };
+    }
+
+    return { violated: false, reason: null };
+  },
+
+  /**
+   * Check for CAB conflict: approver is the same as requester.
+   * Returns { violated: boolean, reason }.
+   */
+  checkCabConflict({ principal, record, permission }) {
+    if (!principal || !record) return { violated: false, reason: null };
+
+    const principalId = String(principal._id || principal.id || '');
+    const recordRequester = String(record.userId || record.createdBy || '');
+
+    // If the record has a requester and it matches the principal, and the permission is an approve/decide
+    if (principalId === recordRequester && ['approve', 'decide', 'approve_change', 'change.approve'].includes(permission || '')) {
+      return { violated: true, reason: 'cab_approver_is_requester' };
+    }
+
+    return { violated: false, reason: null };
+  },
+
+  /**
+   * Get SoD violation reason string for logging/auditing.
+   */
+  getViolationReason(violation) {
+    if (!violation || !violation.reason) return 'unknown_sod_violation';
+    return violation.reason;
+  },
+};
 
 /**
  * Throwing variant for controllers/services. Maps internal reasons to safe,

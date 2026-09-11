@@ -1,5 +1,5 @@
 const express = require('express');
-const { Stockroom, StockItem, Procurement, Repair, AssetLifecycle, Loaner, Replacement } = require('../models/Stockroom.js');
+const { Stockroom, StockItem, Procurement, Repair, AssetLifecycle, Loaner, Replacement } = require('../models/stockroom');
 const { protectTenantAgent } = require('../middleware/auth');
 const router = express.Router();
 router.use(protectTenantAgent);

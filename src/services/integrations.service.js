@@ -134,7 +134,7 @@ async function sendWhatsapp(to, body) {
 // Quiet-hours + channel-preference gate used by all notification fan-outs
 async function shouldSendNow(userId) {
   try {
-    const P5 = require('../models/Platform5');
+    const P5 = require('../models/platformServices');
     const pref = await P5.NotificationPref.findOne({ user: userId });
     if (!pref) return true;
     if (pref.quietHours?.enabled) {

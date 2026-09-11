@@ -1,5 +1,5 @@
 const express = require('express');
-const { WorkflowExecutionLog, FeatureFlag, Invitation, IncidentPlaybook, OnCallSchedule } = require('../models/WorkflowExecutionLog.js');
+const { WorkflowExecutionLog, FeatureFlag, Invitation, IncidentPlaybook, OnCallSchedule } = require('../models/workflowExecution');
 const { ScheduledReport } = require('../models/ScheduledReport.js');
 const { protectTenantAgent } = require('../middleware/auth');
 const router = express.Router();

@@ -1,5 +1,5 @@
 const Workflow = require('../models/Workflow');
-const Ticket = require('../models/Ticket');
+const Ticket = require('../models/helpdesk/tickets/Ticket');
 const User = require('../models/User');
 const Organization = require('../models/Organization');
 const Agent = require('../models/Agent');
@@ -175,7 +175,7 @@ const executeAction = async (action, ctx) => {
       break;
     case 'add_note':
       if (t && cfg.note) {
-        const TicketThread = require('../models/TicketThread');
+        const TicketThread = require('../models/helpdesk/tickets/TicketThread');
         await TicketThread.create({ ticket: t._id, company: ctx.company, type: 'note', posterType: 'system', title: 'Automation note', body: cfg.note });
       }
       break;
@@ -265,7 +265,7 @@ const executeAction = async (action, ctx) => {
       break;
     case 'create_incident': {
       if (t) {
-        const Incident = require('../models/Incident');
+        const Incident = require('../models/helpdesk/incidents/Incident');
         const count = await Incident.countDocuments({ company: ctx.company });
         const incident = await Incident.create({
           number: `INC-${String(new Date().getFullYear())}-${String(count + 1).padStart(4, '0')}`,
@@ -420,7 +420,7 @@ const handleEvent = async (eventName, payload) => {
         await runWorkflow(wf, payload);
       } catch (wfErr) {
         try {
-          const P6 = require('../models/Platform6');
+          const P6 = require('../models/platformData');
           await P6.OutboxEvent.create({ eventType: 'workflow.deadletter', payload: { workflowId: String(wf._id), error: wfErr.message }, tenantId: wf.tenantId || wf.company });
         } catch (_) {}
       }

@@ -1,5 +1,5 @@
 const express = require('express');
-const { TicketTemplate, RecurringRequest, RequestedItem, PostImplReview, KnowledgeBase, Outage, ChangeCalendar, MonitoringTicket, PriceBook, ActivitySequence, Segment, SalesForecast, DuplicateRecord, ProjectTemplate, ProjectIssue, ProjectDocument, Timesheet, ProjectRisk, HrRequestCatalogue, OnboardingChecklist, DepartmentTransfer, DocumentRequest, PolicyAcknowledgement, HrDocument, PreventiveMaintenance, Branch, Address, Mention, DeviceSession, CustomReport, DashboardConfig } = require('../models/Remaining.js');
+const { TicketTemplate, RecurringRequest, RequestedItem, PostImplReview, KnowledgeBase, Outage, ChangeCalendar, MonitoringTicket, PriceBook, ActivitySequence, Segment, SalesForecast, DuplicateRecord, ProjectTemplate, ProjectIssue, ProjectDocument, Timesheet, ProjectRisk, HrRequestCatalogue, OnboardingChecklist, DepartmentTransfer, DocumentRequest, PolicyAcknowledgement, HrDocument, PreventiveMaintenance, Branch, Address, Mention, DeviceSession, CustomReport, DashboardConfig } = require('../models/domain');
 const { protectTenantAgent } = require('../middleware/auth');
 const { protectApiKey, hasScope } = require('../middleware/apikey');
 const router = express.Router();
@@ -354,7 +354,7 @@ router.get('/reports/won-lost', async (req, res) => {
   try { const { Opportunity } = (function(){ const m = require('../models/Opportunity.js'); return m.default !== undefined ? m : m; })(); const won = await Opportunity.countDocuments({tenantId:req.user.tenantId, stage:'closed_won'}); const lost = await Opportunity.countDocuments({tenantId:req.user.tenantId, stage:'closed_lost'}); res.json({won, lost, winRate: (won+lost)>0 ? Math.round((won/(won+lost))*100) : 0}); } catch(e) { res.status(500).json({error:e.message}); }
 });
 router.get('/reports/agent-performance', async (req, res) => {
-  try { const { default: Ticket } = (function(){ const m = require('../models/Ticket.js'); return m.default !== undefined ? m : m; })(); const r = await Ticket.aggregate([{$match:{tenantId:req.user.tenantId}}, {$group:{_id:'$assignedTo',total:{$sum:1},closed:{$sum:{$cond:[{$eq:['$status','closed']},1,0]}}}}, {$sort:{total:-1}}]); res.json(r); } catch(e) { res.status(500).json({error:e.message}); }
+  try { const { default: Ticket } = (function(){ const m = require('../models/helpdesk/tickets/Ticket.js'); return m.default !== undefined ? m : m; })(); const r = await Ticket.aggregate([{$match:{tenantId:req.user.tenantId}}, {$group:{_id:'$assignedTo',total:{$sum:1},closed:{$sum:{$cond:[{$eq:['$status','closed']},1,0]}}}}, {$sort:{total:-1}}]); res.json(r); } catch(e) { res.status(500).json({error:e.message}); }
 });
 
 module.exports = router;

@@ -1,12 +1,40 @@
 const express = require('express');
 const { protectTenantPrincipal, protectAdmin } = require('../middleware/auth');
-const { MaintenanceWindow, CustomTable, CustomRecord, CustomForm, Portfolio, DemandItem, OffboardingChecklist, TechnicianAvailability, KnownIssue, SsoConfig, LdapConfig } = require('../models/Platform2');
+const { moduleRequired } = require('../middleware/module');
+const { authorize, isAggregateAdmin, grantedScopes } = require('../services/authorization.service');
+const { auditRequired } = require('../services/audit.service');
+const ApiError = require('../utils/ApiError');
+const { MaintenanceWindow, CustomTable, CustomRecord, CustomForm, Portfolio, DemandItem, OffboardingChecklist, TechnicianAvailability, KnownIssue, SsoConfig, LdapConfig } = require('../models/platformGovernance');
 const integrations = require('../services/integrations.service');
 
 const router = express.Router();
 router.use(protectTenantPrincipal);
 
 const T = req => ({ tenantId: req.user.tenantId });
+const C = req => ({ company: req.user.tenantId });
+const helpdeskGuard = (permission) => [
+  moduleRequired('helpdesk'),
+  async (req, res, next) => {
+    try {
+      if (!req.agent) throw new ApiError(403, 'Agent access required');
+      const result = await authorize({ principal: req.agent, permission, tenant: req.user.tenantId, resource: { type: 'ops_itsm' }, req });
+      if (result.decision !== 'ALLOW') throw new ApiError(403, 'You do not have permission for this action');
+      next();
+    } catch (error) { next(error); }
+  },
+];
+const requireTenantScope = (req, _res, next) => {
+  if (isAggregateAdmin(req.agent) || grantedScopes(req.agent).includes('TENANT')) return next();
+  next(new ApiError(403, 'Tenant-wide record scope required'));
+};
+const assertOpsRecord = async (req, permission, record) => {
+  const result = await authorize({ principal: req.agent, permission, tenant: req.user.tenantId, resource: { type: 'ops_itsm', id: record._id }, record, req });
+  if (result.decision !== 'ALLOW') throw new ApiError(403, 'You do not have permission for this action');
+};
+const auditOps = (req, action, record, before = null, after = null) => auditRequired({
+  company: req.user.tenantId, actorType: 'agent', actor: req.agent._id, actorName: req.agent.name,
+  action, entityType: record.constructor.modelName.toLowerCase(), entityId: record._id, before, after, req,
+});
 
 // ============ ITOM OPERATIONS ============
 // Correlate alerts: group by resource within a time window
@@ -50,7 +78,7 @@ router.post('/itom/denoise', async (req, res) => {
 router.post('/itom/alerts/:id/create-incident', async (req, res) => {
   try {
     const Alert = require('../models/Alert').Alert || require('../models/Alert');
-    const Incident = require('../models/Incident').Incident || require('../models/Incident');
+    const Incident = require('../models/helpdesk/incidents/Incident').Incident || require('../models/helpdesk/incidents/Incident');
     const alert = await Alert.findOne({ _id: req.params.id, ...T(req) });
     if (!alert) return res.status(404).json({ error: 'Alert not found' });
     if (alert.incident) return res.status(400).json({ error: 'Incident already linked' });
@@ -112,7 +140,7 @@ router.get('/itom/capacity', async (req, res) => {
 // Availability report from outages in period
 router.get('/itom/availability', async (req, res) => {
   try {
-    const Outage = require('../models/Remaining').Outage;
+    const Outage = require('../models/domain').Outage;
     const days = parseInt(req.query.days || '30', 10);
     const since = new Date(Date.now() - days * 86400000);
     const outages = await Outage.find({ ...T(req), startedAt: { $gte: since } });
@@ -132,12 +160,12 @@ router.post('/maintenance-windows', async (req, res) => { try { res.json(await M
 
 // ============ HELP DESK OPERATIONS ============
 // Change conflict detection: overlapping windows for same resources/depts
-router.post('/changes/conflict-check', async (req, res) => {
+router.post('/changes/conflict-check', ...helpdeskGuard('records.view'), requireTenantScope, async (req, res) => {
   try {
-    const Change = require('../models/Change').Change || require('../models/Change');
+    const Change = require('../models/helpdesk/incidents/Change').Change || require('../models/helpdesk/incidents/Change');
     const { changeId, windowStart, windowEnd } = req.body;
     const overlaps = await Change.find({
-      ...T(req),
+      ...C(req),
       _id: { $ne: changeId },
       status: { $in: ['approved', 'scheduled', 'implementing'] },
       windowStart: { $lt: new Date(windowEnd) },
@@ -148,10 +176,10 @@ router.post('/changes/conflict-check', async (req, res) => {
 });
 
 // Recurring incident detection: cluster incidents sharing normalized titles
-router.post('/incidents/recurring-detect', async (req, res) => {
+router.post('/incidents/recurring-detect', ...helpdeskGuard('records.view'), requireTenantScope, async (req, res) => {
   try {
-    const Incident = require('../models/Incident').Incident || require('../models/Incident');
-    const incidents = await Incident.find(T(req)).sort({ createdAt: -1 }).limit(500);
+    const Incident = require('../models/helpdesk/incidents/Incident').Incident || require('../models/helpdesk/incidents/Incident');
+    const incidents = await Incident.find(C(req)).sort({ createdAt: -1 }).limit(500);
     const norm = t => (t || '').toLowerCase().replace(/[^a-z0-9 ]/g, '').replace(/\s+/g, ' ').trim();
     const clusters = new Map();
     for (const i of incidents) { const k = norm(i.title); if (!clusters.has(k)) clusters.set(k, []); clusters.get(k).push(i); }
@@ -161,41 +189,63 @@ router.post('/incidents/recurring-detect', async (req, res) => {
 });
 
 // Publish problem resolution to KB
-router.post('/problems/:id/publish-kb', async (req, res) => {
+router.post('/problems/:id/publish-kb', ...helpdeskGuard('kb.manage'), async (req, res) => {
   try {
-    const Problem = require('../models/Problem').Problem || require('../models/Problem');
-    const Faq = require('../models/Faq').Faq || require('../models/Faq');
-    const problem = await Problem.findOne({ _id: req.params.id, ...T(req) });
+    const Problem = require('../models/helpdesk/incidents/Problem').Problem || require('../models/helpdesk/incidents/Problem');
+    const Faq = require('../models/helpdesk/knowledge/Faq').Faq || require('../models/helpdesk/knowledge/Faq');
+    const problem = await Problem.findOne({ _id: req.params.id, ...C(req) });
     if (!problem) return res.status(404).json({ error: 'Problem not found' });
-    const faq = await Faq.create({ question: problem.title, answer: problem.workaround || problem.rootCause || '', category: req.body.category || null, tenantId: req.user.tenantId, published: true });
+    await assertOpsRecord(req, 'records.view', problem);
+    const answer = String(problem.workaround || problem.rootCause || '').trim();
+    if (!answer) throw new ApiError(422, 'Problem needs a workaround or root cause before publishing knowledge');
+    const faq = await Faq.create({ question: problem.title, answer, category: req.body.category || null, company: req.user.tenantId, createdBy: req.agent._id, isPublished: true, lifecycle: 'published' });
+    await auditOps(req, 'problem.knowledge_published', problem, null, { faqId: faq._id });
     res.json({ faq, problem });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(e.statusCode || 500).json({ error: e.message }); }
 });
 
 // War-room / stakeholder updates appended to incident timeline flagged as stakeholder comms
-router.post('/incidents/:id/stakeholder-update', async (req, res) => {
+router.post('/incidents/:id/stakeholder-update', ...helpdeskGuard('records.update'), async (req, res) => {
   try {
-    const Incident = require('../models/Incident').Incident || require('../models/Incident');
-    const incident = await Incident.findOne({ _id: req.params.id, ...T(req) });
+    const Incident = require('../models/helpdesk/incidents/Incident').Incident || require('../models/helpdesk/incidents/Incident');
+    const incident = await Incident.findOne({ _id: req.params.id, ...C(req) });
     if (!incident) return res.status(404).json({ error: 'Not found' });
-    incident.timeline.push({ message: `[STAKEHOLDER] ${req.body.message}`, by: req.user.id });
+    await assertOpsRecord(req, 'records.update', incident);
+    const message = String(req.body.message || '').trim();
+    if (!message || message.length > 4000) throw new ApiError(422, 'Stakeholder update must be between 1 and 4000 characters');
+    const before = { notifiedStakeholders: incident.notifiedStakeholders };
+    incident.timeline.push({ message: `[STAKEHOLDER] ${message}`, by: req.agent._id });
     incident.notifiedStakeholders = true;
     await incident.save();
+    await auditOps(req, 'incident.stakeholder_updated', incident, before, { notifiedStakeholders: true, message });
     res.json(incident);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(e.statusCode || 500).json({ error: e.message }); }
 });
-router.post('/incidents/:id/resolution-team', async (req, res) => {
+router.post('/incidents/:id/resolution-team', ...helpdeskGuard('records.update'), async (req, res) => {
   try {
-    const Incident = require('../models/Incident').Incident || require('../models/Incident');
-    const incident = await Incident.findOneAndUpdate({ _id: req.params.id, ...T(req) }, { resolutionTeam: req.body.agentIds, isMajor: true }, { new: true });
+    const Incident = require('../models/helpdesk/incidents/Incident').Incident || require('../models/helpdesk/incidents/Incident');
+    const incident = await Incident.findOne({ _id: req.params.id, ...C(req) });
+    if (!incident) return res.status(404).json({ error: 'Not found' });
+    await assertOpsRecord(req, 'records.update', incident);
+    const agentIds = req.body.agentIds;
+    if (!Array.isArray(agentIds) || !agentIds.length || agentIds.length > 30) throw new ApiError(422, 'Resolution team must contain between 1 and 30 agents');
+    const uniqueAgentIds = [...new Set(agentIds.map(String))];
+    const Agent = require('../models/Agent');
+    const members = await Agent.countDocuments({ _id: { $in: uniqueAgentIds }, company: req.user.tenantId, isActive: true });
+    if (members !== uniqueAgentIds.length) throw new ApiError(422, 'Resolution-team agents must be active members of this tenant');
+    const before = { resolutionTeam: incident.resolutionTeam || [], isMajor: incident.isMajor };
+    incident.resolutionTeam = uniqueAgentIds;
+    incident.isMajor = true;
+    await incident.save();
+    await auditOps(req, 'incident.resolution_team_updated', incident, before, { resolutionTeam: incident.resolutionTeam, isMajor: incident.isMajor });
     res.json(incident);
-  } catch (e) { res.status(400).json({ error: e.message }); }
+  } catch (e) { res.status(e.statusCode || 400).json({ error: e.message }); }
 });
 
 // ============ PROJECTS OPERATIONS ============
 router.post('/tickets/:number/to-project-task', async (req, res) => {
   try {
-    const Ticket = require('../models/Ticket');
+    const Ticket = require('../models/helpdesk/tickets/Ticket');
     const ProjectTask = require('../models/ProjectTask').ProjectTask || require('../models/ProjectTask');
     const ticket = await Ticket.findOne({ number: req.params.number, ...T(req) });
     if (!ticket) return res.status(404).json({ error: 'Ticket not found' });
@@ -233,9 +283,9 @@ router.put('/offboarding/:id/tasks/:idx', async (req, res) => {
 router.get('/portal/me', async (req, res) => {
   try {
     const uid = req.user.id;
-    const PolicyAcknowledgement = require('../models/Remaining').PolicyAcknowledgement;
-    const HrDocument = require('../models/Remaining').HrDocument;
-    const DocumentRequest = require('../models/Remaining').DocumentRequest;
+    const PolicyAcknowledgement = require('../models/domain').PolicyAcknowledgement;
+    const HrDocument = require('../models/domain').HrDocument;
+    const DocumentRequest = require('../models/domain').DocumentRequest;
     const [policies, documents, requests] = await Promise.all([
       PolicyAcknowledgement.find({ employee: uid }),
       HrDocument.find({ employee: uid, confidential: false }),
@@ -315,11 +365,11 @@ router.post('/custom-tables/:id/records', async (req, res) => { try { const r = 
 function datasetRows(name, tenantId) {
   // returns Promise<[{...doc}]> for supported datasets
   switch (name) {
-    case 'tickets': return require('../models/Ticket').find({ tenantId }).limit(1000).lean();
+    case 'tickets': return require('../models/helpdesk/tickets/Ticket').find({ tenantId }).limit(1000).lean();
     case 'leads': return require('../models/Lead').find({ tenantId }).limit(1000).lean();
     case 'assets': return require('../models/Asset') ? require('../models/Asset').find({ tenantId }).limit(1000).lean() : [];
-    case 'licenses': return require('../models/License').License.find({ tenantId }).limit(1000).lean();
-    case 'timesheets': return require('../models/Remaining').Timesheet.find({ tenantId }).limit(1000).lean();
+    case 'licenses': return require('../models/license').License.find({ tenantId }).limit(1000).lean();
+    case 'timesheets': return require('../models/domain').Timesheet.find({ tenantId }).limit(1000).lean();
     default: throw new Error('Unknown dataset: ' + name);
   }
 }
@@ -505,7 +555,7 @@ router.post('/quotes/:id/reject', async (req, res) => {
 // ============ 2) E-SIGNATURE INTEGRATION ============
 const esign = require('../services/esign.service');
 router.get('/esign/requests', async (req, res) => {
-  try { const { SignatureRequest } = require('../models/Platform3'); res.json(await SignatureRequest.find(T(req)).sort({ createdAt: -1 })); } catch (e) { res.status(500).json({ error: e.message }); }
+  try { const { SignatureRequest } = require('../models/platformSecurity'); res.json(await SignatureRequest.find(T(req)).sort({ createdAt: -1 })); } catch (e) { res.status(500).json({ error: e.message }); }
 });
 router.post('/esign/requests', async (req, res) => {
   try {
@@ -520,7 +570,7 @@ router.post('/esign/requests', async (req, res) => {
 });
 // Public sign view data (no auth — token is the capability)
 router.get('/esign/public/:token', async (req, res) => {
-  try { const { SignatureRequest } = require('../models/Platform3'); const d = await SignatureRequest.findOne({ token: req.params.token }).select('-tenantId'); if (!d) return res.status(404).json({ error: 'not_found' }); res.json({ documentTitle: d.documentTitle, signerName: d.signerName, signerEmail: d.signerEmail.replace(/(.{2}).*(@.*)/, '$1***$2'), status: d.status, expiresAt: d.expiresAt }); } catch (e) { res.status(500).json({ error: e.message }); }
+  try { const { SignatureRequest } = require('../models/platformSecurity'); const d = await SignatureRequest.findOne({ token: req.params.token }).select('-tenantId'); if (!d) return res.status(404).json({ error: 'not_found' }); res.json({ documentTitle: d.documentTitle, signerName: d.signerName, signerEmail: d.signerEmail.replace(/(.{2}).*(@.*)/, '$1***$2'), status: d.status, expiresAt: d.expiresAt }); } catch (e) { res.status(500).json({ error: e.message }); }
 });
 router.post('/esign/public/:token/sign', async (req, res) => {
   try {
@@ -536,7 +586,7 @@ function toIcsDate(d) { return new Date(d).toISOString().replace(/[-:]/g, '').sp
 router.get('/calendar/events.ics', async (req, res) => {
   try {
     const CrmActivity = require('../models/CrmActivity');
-    const Change = require('../models/Change').Change || require('../models/Change');
+    const Change = require('../models/helpdesk/incidents/Change').Change || require('../models/helpdesk/incidents/Change');
     const tenantId = req.user.tenantId;
     const [meetings, changes] = await Promise.all([
       CrmActivity.find({ $or: [{ tenantId }, { company: tenantId }], type: 'meeting' }).limit(200),
@@ -614,18 +664,18 @@ router.get('/assets/:id/barcode', async (req, res) => {
 
 // ============ 5) PROHIBITED SOFTWARE DETECTION ============
 router.get('/prohibited-software', async (req, res) => {
-  try { const { ProhibitedSoftware } = require('../models/Platform3'); res.json(await ProhibitedSoftware.find(T(req))); } catch (e) { res.status(500).json({ error: e.message }); }
+  try { const { ProhibitedSoftware } = require('../models/platformSecurity'); res.json(await ProhibitedSoftware.find(T(req))); } catch (e) { res.status(500).json({ error: e.message }); }
 });
 router.post('/prohibited-software', async (req, res) => {
-  try { const { ProhibitedSoftware } = require('../models/Platform3'); res.status(201).json(await ProhibitedSoftware.create({ ...req.body, ...T(req) })); } catch (e) { res.status(400).json({ error: e.message }); }
+  try { const { ProhibitedSoftware } = require('../models/platformSecurity'); res.status(201).json(await ProhibitedSoftware.create({ ...req.body, ...T(req) })); } catch (e) { res.status(400).json({ error: e.message }); }
 });
 router.delete('/prohibited-software/:id', async (req, res) => {
-  try { const { ProhibitedSoftware } = require('../models/Platform3'); await ProhibitedSoftware.deleteOne({ _id: req.params.id, ...T(req) }); res.json({ success: true }); } catch (e) { res.status(500).json({ error: e.message }); }
+  try { const { ProhibitedSoftware } = require('../models/platformSecurity'); await ProhibitedSoftware.deleteOne({ _id: req.params.id, ...T(req) }); res.json({ success: true }); } catch (e) { res.status(500).json({ error: e.message }); }
 });
 router.post('/prohibited-software/scan', async (req, res) => {
   try {
-    const { ProhibitedSoftware } = require('../models/Platform3');
-    const InstalledSoftware = require('../models/License').InstalledSoftware;
+    const { ProhibitedSoftware } = require('../models/platformSecurity');
+    const InstalledSoftware = require('../models/license').InstalledSoftware;
     const rules = await ProhibitedSoftware.find({ ...T(req), active: true });
     const installed = await InstalledSoftware.find({ ...T(req), status: 'installed' }).populate('software', 'name vendor');
     const violations = [];
@@ -659,18 +709,18 @@ const allowed = ALL_MODULES_ROLES;
 
 // ============ 7) DELEGATED ACCESS ============
 router.get('/delegations', async (req, res) => {
-  try { const { Delegation } = require('../models/Platform3'); const q = T(req); q.delegator = req.user.id; const mine = await Delegation.find(q).populate('delegate', 'name email'); const forMe = await Delegation.find({ ...T(req), delegate: req.user.id, active: true }).populate('delegator', 'name email'); res.json({ grantedByMe: mine, grantedToMe: forMe }); } catch (e) { res.status(500).json({ error: e.message }); }
+  try { const { Delegation } = require('../models/platformSecurity'); const q = T(req); q.delegator = req.user.id; const mine = await Delegation.find(q).populate('delegate', 'name email'); const forMe = await Delegation.find({ ...T(req), delegate: req.user.id, active: true }).populate('delegator', 'name email'); res.json({ grantedByMe: mine, grantedToMe: forMe }); } catch (e) { res.status(500).json({ error: e.message }); }
 });
 router.post('/delegations', async (req, res) => {
-  try { const { Delegation } = require('../models/Platform3'); const d = await Delegation.create({ delegator: req.user.id, delegate: req.body.delegateId, scopes: req.body.scopes || ['tickets'], reason: req.body.reason, expiresAt: req.body.expiresAt, ...T(req) }); res.status(201).json(d); } catch (e) { res.status(400).json({ error: e.message }); }
+  try { const { Delegation } = require('../models/platformSecurity'); const d = await Delegation.create({ delegator: req.user.id, delegate: req.body.delegateId, scopes: req.body.scopes || ['tickets'], reason: req.body.reason, expiresAt: req.body.expiresAt, ...T(req) }); res.status(201).json(d); } catch (e) { res.status(400).json({ error: e.message }); }
 });
 router.delete('/delegations/:id', async (req, res) => {
-  try { const { Delegation } = require('../models/Platform3'); const d = await Delegation.findOneAndUpdate({ _id: req.params.id, delegator: req.user.id, ...T(req) }, { active: false, revokedAt: new Date() }, { new: true }); res.json(d); } catch (e) { res.status(500).json({ error: e.message }); }
+  try { const { Delegation } = require('../models/platformSecurity'); const d = await Delegation.findOneAndUpdate({ _id: req.params.id, delegator: req.user.id, ...T(req) }, { active: false, revokedAt: new Date() }, { new: true }); res.json(d); } catch (e) { res.status(500).json({ error: e.message }); }
 });
 // Runtime enforcement: caller passes X-On-Behalf-Of with a valid delegation from that user
 router.get('/delegations/verify', async (req, res) => {
   try {
-    const { Delegation } = require('../models/Platform3');
+    const { Delegation } = require('../models/platformSecurity');
     const onBehalfOf = req.headers['x-on-behalf-of'];
     if (!onBehalfOf) return res.json({ delegated: false });
     const d = await Delegation.findOne({ delegator: onBehalfOf, delegate: req.user.id, active: true, ...T(req), $or: [{ expiresAt: null }, { expiresAt: { $gt: new Date() } }] });
@@ -682,7 +732,7 @@ router.get('/delegations/verify', async (req, res) => {
 async function hrScope(req, res, next) {
   try {
     if (['admin', 'superadmin'].includes(req.user.role) || req.user.isAdmin) return next();
-    const { HrScopeConfig } = require('../models/Platform3');
+    const { HrScopeConfig } = require('../models/platformSecurity');
     const cfg = await HrScopeConfig.findOne({ tenantId: req.user.tenantId });
     const isHrTeam = cfg?.agents?.some(a => String(a) === String(req.user.id));
     if (isHrTeam) return next();
@@ -690,12 +740,12 @@ async function hrScope(req, res, next) {
   } catch (e) { next(e); }
 }
 router.get('/hr-scope', hrScope, async (req, res) => {
-  try { const { HrScopeConfig } = require('../models/Platform3'); const cfg = await HrScopeConfig.findOne({ tenantId: req.user.tenantId }); res.json({ agents: cfg?.agents || [] }); } catch (e) { res.status(500).json({ error: e.message }); }
+  try { const { HrScopeConfig } = require('../models/platformSecurity'); const cfg = await HrScopeConfig.findOne({ tenantId: req.user.tenantId }); res.json({ agents: cfg?.agents || [] }); } catch (e) { res.status(500).json({ error: e.message }); }
 });
 router.put('/hr-scope', async (req, res) => {
   try {
     if (!['admin', 'superadmin'].includes(req.user.role) && !req.user.isAdmin) return res.status(403).json({ error: 'Admin only' });
-    const { HrScopeConfig } = require('../models/Platform3');
+    const { HrScopeConfig } = require('../models/platformSecurity');
     const cfg = await HrScopeConfig.findOneAndUpdate({ tenantId: req.user.tenantId }, { agents: req.body.agents || [], updatedBy: req.user.id }, { new: true, upsert: true });
     res.json(cfg);
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -707,7 +757,7 @@ for (const layer of ['/offboarding', '/document-requests', '/policies', '/hr-doc
 
 // ============ 9) DRILL-DOWN REPORTS ============
 const DRILLDOWN_DATASETS = {
-  tickets: { model: () => require('../models/Ticket'), fields: ['status', 'priority', 'category'] },
+  tickets: { model: () => require('../models/helpdesk/tickets/Ticket'), fields: ['status', 'priority', 'category'] },
   leads: { model: () => require('../models/Lead'), fields: ['status', 'source'] },
   opportunities: { model: () => require('../models/Opportunity'), fields: ['stage'] },
 };
@@ -737,7 +787,7 @@ router.post('/drilldown/detail', async (req, res) => {
 });
 
 // ============ 10) PARTIAL-COMPLETION ENDPOINTS ============
-const { WarRoomMessage, SequenceEnrollment, CompanySlaConfig, LifecycleTask, SuspensionRecord, IncidentDiagnosis } = require('../models/Platform4');
+const { WarRoomMessage, SequenceEnrollment, CompanySlaConfig, LifecycleTask, SuspensionRecord, IncidentDiagnosis } = require('../models/platformOps');
 
 // War-room chat thread (polling-based collaboration)
 router.get('/incidents/:id/warroom', async (req, res) => {
@@ -765,9 +815,9 @@ router.put('/incidents/:id/diagnosis', async (req, res) => {
 router.post('/changes/:id/impact-analysis', async (req, res) => {
   try {
     const Resource = require('../models/Resource').Resource || require('../models/Resource');
-    const Ticket = require('../models/Ticket');
-    const change = await require('../models/Change').Change ? null : null; // Change default export
-    const chg = await require('../models/Change');
+    const Ticket = require('../models/helpdesk/tickets/Ticket');
+    const change = await require('../models/helpdesk/incidents/Change').Change ? null : null; // Change default export
+    const chg = await require('../models/helpdesk/incidents/Change');
     const changeDoc = typeof chg === 'function' ? await chg.findById(req.params.id) : await chg.Change.findById(req.params.id);
     if (!changeDoc) return res.status(404).json({ error: 'Change not found' });
     const resources = await Resource.find({ ...T(req), $or: [{ _id: { $in: (changeDoc.resources || []) } }, { name: new RegExp((changeDoc.title || '').split(' ').slice(0, 2).join('|'), 'i') }] }).limit(50);
@@ -801,7 +851,7 @@ router.post('/work-orders/:id/photos', async (req, res) => {
 // Sequence enrollment + runner
 router.post('/sequences/:id/enroll', async (req, res) => {
   try {
-    const ActivitySequence = require('../models/Remaining').ActivitySequence;
+    const ActivitySequence = require('../models/domain').ActivitySequence;
     const seq = await ActivitySequence.findOne({ _id: req.params.id, ...T(req) });
     if (!seq || seq.status !== 'active') return res.status(400).json({ error: 'Sequence not active' });
     const enrollment = await SequenceEnrollment.create({ sequence: seq._id, targetId: req.body.targetId, targetType: seq.target, nextRunAt: new Date(), ...T(req) });
@@ -816,7 +866,7 @@ router.post('/sequences/process-due', async (req, res) => {
     const due = await SequenceEnrollment.find({ ...T(req), status: 'active', nextRunAt: { $lte: now } }).limit(100);
     let executed = 0;
     for (const en of due) {
-      const ActivitySequence = require('../models/Remaining').ActivitySequence;
+      const ActivitySequence = require('../models/domain').ActivitySequence;
       const CrmActivity = require('../models/CrmActivity');
       const Notification = require('../models/Notification');
       const seq = await ActivitySequence.findById(en.sequence);
@@ -841,7 +891,7 @@ router.post('/sequences/process-due', async (req, res) => {
 // Segment rule evaluation
 router.post('/segments/:id/evaluate', async (req, res) => {
   try {
-    const Segment = require('../models/Remaining').Segment;
+    const Segment = require('../models/domain').Segment;
     const User = require('../models/User');
     const seg = await Segment.findOne({ _id: req.params.id, ...T(req) });
     if (!seg) return res.status(404).json({ error: 'Segment not found' });
@@ -866,7 +916,7 @@ router.post('/segments/:id/evaluate', async (req, res) => {
 router.post('/duplicates/scan-leads', async (req, res) => {
   try {
     const Lead = require('../models/Lead');
-    const DuplicateRecord = require('../models/Remaining').DuplicateRecord;
+    const DuplicateRecord = require('../models/domain').DuplicateRecord;
     const leads = await Lead.find(T(req)).limit(1000);
     const norm = s => String(s || '').toLowerCase().replace(/[^a-z0-9@.]/g, '');
     const pairs = [];
@@ -929,8 +979,8 @@ router.get('/companies/:id/sla', async (req, res) => {
 // HR knowledge base seed
 router.post('/kb/seed-hr', async (req, res) => {
   try {
-    const KnowledgeBase = require('../models/Remaining').KnowledgeBase;
-    const Faq = require('../models/Faq');
+    const KnowledgeBase = require('../models/domain').KnowledgeBase;
+    const Faq = require('../models/helpdesk/knowledge/Faq');
     let kb = await KnowledgeBase.findOne({ ...T(req), name: 'HR Knowledge Base' });
     if (!kb) kb = await KnowledgeBase.create({ name: 'HR Knowledge Base', description: 'Policies, benefits and onboarding answers', visibility: 'internal', ...T(req) });
     const seed = [
@@ -968,7 +1018,7 @@ router.post('/hr/lifecycle-generate/:employeeId', async (req, res) => {
 // License renewal reminders due
 router.get('/licenses/reminders-due', async (req, res) => {
   try {
-    const License = require('../models/License').License;
+    const License = require('../models/license').License;
     const licenses = await License.find({ ...T(req), status: 'active' });
     const now = Date.now();
     const due = licenses.filter(l => {
@@ -980,7 +1030,7 @@ router.get('/licenses/reminders-due', async (req, res) => {
 });
 router.post('/licenses/send-reminders', async (req, res) => {
   try {
-    const License = require('../models/License').License;
+    const License = require('../models/license').License;
     const Notification = require('../models/Notification');
     const sent = [];
     for (const l of req.body.licenseIds || []) {
@@ -1028,8 +1078,8 @@ router.post('/mentions/extract', async (req, res) => {
     const Agent = require('../models/Agent');
     const agents = await Agent.find({ tenantId: req.user.tenantId }).select('name email').limit(200);
     const matches = agents.filter(a => text.toLowerCase().includes('@' + String(a.name || '').toLowerCase().split(' ')[0]));
-    const Mention = require('../models/Platform3').Delegation ? null : null; // Mention model lives in Remaining
-    const MentionModel = require('../models/Remaining').Mention;
+    const Mention = require('../models/platformSecurity').Delegation ? null : null; // Mention model lives in Remaining
+    const MentionModel = require('../models/domain').Mention;
     const Notification = require('../models/Notification');
     const created = [];
     for (const m of matches) {
@@ -1051,13 +1101,13 @@ router.get('/custom-forms/for-item/:itemId', async (req, res) => {
 });
 
 // ============ 11) SAML ACS (full XML-DSig validation) + CO-EDIT PRESENCE ============
-const { TicketPresence } = require('../models/Platform4');
+const { TicketPresence } = require('../models/platformOps');
 
 // Public SP Assertion Consumer Service — validates the SAML Response end-to-end
 // and issues a platform session JWT. Token is the capability; no auth required here.
 router.post('/auth/sso/acs', async (req, res) => {
   try {
-    const { SsoConfig } = require('../models/Platform3');
+    const { SsoConfig } = require('../models/platformSecurity');
     const cfg = await SsoConfig.findOne({ enabled: true });
     if (!cfg) return res.status(400).json({ error: 'SSO not configured or disabled' });
     if (req.body.RelayState && !req.body.samlResponse) {
@@ -1098,7 +1148,7 @@ router.post('/auth/sso/acs', async (req, res) => {
 // Co-editing presence indicators for a ticket
 router.post('/tickets/:number/presence', async (req, res) => {
   try {
-    const Ticket = require('../models/Ticket');
+    const Ticket = require('../models/helpdesk/tickets/Ticket');
     const t = await Ticket.findOne({ number: req.params.number }).select('_id');
     if (!t) return res.status(404).json({ error: 'Ticket not found' });
     await TicketPresence.findOneAndUpdate(
@@ -1111,7 +1161,7 @@ router.post('/tickets/:number/presence', async (req, res) => {
 });
 router.get('/tickets/:number/presence', async (req, res) => {
   try {
-    const Ticket = require('../models/Ticket');
+    const Ticket = require('../models/helpdesk/tickets/Ticket');
     const t = await Ticket.findOne({ number: req.params.number }).select('_id');
     if (!t) return res.status(404).json({ error: 'Ticket not found' });
     const cutoff = new Date(Date.now() - 90 * 1000);
@@ -1150,16 +1200,16 @@ router.post('/hr/onboarding-cascade/:employeeId', async (req, res) => {
     // 1) HR lifecycle tasks
     created.hrTasks = await LifecycleTask.create({ employee: req.params.employeeId, milestone: 'day_1', title: 'Day-1 onboarding tasks', items: [{ label: 'Welcome session', done: false }, { label: 'Policy acknowledgement pack', done: false }], tenantId: T(req).tenantId });
     // 2) IT access request ticket
-    const Ticket = require('../models/Ticket');
+    const Ticket = require('../models/helpdesk/tickets/Ticket');
     created.itTicket = await Ticket.create({ title: `[IT Onboarding] Provision accounts for employee ${req.params.employeeId}`, body: 'Auto-generated by onboarding cascade', status: 'open', tenantId: T(req).tenantId });
     // 3) Asset assignment lifecycle record
-    const AssetLifecycle = require('../models/Stockroom').AssetLifecycle;
+    const AssetLifecycle = require('../models/stockroom').AssetLifecycle;
     if (AssetLifecycle && req.body.assetId) {
       created.assetAssignment = await AssetLifecycle.create({ asset: req.body.assetId, status: 'assigned', assignedTo: req.params.employeeId, history: [{ status: 'assigned', changedBy: req.user.id, notes: 'Onboarding cascade' }], tenantId: T(req).tenantId });
     }
     // 4) Desk reservation for day one
-    const Space = require('../models/Enterprise').Space;
-    const Reservation = require('../models/Enterprise').Reservation;
+    const Space = require('../models/enterprise').Space;
+    const Reservation = require('../models/enterprise').Reservation;
     if (req.body.spaceId) {
       created.deskReservation = await Reservation.create({ space: req.body.spaceId, reservedBy: req.params.employeeId, date: req.body.startDate || new Date(), status: 'reserved', tenantId: T(req).tenantId });
     } else if (Space) {

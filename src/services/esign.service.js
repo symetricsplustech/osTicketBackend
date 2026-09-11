@@ -1,4 +1,4 @@
-const { SignatureRequest } = require('../models/Platform3');
+const { SignatureRequest } = require('../models/platformSecurity');
 
 // Internal e-signature: tokenized consent link + tamper-evident hash.
 // DocuSign adapter activates automatically when DOCUSIGN_INTEGRATOR_KEY etc. are configured.

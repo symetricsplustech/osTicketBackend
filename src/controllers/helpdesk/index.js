@@ -1,0 +1,15 @@
+module.exports = {
+  ...require('./shared'),
+  ...require('./dashboard'),
+  ...require('./tickets/operations'),
+  ...require('./tickets/tasks'),
+  ...require('./tickets/threads'),
+  ...require('./tickets/queues'),
+  ...require('./incidents/escalations'),
+  ...require('./incidents/workload'),
+  ...require('./knowledge/articles'),
+  ...require('./knowledge/canned-responses'),
+  ...require('./knowledge/announcements'),
+  ...require('./users'),
+  ...require('./notifications'),
+};

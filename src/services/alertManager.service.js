@@ -1,6 +1,6 @@
 const crypto = require('crypto');
 const Alert = require('../models/Alert');
-const Incident = require('../models/Incident');
+const Incident = require('../models/helpdesk/incidents/Incident');
 
 async function ingestAlert({ company, title, message, severity, source, resource, service, metric, threshold, currentValue, labels }) {
   const dedupeKey = crypto.createHash('sha256')

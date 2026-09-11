@@ -6,8 +6,8 @@ const Company = require('../src/models/Company');
 const Agent = require('../src/models/Agent');
 const User = require('../src/models/User');
 const Department = require('../src/models/Department');
-const Ticket = require('../src/models/Ticket');
-const TicketThread = require('../src/models/TicketThread');
+const Ticket = require('../src/models/helpdesk/tickets/Ticket');
+const TicketThread = require('../src/models/helpdesk/tickets/TicketThread');
 
 const port = 5108;
 const base = `http://127.0.0.1:${port}/api/v1`;
@@ -54,9 +54,9 @@ const assert = (condition, message) => { if (!condition) throw new Error(message
     ]);
     [adminA, agentA, agentOtherDept, agentB] = await Promise.all([
       Agent.create({ name: 'Read admin A', email: `read-admina-${suffix}@osticket.local`, password: 'Pass@1234', company: coA._id, isAdmin: true, isActive: true, departments: [{ department: deptA1._id, isPrimary: true }] }),
-      Agent.create({ name: 'Read agent A', email: `read-agenta-${suffix}@osticket.local`, password: 'Pass@1234', company: coA._id, isActive: true, departments: [{ department: deptA1._id, isPrimary: true }] }),
-      Agent.create({ name: 'Read agent other', email: `read-othera-${suffix}@osticket.local`, password: 'Pass@1234', company: coA._id, isActive: true, departments: [{ department: deptA2._id, isPrimary: true }] }),
-      Agent.create({ name: 'Read agent B', email: `read-agentb-${suffix}@osticket.local`, password: 'Pass@1234', company: coB._id, isActive: true, departments: [{ department: deptB._id, isPrimary: true }] }),
+      Agent.create({ name: 'Read agent A', email: `read-agenta-${suffix}@osticket.local`, password: 'Pass@1234', company: coA._id, isActive: true, permissions: ['tickets.view'], departments: [{ department: deptA1._id, isPrimary: true }] }),
+      Agent.create({ name: 'Read agent other', email: `read-othera-${suffix}@osticket.local`, password: 'Pass@1234', company: coA._id, isActive: true, permissions: ['tickets.view'], departments: [{ department: deptA2._id, isPrimary: true }] }),
+      Agent.create({ name: 'Read agent B', email: `read-agentb-${suffix}@osticket.local`, password: 'Pass@1234', company: coB._id, isActive: true, permissions: ['tickets.view'], departments: [{ department: deptB._id, isPrimary: true }] }),
     ]);
 
     const ticket = await Ticket.create({ number: `RD-${suffix}`, company: coA._id, user: owner1._id, dept: deptA1._id, agent: agentA._id, subject: 'Read access ticket', priority: 'Normal', status: 'assigned' });
