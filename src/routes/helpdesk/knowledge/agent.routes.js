@@ -25,14 +25,14 @@ router.get('/kb/deflection', moduleRequired('helpdesk'), async (req, res, next) 
   try {
     const q = { company: req.companyId, isPublished: true };
     if (req.query.faqId) q._id = req.query.faqId;
-    const faqs = await Faq.find(q).select('subject views votesUp votesDown').lean();
+    const faqs = await Faq.find(q).select('question views helpful notHelpful').lean();
     const articles = faqs.map((faq) => ({
       faqId: faq._id,
-      subject: faq.subject,
+      subject: faq.question,
       views: faq.views || 0,
-      votesUp: faq.votesUp || 0,
-      votesDown: faq.votesDown || 0,
-      deflectionRate: faq.views ? Math.round(((faq.votesUp || 0) / faq.views) * 100) : 0,
+      votesUp: faq.helpful || 0,
+      votesDown: faq.notHelpful || 0,
+      deflectionRate: faq.views ? Math.round(((faq.helpful || 0) / faq.views) * 100) : 0,
     }));
     const totalViews = articles.reduce((sum, article) => sum + article.views, 0);
     const totalDeflected = articles.reduce((sum, article) => sum + article.votesUp, 0);
