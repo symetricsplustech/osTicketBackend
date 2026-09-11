@@ -12,9 +12,6 @@ const pick = (obj, keys) => Object.fromEntries(keys.filter(k => obj[k] !== undef
 
 const SlaPlan = mongoose.model('SlaPlan');
 const SlaEvent = mongoose.model('SlaEvent');
-const TaskSLA = mongoose.model('TaskSLA');
-const EscalationRule = mongoose.model('EscalationRule');
-const Holiday = mongoose.model('Holiday');
 const OLA = mongoose.model('OLA');
 const UnderpinningContractTarget = mongoose.model('UnderpinningContractTarget');
 const SLACondition = mongoose.model('SLACondition');
