@@ -12,6 +12,7 @@ const ticketService = require('../../../services/ticket.service');
 const emailService = require('../../../services/email.service');
 const { notifyAgent, notifyUser } = require('../../../services/notification.service');
 const { getOrgOwner, hasPermission, USER_PERMISSIONS } = require('../../../utils/userPermissions');
+const approvalFlow = require('../../../services/ticketApprovalFlow.service');
 const config = require('../../../config/config');
 const CustomField = require('../../../models/CustomField');
 const TicketForm = require('../../../models/helpdesk/tickets/TicketForm');
@@ -427,4 +428,38 @@ exports.deleteTicket = asyncHandler(async (req, res) => {
   await ticketService.addSystemEvent({ ticket, message: 'Ticket deleted by user' });
   await notifyOwnerOfEmployeeAction({ ticket, user: req.user, type: 'status_change', action: 'deleted' });
   res.json({ success: true, message: 'Ticket deleted' });
+});
+
+exports.orgApprovals = asyncHandler(async (req, res) => {
+  if (!req.user) throw new ApiError(403, 'Requester access required');
+  const items = await approvalFlow.listPendingOrgApprovals({ user: req.user, companyId: req.companyId });
+  res.json({ success: true, items });
+});
+
+exports.decideTicketApproval = asyncHandler(async (req, res) => {
+  const { decision, note } = req.body;
+  if (!['approve', 'reject'].includes(decision)) throw new ApiError(422, 'decision must be approve or reject');
+  const ticket = await loadTicketWithAccess(req, { requirePermission: USER_PERMISSIONS.TICKET_VIEW });
+  if (ticket.status !== Ticket.STATUSES.PENDING_APPROVAL) {
+    throw new ApiError(400, 'Ticket is not waiting for approval');
+  }
+  const result = await approvalFlow.decideCustomerApproval({ ticket, user: req.user, decision, note });
+  const routedTo = result.team
+    ? {
+        teamId: result.team._id,
+        teamName: result.team.name,
+        leadTitle: result.team.leadTitle || 'Team Lead',
+        leadId: result.assignedLead?._id || null,
+        leadName: result.assignedLead?.name || null,
+      }
+    : null;
+  res.json({
+    success: true,
+    message: decision === 'approve' ? 'Ticket approved' : 'Ticket rejected',
+    ticketNumber: ticket.number,
+    status: result.approval.status,
+    approvalId: result.approval._id,
+    routedTo,
+    agentId: result.assignedLead?._id || null,
+  });
 });

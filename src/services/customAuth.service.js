@@ -51,10 +51,10 @@ function evaluateCustom(permission, snapshot, principal) {
   }
 
   const principalId = id(principal);
+  const principalTeams = new Set((principal?.teams || []).map(id));
   const matchingRoles = customRoles.filter((role) =>
     (role.agentMembers || []).some((member) => id(member) === principalId)
-    || (role.permissions || []).includes(permission)
-    || (role.deniedPermissions || []).includes(permission)
+    || (role.teamMembers || []).some((member) => principalTeams.has(id(member)))
   );
   if (matchingRoles.some((role) => (role.deniedPermissions || []).includes(permission))) {
     return { decision: 'DENY', via: 'custom_role' };

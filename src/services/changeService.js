@@ -1,7 +1,7 @@
 const Change = require('../models/helpdesk/incidents/Change');
 const ChangeTask = require('../models/helpdesk/incidents/ChangeTask');
 const ChangeCI = require('../models/helpdesk/incidents/ChangeCI');
-const ChangeService = require('../models/helpdesk/incidents/ChangeService');
+const ChangeServiceLink = require('../models/helpdesk/incidents/ChangeService');
 const ChangeRiskAssessment = require('../models/helpdesk/incidents/ChangeRiskAssessment');
 const ChangeConflict = require('../models/helpdesk/incidents/ChangeConflict');
 const ChangeImplementationResult = require('../models/helpdesk/incidents/ChangeImplementationResult');
@@ -118,9 +118,9 @@ class ChangeService {
   }
 
   static async linkService(changeId, serviceId, impactLevel, tenantId, actorId) {
-    const existing = await ChangeService.findOne({ change: changeId, service: serviceId });
+    const existing = await ChangeServiceLink.findOne({ change: changeId, service: serviceId });
     if (existing) { existing.impactLevel = impactLevel || existing.impactLevel; existing.isActive = true; await existing.save(); return existing; }
-    return ChangeService.create({ change: changeId, service: serviceId, company: tenantId, impactLevel: impactLevel || 'low', linkedBy: actorId });
+    return ChangeServiceLink.create({ change: changeId, service: serviceId, company: tenantId, impactLevel: impactLevel || 'low', linkedBy: actorId });
   }
 
   static async assessRisk(changeId, riskData, tenantId, actorId) {

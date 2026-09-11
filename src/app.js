@@ -87,9 +87,8 @@ app.use("/api", (req, _res, next) => {
   next();
 });
 
-if (config.env === "development") {
-  app.use(morgan("dev"));
-}
+// Log every request in development and production.
+app.use(morgan(config.env === "production" ? "combined" : "dev"));
 
 // Stricter auth limiter: 10 attempts per 15 minutes per IP
 const authLimiter = rateLimit({

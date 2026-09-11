@@ -517,6 +517,10 @@ exports.changeStatus = asyncHandler(async (req, res) => {
   const ticket = await loadTicketForAgent(req.params.number, req.agent);
   assertNotLocked(ticket, req.agent);
   const { status, closedReason, resolution } = req.body;
+  const required = ['resolved', 'closed'].includes(status) ? 'tickets.close' : 'tickets.edit';
+  if (!hasPerm(req.agent, required)) {
+    throw new ApiError(403, `You do not have permission to set tickets to ${status}`);
+  }
   await ticketService.applyStatusChange(ticket, status, {
     actorType: 'agent',
     actorId: req.agent._id,

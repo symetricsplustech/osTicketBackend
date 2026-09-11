@@ -130,12 +130,6 @@ router.post('/custom-fields', ctrl.customFields.create);
 router.put('/custom-fields/:id', ctrl.customFields.update);
 router.delete('/custom-fields/:id', ctrl.customFields.remove);
 
-const customAuthRouter = require('./customAuth.routes');
-router.use('/custom-auth', customAuthRouter);
-
-const botFlowRouter = require('./botFlow.routes');
-router.use('/bot-flows', botFlowRouter);
-
 // Ticket Forms
 router.get('/ticket-forms', ctrl.ticketForms.list);
 router.post('/ticket-forms', ctrl.ticketForms.create);

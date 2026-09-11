@@ -31,9 +31,6 @@ router.post('/webhook/razorpay', ctrl.razorpayWebhook);
 
 // Protected
 router.use(protectSuperAdmin);
-router.use('/control', require('./platformControl.routes'));
-router.use('/sla', require('./platformSla.routes'));
-
 // Auth routes (superadmin can always access their own profile)
 router.get('/auth/me', ctrl.getMe);
 router.put('/auth/me', ctrl.updateMe);

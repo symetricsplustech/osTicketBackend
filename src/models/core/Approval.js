@@ -37,4 +37,4 @@ approvalSchema.index({ tenantId: 1, taskId: 1, state: 1 });
 approvalSchema.index({ tenantId: 1, approver: 1, state: 1 });
 approvalSchema.index({ tenantId: 1, state: 1, dueAt: 1 });
 
-module.exports = mongoose.model('Approval', approvalSchema);
+module.exports = mongoose.models.CoreApproval || mongoose.model('CoreApproval', approvalSchema);

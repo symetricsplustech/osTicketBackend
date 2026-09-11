@@ -183,7 +183,6 @@ exports.dashboard = asyncHandler(async (req, res) => {
 
   const recentInvoices = await Invoice.find()
     .populate('company', 'name')
-    .populate('plan', 'name')
     .sort({ createdAt: -1 })
     .limit(5);
 

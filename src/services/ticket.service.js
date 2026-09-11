@@ -299,8 +299,10 @@ const createTicket = async ({ user, orgOwner, createdBy, subject, details, topic
   }
 
   // ---- Enterprise: smart routing (skill-based / round-robin / least-workload) ----
+  const { needsCustomerApproval } = require('./ticketApprovalFlow.service');
+  const awaitingCustomerApproval = needsCustomerApproval(user);
   const routingAlgorithm = settings.routing?.algorithm || 'skill_based';
-  if (autoAssign && !targetAgent && !targetTeam && routingAlgorithm !== 'none') {
+  if (!awaitingCustomerApproval && autoAssign && !targetAgent && !targetTeam && routingAlgorithm !== 'none') {
     try {
       const routing = require('./routing.service');
       const skills = await routing.skillsForTopic(helpTopic?._id);
@@ -366,7 +368,7 @@ const createTicket = async ({ user, orgOwner, createdBy, subject, details, topic
   await ticket.save();
 
   // Learned auto-routing: if no agent assigned and department set, try learned routing
-  if (!ticket.agent && ticket.dept) {
+  if (!awaitingCustomerApproval && !ticket.agent && ticket.dept) {
     try {
       const { autoRoute } = require('./learnedRouting.service');
       const route = await autoRoute({ company: companyId, departmentId: ticket.dept, subject: ticket.subject, details, priority: ticket.priority });
@@ -378,8 +380,19 @@ const createTicket = async ({ user, orgOwner, createdBy, subject, details, topic
     } catch (_) { /* routing failure is non-fatal */ }
   }
 
+  // Customer approval gate: external member tickets must be approved by the
+  // organization manager before they reach a helpdesk team/lead.
+  if (awaitingCustomerApproval) {
+    try {
+      const { startCustomerApproval } = require('./ticketApprovalFlow.service');
+      await startCustomerApproval({ ticket, user, companyId });
+    } catch (err) {
+      logger.error(`Customer approval gate failed for ticket ${ticket.number}: ${err.message}`);
+    }
+  }
+
   // Notifications
-  if (targetAgent) {
+  if (!awaitingCustomerApproval && targetAgent) {
     const agentDoc = await Agent.findById(targetAgent);
     await notifyAgent({
       agentId: targetAgent,
@@ -390,7 +403,7 @@ const createTicket = async ({ user, orgOwner, createdBy, subject, details, topic
       ticket: ticket._id,
     });
   }
-  if (targetTeam) {
+  if (!awaitingCustomerApproval && targetTeam) {
     const teamDoc = await Team.findById(targetTeam).populate('members');
     const members = teamDoc?.members || [];
     for (const m of members) {
@@ -407,7 +420,7 @@ const createTicket = async ({ user, orgOwner, createdBy, subject, details, topic
     }
   }
   const deptAgents = await Agent.find({ 'departments.department': targetDept?._id, isActive: true, ...(companyId ? { company: companyId } : {}) });
-  if (settings.tickets?.notifyNewTicketToDept) {
+  if (!awaitingCustomerApproval && settings.tickets?.notifyNewTicketToDept) {
     for (const a of deptAgents) {
       if (!targetAgent || String(a._id) !== String(targetAgent)) {
         await notifyAgent({
@@ -421,7 +434,7 @@ const createTicket = async ({ user, orgOwner, createdBy, subject, details, topic
       }
     }
   }
-  await notifyAdminRoom({ type: 'new_ticket', message: `New ticket ${ticket.number}: ${ticket.subject}`, link: `/tickets/${ticket.number}`, ticket: ticket._id, company: companyId });
+  if (!awaitingCustomerApproval) await notifyAdminRoom({ type: 'new_ticket', message: `New ticket ${ticket.number}: ${ticket.subject}`, link: `/tickets/${ticket.number}`, ticket: ticket._id, company: companyId });
 
   // Emails
   const ctx = await buildTicketContext(ticket);
@@ -459,7 +472,7 @@ const createTicket = async ({ user, orgOwner, createdBy, subject, details, topic
     logger.error(`Confirmation email failed: ${err.message}`);
   }
   try {
-    if (settings.tickets?.notifyNewTicketToDept !== false) {
+    if (!awaitingCustomerApproval && settings.tickets?.notifyNewTicketToDept !== false) {
       const recipients = new Set();
       if (targetAgent) recipients.add(String(targetAgent));
       if (deptAgents.length && !targetAgent) deptAgents.forEach((a) => recipients.add(String(a._id)));

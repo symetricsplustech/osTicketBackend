@@ -37,4 +37,4 @@ auditEventSchema.index({ tenantId: 1, actor: 1, createdAt: -1 });
 auditEventSchema.index({ tenantId: 1, action: 1, createdAt: -1 });
 auditEventSchema.index({ tenantId: 1, correlationId: 1 });
 
-module.exports = mongoose.model('AuditEvent', auditEventSchema);
+module.exports = mongoose.models.AuditEvent || mongoose.model('AuditEvent', auditEventSchema);

@@ -8,6 +8,18 @@ const auditEventService = require('./auditEventService');
 const numberingService = require('./numbering.service');
 const { assertTransition } = require('./stateMachine.service');
 
+// Register knowledge-domain models before retrieving them from Mongoose.
+require('../models/helpdesk/knowledge/Faq');
+require('../models/helpdesk/knowledge/FaqCategory');
+require('../models/helpdesk/knowledge/KnowledgeBase');
+require('../models/helpdesk/knowledge/KnowledgeVersion');
+require('../models/helpdesk/knowledge/KnowledgeFeedback');
+require('../models/helpdesk/knowledge/KnowledgeRating');
+require('../models/helpdesk/knowledge/KnowledgeComment');
+require('../models/helpdesk/knowledge/KnowledgeReaderCriteria');
+require('../models/helpdesk/knowledge/KnowledgeContributorCriteria');
+require('../models/helpdesk/knowledge/KnowledgeApproval');
+
 const requireTenant = (ctx) => {
   if (!ctx.tenantId) throw Object.assign(new Error('Tenant context required'), { statusCode: 400 });
   return ctx.tenantId;

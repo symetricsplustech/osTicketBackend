@@ -39,6 +39,7 @@ const start = async () => {
   startLearningLoop();
 
   server.listen(config.port, () => {
+    console.log(`Backend running on port ${config.port}`);
     logger.info(`osTicket MERN API running on http://localhost:${config.port} (${config.env})`);
   });
 

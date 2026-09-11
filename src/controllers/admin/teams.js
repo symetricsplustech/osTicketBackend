@@ -392,18 +392,19 @@ exports.listTeams = asyncHandler(async (req, res) => {
   res.json({ success: true, items: teams });
 });
 exports.createTeam = asyncHandler(async (req, res) => {
-  const { name, lead, members, notes, status } = req.body;
+  const { name, lead, leadTitle, members, notes, status } = req.body;
   if (!name) throw new ApiError(422, 'Team name is required');
-  const team = await Team.create({ name, lead: lead || null, members: members || [], notes: notes || '', status: status || 'active', company: req.companyId });
+  const team = await Team.create({ name, lead: lead || null, leadTitle: (leadTitle || 'Team Lead').trim(), members: members || [], notes: notes || '', status: status || 'active', company: req.companyId });
   res.status(201).json({ success: true, team });
 });
 exports.updateTeam = asyncHandler(async (req, res) => {
   const team = await Team.findById(req.params.id);
   if (!team) throw new ApiError(404, 'Team not found');
   if (req.companyId && String(team.company) !== String(req.companyId)) throw new ApiError(403, 'Access denied');
-  const { name, lead, members, notes, status } = req.body;
+  const { name, lead, leadTitle, members, notes, status } = req.body;
   if (name) team.name = name;
-  if (lead !== undefined) team.lead = lead;
+  if (lead !== undefined) team.lead = lead || null;
+  if (leadTitle !== undefined) team.leadTitle = String(leadTitle || 'Team Lead').trim();
   if (members !== undefined) team.members = members;
   if (notes !== undefined) team.notes = notes;
   if (status !== undefined) team.status = status;
