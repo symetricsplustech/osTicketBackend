@@ -68,16 +68,14 @@ const PROBLEM_TRANSITIONS = {
 };
 
 const CHANGE_TRANSITIONS = {
-  draft: ['requested', 'for_approval'],
-  requested: ['for_approval', 'draft'],
-  for_approval: ['approved', 'rejected', 'draft'],
-  approved: ['scheduled', 'implementing'],
-  scheduled: ['implementing'],
-  implementing: ['validating', 'rolled_back'],
-  validating: ['closed', 'implementing'],
-  rejected: ['draft'],
-  rolled_back: ['closed', 'draft'],
-  closed: [], // terminal — clone to rework
+  new: ['assess', 'canceled'],
+  assess: ['authorize', 'canceled'],
+  authorize: ['scheduled', 'assess', 'canceled'],
+  scheduled: ['implement', 'authorize', 'canceled'],
+  implement: ['review', 'scheduled'],
+  review: ['closed', 'implement'],
+  closed: [],
+  canceled: ['new'],
 };
 
 const FAQ_TRANSITIONS = {
