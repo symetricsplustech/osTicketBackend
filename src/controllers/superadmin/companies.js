@@ -388,14 +388,18 @@ exports.createCompany = asyncHandler(async (req, res) => {
     }
   }
 
-  // Activate selected modules for the tenant
+  // Activate selected modules for the tenant. Helpdesk is enabled by default
+  // for every tenant so all of its users can see the helpdesk UI out of the box.
+  const DEFAULT_MODULES = ['helpdesk', 'settings'];
   const moduleKeys = Array.isArray(modules) && modules.length > 0 ? modules : (activePlan?.moduleKeys || []);
-  if (moduleKeys.length > 0) {
+  const finalModuleKeys = moduleKeys.length > 0 ? moduleKeys : DEFAULT_MODULES;
+  if (!finalModuleKeys.includes('helpdesk')) finalModuleKeys.unshift('helpdesk');
+  if (finalModuleKeys.length > 0) {
     const mongoose = require('mongoose');
     const db = mongoose.connection.db;
     const tenantObjectId = new mongoose.Types.ObjectId(company._id);
     const now = new Date();
-    for (const key of moduleKeys) {
+    for (const key of finalModuleKeys) {
       await db.collection('tenant_modules').updateOne(
         { tenantId: tenantObjectId, moduleKey: key },
         { $set: { status: 'active', activatedAt: now, updatedAt: now }, $setOnInsert: { tenantId: tenantObjectId, moduleKey: key, createdAt: now } },

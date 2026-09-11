@@ -7,6 +7,18 @@ const { emitEvent } = require('../realtime/socketManager');
 const auditEventService = require('./auditEventService');
 const numberingService = require('./numbering.service');
 
+// Register SLM models before retrieving them from Mongoose's registry.
+require('../models/SlaPlan');
+require('../models/SlaEvent');
+require('../models/slm/OLA');
+require('../models/slm/UnderpinningContractTarget');
+require('../models/slm/SLACondition');
+require('../models/slm/BusinessSchedule');
+require('../models/slm/HolidayCalendar');
+require('../models/slm/SLABreakdown');
+require('../models/slm/SLARepairJob');
+require('../models/helpdesk/tickets/Ticket');
+
 const requireTenant = (ctx) => { if (!ctx.tenantId) throw Object.assign(new Error('Tenant context required'), { statusCode: 400 }); return ctx.tenantId; };
 const pick = (obj, keys) => Object.fromEntries(keys.filter(k => obj[k] !== undefined).map(k => [k, obj[k]]));
 

@@ -24,6 +24,11 @@ const HelpTopic = require('../src/models/HelpTopic');
 const TENANT_NAME = 'Nimbus Technologies';
 const TENANT_DOMAIN = 'nimbus.osticket.local';
 
+// Modules every tenant gets by default. Helpdesk is the product default, so a
+// freshly provisioned tenant (and all of its users) can see the helpdesk UI
+// without an admin having to activate anything first.
+const DEFAULT_TENANT_MODULES = ['helpdesk', 'settings'];
+
 const PLATFORM_OWNER_PERMS = [
   'platform.view_dashboard', 'platform.view_tenants', 'platform.view_plans', 'platform.view_modules',
   'platform.view_operations', 'platform.view_audit', 'platform.view_security', 'platform.view_superadmins',
@@ -51,7 +56,7 @@ const AGENTS = [
   },
   {
     name: 'Ravi Kumar', email: 'l1@nimbus.osticket.local', password: 'Agent@123', isAdmin: false, level: 'L1',
-    permissions: AGENT_PERMISSIONS.l1, dept: 'Support', team: 'Frontline', teams: ['Frontline', 'Networking Helpdesk'], role: 'Support Agent', skills: ['Network'],
+    permissions: AGENT_PERMISSIONS.l1, dept: 'Support', team: 'Frontline', teams: ['Frontline', 'Networking Helpdesk'], role: 'Support Agent', isDeptManager: true, skills: ['Network'],
   },
   {
     name: 'Sneha Iyer', email: 'l2@nimbus.osticket.local', password: 'Agent@123', isAdmin: false, level: 'L2',
@@ -173,6 +178,19 @@ const run = async () => {
     await company.save();
   }
 
+  // Activate default modules (helpdesk first) so every user of the tenant
+  // sees helpdesk in the sidebar by default.
+  const db = mongoose.connection.db;
+  const tenantObjectId = company._id;
+  const now = new Date();
+  for (const key of DEFAULT_TENANT_MODULES) {
+    await db.collection('tenant_modules').updateOne(
+      { tenantId: tenantObjectId, moduleKey: key },
+      { $set: { status: 'active', activatedAt: now, updatedAt: now }, $setOnInsert: { tenantId: tenantObjectId, moduleKey: key, createdAt: now } },
+      { upsert: true }
+    );
+  }
+
   // ---------------- Role / Department / Team catalog ----------------
   const roles = {};
   for (const r of [
@@ -248,6 +266,21 @@ const run = async () => {
       if (!team.members.some((m) => String(m) === String(leadAgent._id))) team.members.push(leadAgent._id);
     }
     await team.save();
+  }
+
+  // Fill every department-manager seat so each Level 2 node has a person.
+  // Explicit mapping (email -> dept) is authoritative; the isDeptManager flag
+  // above is only a seed-time hint for backward compat.
+  const DEPT_MANAGERS = {
+    'Support': 'l1@nimbus.osticket.local',
+    'Technical': 'admin@nimbus.osticket.local',
+    'Billing': 'billing@nimbus.osticket.local',
+    'Sales': 'billing@nimbus.osticket.local',
+  };
+  for (const [deptName, mgrEmail] of Object.entries(DEPT_MANAGERS)) {
+    const dept = depts[deptName];
+    const mgr = await Agent.findOne({ email: mgrEmail });
+    if (dept && mgr) { dept.manager = mgr._id; await dept.save(); }
   }
 
   // Help topic categories + sub-categories routed to their owning team.
