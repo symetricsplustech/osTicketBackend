@@ -183,6 +183,39 @@ const CREATE_PIR = {
   summary: { type: 'string' },
 };
 
+const CREATE_PROBLEM = {
+  title: { required: true, type: 'string' },
+  description: { type: 'string' },
+  priority: { type: 'string', enum: ['Low', 'Normal', 'High', 'Emergency'] },
+  impact: { type: 'string', enum: ['1', '2', '3', '4'] },
+  urgency: { type: 'string', enum: ['1', '2', '3', '4'] },
+  category: { type: 'string' },
+  subcategory: { type: 'string' },
+  assignedTo: { type: 'string' },
+  assignmentGroup: { type: 'string' },
+};
+
+const UPDATE_PROBLEM = {
+  title: { type: 'string' },
+  description: { type: 'string' },
+  priority: { type: 'string', enum: ['Low', 'Normal', 'High', 'Emergency'] },
+  impact: { type: 'string', enum: ['1', '2', '3', '4'] },
+  urgency: { type: 'string', enum: ['1', '2', '3', '4'] },
+  category: { type: 'string' },
+  subcategory: { type: 'string' },
+  assignedTo: { type: 'string' },
+  assignmentGroup: { type: 'string' },
+  rootCause: { type: 'string' },
+  rootCauseCategory: { type: 'string', enum: ['code_defect', 'configuration', 'infrastructure', 'third_party', 'human_error', 'process_gap', 'unknown'] },
+  workaround: { type: 'string' },
+  permanentSolution: { type: 'string' },
+};
+
+const TRANSITION_PROBLEM = {
+  status: { required: true, type: 'string', enum: ['new', 'assess', 'root_cause_analysis', 'fix_in_progress', 'resolved', 'closed', 'canceled', 'risk_accepted'] },
+  notes: { type: 'string' },
+};
+
 module.exports = {
   validate,
   schemas: {
@@ -202,5 +235,8 @@ module.exports = {
     CREATE_INCIDENT_COMMENT,
     CREATE_MAJOR_INCIDENT_NOMINATION,
     CREATE_PIR,
+    CREATE_PROBLEM,
+    UPDATE_PROBLEM,
+    TRANSITION_PROBLEM,
   },
 };

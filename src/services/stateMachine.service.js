@@ -57,14 +57,14 @@ const INCIDENT_TRANSITIONS = {
 };
 
 const PROBLEM_TRANSITIONS = {
-  open: ['investigation', 'closed'],
-  investigation: ['known_error', 'workaround', 'root_cause', 'closed'],
-  known_error: ['workaround', 'root_cause', 'fix_in_progress', 'closed'],
-  workaround: ['root_cause', 'fix_in_progress', 'closed'],
-  root_cause: ['fix_in_progress', 'closed'],
-  fix_in_progress: ['fixed', 'closed'],
-  fixed: ['closed', 'investigation'],
-  closed: ['investigation'], // reopen
+  new: ['assess', 'canceled'],
+  assess: ['root_cause_analysis', 'fix_in_progress', 'resolved', 'canceled', 'risk_accepted'],
+  root_cause_analysis: ['fix_in_progress', 'assess', 'canceled', 'risk_accepted'],
+  fix_in_progress: ['resolved', 'root_cause_analysis', 'assess', 'canceled'],
+  resolved: ['closed', 'fix_in_progress', 'assess'],
+  closed: ['assess'],
+  canceled: ['new'],
+  risk_accepted: ['assess', 'canceled'],
 };
 
 const CHANGE_TRANSITIONS = {
