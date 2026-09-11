@@ -82,8 +82,22 @@ const FAQ_TRANSITIONS = {
   archived: ['draft'],
 };
 
+const TASK_TRANSITIONS = {
+  new: ['open', 'in_progress', 'cancelled'],
+  open: ['in_progress', 'pending_customer', 'pending_vendor', 'pending_approval', 'on_hold', 'cancelled'],
+  in_progress: ['pending_customer', 'pending_vendor', 'pending_approval', 'on_hold', 'resolved', 'open'],
+  pending_customer: ['open', 'in_progress', 'resolved', 'cancelled'],
+  pending_vendor: ['open', 'in_progress', 'resolved', 'cancelled'],
+  pending_approval: ['open', 'in_progress', 'resolved', 'cancelled'],
+  on_hold: ['open', 'in_progress', 'resolved', 'cancelled'],
+  resolved: ['closed', 'open', 'in_progress'],
+  closed: ['open'],
+  cancelled: ['open'],
+};
+
 const MATRICES = {
   ticket: TICKET_TRANSITIONS,
+  task: TASK_TRANSITIONS,
   incident: INCIDENT_TRANSITIONS,
   problem: PROBLEM_TRANSITIONS,
   change: CHANGE_TRANSITIONS,
@@ -123,6 +137,7 @@ function assertTransition(entity, from, to, customStatuses = []) {
 module.exports = {
   TICKET_TERMINAL,
   TICKET_TRANSITIONS,
+  TASK_TRANSITIONS,
   INCIDENT_TRANSITIONS,
   PROBLEM_TRANSITIONS,
   CHANGE_TRANSITIONS,
