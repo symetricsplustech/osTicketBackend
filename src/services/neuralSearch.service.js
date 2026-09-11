@@ -55,7 +55,7 @@ async function semanticSearch({ company, query, limit = 30, userId }) {
 
   // Ticket
   try {
-    const Ticket = require('../models/Ticket');
+    const Ticket = require('../models/helpdesk/tickets/Ticket');
     push(await fetchModel(
       Ticket,
       { company },
@@ -74,7 +74,7 @@ async function semanticSearch({ company, query, limit = 30, userId }) {
 
   // Incident
   try {
-    const Incident = require('../models/Incident');
+    const Incident = require('../models/helpdesk/incidents/Incident');
     push(await fetchModel(
       Incident,
       { company },
@@ -93,7 +93,7 @@ async function semanticSearch({ company, query, limit = 30, userId }) {
 
   // Faq (knowledgebase)
   try {
-    const Faq = require('../models/Faq');
+    const Faq = require('../models/helpdesk/knowledge/Faq');
     push(await fetchModel(
       Faq,
       { company, isPublished: true },
@@ -150,7 +150,7 @@ async function semanticSearch({ company, query, limit = 30, userId }) {
 
   // Change
   try {
-    const Change = require('../models/Change');
+    const Change = require('../models/helpdesk/incidents/Change');
     push(await fetchModel(
       Change,
       { company },

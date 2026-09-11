@@ -1,6 +1,6 @@
 const Survey = require('../models/Survey');
 const SurveyResponse = require('../models/SurveyResponse');
-const Ticket = require('../models/Ticket');
+const Ticket = require('../models/helpdesk/tickets/Ticket');
 const { sendFromTemplate } = require('./email.service');
 const { emit } = require('./events');
 

@@ -1,4 +1,4 @@
-const Ticket = require('../models/Ticket');
+const Ticket = require('../models/helpdesk/tickets/Ticket');
 const Agent = require('../models/Agent');
 const { getIO } = require('../config/socket');
 
@@ -49,7 +49,7 @@ async function computeSnapshot({ company, force = false }) {
   ]);
 
   const avgResponseMin = await (async () => {
-    const TicketThread = require('../models/TicketThread');
+    const TicketThread = require('../models/helpdesk/tickets/TicketThread');
     const threads = await TicketThread.find({ type: 'message', posterType: 'agent', createdAt: { $gte: new Date(now - 7 * 86400000) }, ...comp })
       .sort({ createdAt: -1 })
       .limit(200)

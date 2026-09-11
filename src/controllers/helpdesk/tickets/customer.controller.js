@@ -1,20 +1,20 @@
-const User = require('../models/User');
-const Ticket = require('../models/Ticket');
-const TicketThread = require('../models/TicketThread');
-const HelpTopic = require('../models/HelpTopic');
-const Department = require('../models/Department');
-const Team = require('../models/Team');
-const SystemSetting = require('../models/SystemSetting');
-const ApiError = require('../utils/ApiError');
-const asyncHandler = require('../utils/asyncHandler');
-const { getPagination, getSortObj } = require('../utils/pagination');
-const ticketService = require('../services/ticket.service');
-const emailService = require('../services/email.service');
-const { notifyAgent, notifyUser } = require('../services/notification.service');
-const { getOrgOwner, hasPermission, USER_PERMISSIONS } = require('../utils/userPermissions');
-const config = require('../config/config');
-const CustomField = require('../models/CustomField');
-const TicketForm = require('../models/TicketForm');
+const User = require('../../../models/User');
+const Ticket = require('../../../models/helpdesk/tickets/Ticket');
+const TicketThread = require('../../../models/helpdesk/tickets/TicketThread');
+const HelpTopic = require('../../../models/HelpTopic');
+const Department = require('../../../models/Department');
+const Team = require('../../../models/Team');
+const SystemSetting = require('../../../models/SystemSetting');
+const ApiError = require('../../../utils/ApiError');
+const asyncHandler = require('../../../utils/asyncHandler');
+const { getPagination, getSortObj } = require('../../../utils/pagination');
+const ticketService = require('../../../services/ticket.service');
+const emailService = require('../../../services/email.service');
+const { notifyAgent, notifyUser } = require('../../../services/notification.service');
+const { getOrgOwner, hasPermission, USER_PERMISSIONS } = require('../../../utils/userPermissions');
+const config = require('../../../config/config');
+const CustomField = require('../../../models/CustomField');
+const TicketForm = require('../../../models/helpdesk/tickets/TicketForm');
 
 exports.openForm = asyncHandler(async (req, res) => {
   const companyId = req.companyId || (req.query.company && req.query.company !== 'null' ? req.query.company : null);
@@ -33,7 +33,7 @@ exports.openForm = asyncHandler(async (req, res) => {
     CustomField.find(fieldQuery).sort({ sortOrder: 1 }).populate('helpTopic', 'topic'),
     TicketForm.find(formQuery).sort({ name: 1 }).populate('helpTopic', 'topic').populate('fields'),
     (async () => {
-      const { listPriorities } = require('../services/priority.service');
+      const { listPriorities } = require('../../../services/priority.service');
       return listPriorities(companyId);
     })(),
   ]);
@@ -44,7 +44,7 @@ exports.openForm = asyncHandler(async (req, res) => {
   let supportCompany = null;
   try {
     if (companyId) {
-      const Company = require('../models/Company');
+      const Company = require('../../../models/Company');
       const co = await Company.findById(companyId).select('name email supportEmail domain');
       if (co) {
         supportCompany = { _id: co._id, name: co.name };
@@ -103,7 +103,7 @@ exports.create = asyncHandler(async (req, res) => {
   }
 
   if (priority) {
-    const { isValidPriority } = require('../services/priority.service');
+    const { isValidPriority } = require('../../../services/priority.service');
     if (!(await isValidPriority(priority, companyId))) throw new ApiError(422, 'Invalid ticket priority');
   }
   for (const [key, value] of [['impact', impact], ['urgency', urgency]]) {
@@ -150,15 +150,14 @@ exports.create = asyncHandler(async (req, res) => {
 });
 
 exports.checkTicketStatus = asyncHandler(async (req, res) => {
-  const { email, number } = req.query;
-  if (!email || !number) throw new ApiError(422, 'Email and ticket number are required');
-  const userQuery = { email: email.toLowerCase() };
-  if (req.companyId) userQuery.company = req.companyId;
-  const user = await User.findOne(userQuery);
-  if (!user) throw new ApiError(404, 'No tickets found for the email provided');
+  const { number } = req.query;
+  if (!number) throw new ApiError(422, 'Ticket number is required');
+  // Status lookups are an authenticated requester self-service operation.
+  // Do not accept an arbitrary email address: it permits ownership probing.
+  if (!req.user || req.agent) throw new ApiError(403, 'Requester access required');
   const ticketQuery = {
     number: String(number).trim().toUpperCase(),
-    user: user._id,
+    user: req.user._id,
     status: { $ne: Ticket.STATUSES.DELETED },
   };
   if (req.companyId) ticketQuery.company = req.companyId;
@@ -254,11 +253,11 @@ exports.reply = asyncHandler(async (req, res) => {
     attachments,
   });
 
-  require('../services/audit.service').audit({ company: ticket.company || req.companyId || null, actorType: 'user', actor: req.user._id, actorName: req.user.name, action: 'ticket.comment_added', entityType: 'ticket', entityId: ticket._id, after: { attachmentCount: attachments.length, hasAttachments: attachments.length > 0 }, req });
+  require('../../../services/audit.service').audit({ company: ticket.company || req.companyId || null, actorType: 'user', actor: req.user._id, actorName: req.user.name, action: 'ticket.comment_added', entityType: 'ticket', entityId: ticket._id, after: { attachmentCount: attachments.length, hasAttachments: attachments.length > 0 }, req });
   await notifyOwnerOfEmployeeAction({ ticket, user: req.user, type: 'reply', action: 'replied' });
 
   const ctx = await ticketService.buildTicketContext(ticket);
-  const agent = ticket.agent ? await require('../models/Agent').findById(ticket.agent) : null;
+  const agent = ticket.agent ? await require('../../../models/Agent').findById(ticket.agent) : null;
 
   if (agent) {
     await notifyAgent({

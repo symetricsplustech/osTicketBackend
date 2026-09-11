@@ -7,8 +7,8 @@ const Agent = require('../src/models/Agent');
 const User = require('../src/models/User');
 const Department = require('../src/models/Department');
 const Team = require('../src/models/Team');
-const Ticket = require('../src/models/Ticket');
-const TicketThread = require('../src/models/TicketThread');
+const Ticket = require('../src/models/helpdesk/tickets/Ticket');
+const TicketThread = require('../src/models/helpdesk/tickets/TicketThread');
 const AuditEvent = require('../src/models/AuditEvent');
 
 const port = 5110;

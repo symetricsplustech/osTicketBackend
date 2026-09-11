@@ -1,11 +1,11 @@
 const User = require('../models/User');
-const Ticket = require('../models/Ticket');
-const TicketThread = require('../models/TicketThread');
+const Ticket = require('../models/helpdesk/tickets/Ticket');
+const TicketThread = require('../models/helpdesk/tickets/TicketThread');
 const HelpTopic = require('../models/HelpTopic');
 const Department = require('../models/Department');
 const Team = require('../models/Team');
 const Agent = require('../models/Agent');
-const TicketFilter = require('../models/TicketFilter');
+const TicketFilter = require('../models/helpdesk/tickets/TicketFilter');
 const SystemSetting = require('../models/SystemSetting');
 const { generateConfirmationToken } = require('../utils/generators');
 const { nextTicketNumber } = require('./numbering.service');
@@ -18,7 +18,7 @@ const config = require('../config/config');
 const logger = require('../utils/logger');
 const auditService = require('./audit.service');
 const ApiError = require('../utils/ApiError');
-const TicketStatus = require('../models/TicketStatus');
+const TicketStatus = require('../models/helpdesk/tickets/TicketStatus');
 const { assertTransition } = require('./stateMachine.service');
 
 const audit = (args) => auditService.audit(args).catch(() => {});
@@ -666,7 +666,7 @@ const createFollowUpTicket = async ({ ticket, user, body, attachments = [], sour
     attachments,
   });
   try {
-    const TicketLink = require('../models/TicketLink');
+    const TicketLink = require('../models/helpdesk/tickets/TicketLink');
     await TicketLink.create({
       company: ticket.company || null,
       from: created._id,

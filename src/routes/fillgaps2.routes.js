@@ -96,7 +96,7 @@ router.post('/tickets/:number/blocking', async (req, res) => { try { res.status(
 router.get('/tickets/:number/blocking', async (req, res) => { try { res.json(await P6.TicketRelationExtra.find({ ticketNumber: req.params.number, ...T(req) })); } catch (e) { res.status(500).json({ error: e.message }); } });
 router.post('/tickets/:number/clone', async (req, res) => {
   try {
-    const Ticket = require('../models/Ticket');
+    const Ticket = require('../models/helpdesk/tickets/Ticket');
     const src = await Ticket.findOne({ number: req.params.number, ...T(req) }).lean();
     if (!src) return res.status(404).json({});
     delete src._id; delete src.number; delete src.createdAt; delete src.updatedAt;
@@ -119,7 +119,7 @@ router.get('/tickets-trash', async (req, res) => { try { res.json(await P6.SoftD
 router.post('/routing/next-agent', async (req, res) => {
   try {
     const Agent = require('../models/Agent');
-    const Ticket = require('../models/Ticket');
+    const Ticket = require('../models/helpdesk/tickets/Ticket');
     const agents = await Agent.find({ tenantId: req.user.tenantId }).select('name skills').limit(200);
     if (!agents.length) return res.json({ strategy: 'none', overflowQueue: true });
     const caps = await P6.WorkScheduleCap.find({ ...T(req), agent: { $in: agents.map(a => a._id) } });
@@ -164,7 +164,7 @@ router.post('/incidents/:id/communication-due', async (req, res) => {
 });
 router.get('/reports/major-incidents-exec', async (req, res) => {
   try {
-    const Inc = require('../models/Incident'); const Outage = require('../models/Remaining').Outage;
+    const Inc = require('../models/helpdesk/incidents/Incident'); const Outage = require('../models/Remaining').Outage;
     const [majors, outages] = await Promise.all([
       Inc.find({ ...T(req), isMajor: true }).sort({ createdAt: -1 }).limit(20),
       Outage.find(T(req)).sort({ startedAt: -1 }).limit(20),
@@ -182,7 +182,7 @@ crud('/catalog/eligibility', P6.CatalogEligibility);
 router.post('/catalog/cart', idempotent('cart'), async (req, res) => {
   try {
     const RequestedItem = require('../models/Remaining').RequestedItem;
-    const Ticket = require('../models/Ticket');
+    const Ticket = require('../models/helpdesk/tickets/Ticket');
     const items = req.body.items || [];
     if (!items.length) return res.status(400).json({ error: 'items required' });
     for (const it of items) {
@@ -224,7 +224,7 @@ crud('/blackout-windows', P6.BlackoutWindow);
 crud('/ola-targets', P6.OlaTarget);
 router.get('/ola-breaches', async (req, res) => {
   try {
-    const Ticket = require('../models/Ticket');
+    const Ticket = require('../models/helpdesk/tickets/Ticket');
     const olas = await P6.OlaTarget.find(T(req));
     const open = await Ticket.find({ ...T(req), status: { $nin: ['closed'] } }).select('number subject createdAt assignedTo').limit(500);
     const breaches = [];
@@ -251,7 +251,7 @@ router.post('/community-threads/:id/accept/:answerIdx', async (req, res) => {
 router.post('/cases/create-with-validation', async (req, res) => {
   try {
     const Entitlement = require('../models/Entitlement');
-    const Ticket = require('../models/Ticket');
+    const Ticket = require('../models/helpdesk/tickets/Ticket');
     const companyId = req.body.companyId;
     const ent = await Entitlement.findOne({ company: companyId, tenantId: T(req).tenantId }).sort({ createdAt: -1 });
     if (!ent) return res.status(402).json({ error: 'No active entitlement for this account — case not created', code: 'NO_ENTITLEMENT' });
@@ -279,7 +279,7 @@ router.get('/unified-inbox', async (req, res) => {
 router.get('/customer-health/churn-risk', async (req, res) => {
   try {
     const Company = require('../models/Company');
-    const Ticket = require('../models/Ticket');
+    const Ticket = require('../models/helpdesk/tickets/Ticket');
     const Complaint = require('../models/CustomerService').Complaint;
     const companies = await Company.find(T(req)).limit(100);
     const out = [];
@@ -682,7 +682,7 @@ router.get('/search/fuzzy', async (req, res) => {
     const q = String(req.query.q || '').toLowerCase().trim(); if (!q) return res.json({ expanded: [], results: [] });
     const syn = await P6.SynonymMap.findOne({ ...T(req), term: q });
     const variants = [...new Set([q, ...(syn?.synonyms || [])])];
-    const Ticket = require('../models/Ticket');
+    const Ticket = require('../models/helpdesk/tickets/Ticket');
     const results = [];
     for (const v of variants) {
       const exact = await Ticket.find({ ...T(req), title: new RegExp(v, 'i') }).limit(10).select('number title status');
@@ -736,8 +736,8 @@ router.post('/agent-chains/:id/run', async (req, res) => {
 // ---- Analytics depth ----
 router.post('/reports/matrix', async (req, res) => {
   try {
-    const map = { tickets: () => require('../models/Ticket'), leads: () => require('../models/Lead') };
-    const M = (map[req.body.dataset] || (() => require('../models/Ticket')))();
+    const map = { tickets: () => require('../models/helpdesk/tickets/Ticket'), leads: () => require('../models/Lead') };
+    const M = (map[req.body.dataset] || (() => require('../models/helpdesk/tickets/Ticket')))();
     const rowsA = await M.aggregate([{ $match: { tenantId: req.user.tenantId } }, { $group: { _id: `$${req.body.groupByA}` , c: { $sum: 1 } } }]);
     const rowsB = await M.aggregate([{ $match: { tenantId: req.user.tenantId } }, { $group: { _id: `$${req.body.groupByB}`, c: { $sum: 1 } } }]);
     res.json({ pivot: { rowKeys: rowsA.map(r => r._id).filter(Boolean), colKeys: rowsB.map(r => r._id).filter(Boolean), note: 'cell counts via drilldown/detail per intersection' }, rowTotals: rowsA });
@@ -745,7 +745,7 @@ router.post('/reports/matrix', async (req, res) => {
 });
 router.post('/reports/period-compare', async (req, res) => {
   try {
-    const Ticket = require('../models/Ticket');
+    const Ticket = require('../models/helpdesk/tickets/Ticket');
     const now = new Date(); const prevStart = new Date(now.getFullYear(), now.getMonth() - 1, 1); const curStart = new Date(now.getFullYear(), now.getMonth(), 1);
     const [cur, prev] = await Promise.all([
       Ticket.countDocuments({ ...T(req), createdAt: { $gte: curStart } }),
@@ -767,7 +767,7 @@ router.post('/reports/share', async (req, res) => {
 router.get('/employee-360/:userId', async (req, res) => {
   try {
     const uid = req.params.userId;
-    const Ticket = require('../models/Ticket');
+    const Ticket = require('../models/helpdesk/tickets/Ticket');
     const AssetLifecycle = require('../models/Stockroom').AssetLifecycle;
     const TimesheetM = require('../models/Remaining').Timesheet;
     const Reservation = require('../models/Enterprise') && require('../models/Enterprise').Reservation;
@@ -782,7 +782,7 @@ router.get('/employee-360/:userId', async (req, res) => {
 });
 router.post('/incidents/:id/to-problem', async (req, res) => {
   try {
-    const Inc = def('../models/Incident'); const Problem = require('../models/Problem');
+    const Inc = def('../models/helpdesk/incidents/Incident'); const Problem = require('../models/helpdesk/incidents/Problem');
     const inc = await Inc.findOne({ _id: req.params.id, ...T(req) });
     if (!inc) return res.status(404).json({});
     const prb = await Problem.create({ title: `[Problem] ${inc.title}`, description: inc.description, status: 'open', tenantId: T(req).tenantId });
@@ -826,8 +826,8 @@ router.post('/csat-negative-recovery-sweep', async (req, res) => {
 
 router.post('/problems/:id/generate-change', async (req, res) => {
   try {
-    const Problem = require('../models/Problem');
-    const Change = require('../models/Change').Change || require('../models/Change');
+    const Problem = require('../models/helpdesk/incidents/Problem');
+    const Change = require('../models/helpdesk/incidents/Change').Change || require('../models/helpdesk/incidents/Change');
     const prb = await Problem.findOne({ _id: req.params.id, ...T(req) });
     if (!prb) return res.status(404).json({});
     const chg = await Change.create({ title: `[Fix] ${prb.title}`, description: `Permanent fix for problem. Root cause: ${prb.rootCause || 'pending'}. Workaround: ${prb.workaround || 'n/a'}`, type: 'normal', riskLevel: 'medium', status: 'pending_approval', implementationPlan: req.body.implementationPlan || 'Deploy permanent fix per problem record', rollbackPlan: 'Revert deployment', requestedBy: req.user.id, tenantId: T(req).tenantId });

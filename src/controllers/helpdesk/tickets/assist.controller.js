@@ -1,11 +1,11 @@
-const asyncHandler = require('../utils/asyncHandler');
-const ApiError = require('../utils/ApiError');
-const Ticket = require('../models/Ticket');
-const Incident = require('../models/Incident');
-const Department = require('../models/Department');
-const HelpTopic = require('../models/HelpTopic');
-const { fetchTrainingSet, suggest, invalidateTraining } = require('../services/suggestion.service');
-const { summarizeThread } = require('../services/ai.service');
+const asyncHandler = require('../../../utils/asyncHandler');
+const ApiError = require('../../../utils/ApiError');
+const Ticket = require('../../../models/helpdesk/tickets/Ticket');
+const Incident = require('../../../models/helpdesk/incidents/Incident');
+const Department = require('../../../models/Department');
+const HelpTopic = require('../../../models/HelpTopic');
+const { fetchTrainingSet, suggest, invalidateTraining } = require('../../../services/suggestion.service');
+const { summarizeThread } = require('../../../services/ai.service');
 
 // POST /agent/tickets/suggest { subject, details, ticketNumber? }
 // Tenant-learned triage: department / topic / priority votes + similar

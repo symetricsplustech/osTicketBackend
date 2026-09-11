@@ -7,7 +7,7 @@
  * Pure functions (tokenize/score) are unit-tested; fetchTrainingSet hits Mongo.
  */
 
-const Ticket = require('../models/Ticket');
+const Ticket = require('../models/helpdesk/tickets/Ticket');
 
 const STOPWORDS = new Set([
   'the', 'and', 'for', 'with', 'from', 'that', 'this', 'have', 'has', 'had',

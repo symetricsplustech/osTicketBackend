@@ -1,5 +1,5 @@
 const Agent = require('../models/Agent');
-const Ticket = require('../models/Ticket');
+const Ticket = require('../models/helpdesk/tickets/Ticket');
 
 const PRESENCE_WEIGHT = {
   online: 0,

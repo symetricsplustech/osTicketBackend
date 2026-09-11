@@ -1,8 +1,8 @@
-const FaqCategory = require('../models/FaqCategory');
-const Faq = require('../models/Faq');
-const Announcement = require('../models/Announcement');
-const asyncHandler = require('../utils/asyncHandler');
-const { getPagination, getSortObj } = require('../utils/pagination');
+const FaqCategory = require('../../../models/helpdesk/knowledge/FaqCategory');
+const Faq = require('../../../models/helpdesk/knowledge/Faq');
+const Announcement = require('../../../models/helpdesk/knowledge/Announcement');
+const asyncHandler = require('../../../utils/asyncHandler');
+const { getPagination, getSortObj } = require('../../../utils/pagination');
 
 const companyFilter = (req) => {
   const or = [{ company: null }];
@@ -120,7 +120,7 @@ exports.faqDetail = asyncHandler(async (req, res) => {
   const comp = companyFilter(req);
   const faq = await Faq.findOne({ _id: req.params.id, isPublished: true, $and: [comp, visibilityFilter(req)] }).populate('category', 'name');
   if (!faq) {
-    const notFound = require('../utils/ApiError');
+    const notFound = require('../../../utils/ApiError');
     throw new notFound(404, 'FAQ not found');
   }
   faq.views += 1;
@@ -133,7 +133,7 @@ exports.faqVote = asyncHandler(async (req, res) => {
   const comp = companyFilter(req);
   const faq = await Faq.findOne({ _id: req.params.id, ...comp });
   if (!faq) {
-    const notFound = require('../utils/ApiError');
+    const notFound = require('../../../utils/ApiError');
     throw new notFound(404, 'FAQ not found');
   }
   if (helpful) faq.helpful += 1;

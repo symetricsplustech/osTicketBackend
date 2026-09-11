@@ -50,7 +50,7 @@ router.post('/itom/denoise', async (req, res) => {
 router.post('/itom/alerts/:id/create-incident', async (req, res) => {
   try {
     const Alert = require('../models/Alert').Alert || require('../models/Alert');
-    const Incident = require('../models/Incident').Incident || require('../models/Incident');
+    const Incident = require('../models/helpdesk/incidents/Incident').Incident || require('../models/helpdesk/incidents/Incident');
     const alert = await Alert.findOne({ _id: req.params.id, ...T(req) });
     if (!alert) return res.status(404).json({ error: 'Alert not found' });
     if (alert.incident) return res.status(400).json({ error: 'Incident already linked' });
@@ -134,7 +134,7 @@ router.post('/maintenance-windows', async (req, res) => { try { res.json(await M
 // Change conflict detection: overlapping windows for same resources/depts
 router.post('/changes/conflict-check', async (req, res) => {
   try {
-    const Change = require('../models/Change').Change || require('../models/Change');
+    const Change = require('../models/helpdesk/incidents/Change').Change || require('../models/helpdesk/incidents/Change');
     const { changeId, windowStart, windowEnd } = req.body;
     const overlaps = await Change.find({
       ...T(req),
@@ -150,7 +150,7 @@ router.post('/changes/conflict-check', async (req, res) => {
 // Recurring incident detection: cluster incidents sharing normalized titles
 router.post('/incidents/recurring-detect', async (req, res) => {
   try {
-    const Incident = require('../models/Incident').Incident || require('../models/Incident');
+    const Incident = require('../models/helpdesk/incidents/Incident').Incident || require('../models/helpdesk/incidents/Incident');
     const incidents = await Incident.find(T(req)).sort({ createdAt: -1 }).limit(500);
     const norm = t => (t || '').toLowerCase().replace(/[^a-z0-9 ]/g, '').replace(/\s+/g, ' ').trim();
     const clusters = new Map();
@@ -163,8 +163,8 @@ router.post('/incidents/recurring-detect', async (req, res) => {
 // Publish problem resolution to KB
 router.post('/problems/:id/publish-kb', async (req, res) => {
   try {
-    const Problem = require('../models/Problem').Problem || require('../models/Problem');
-    const Faq = require('../models/Faq').Faq || require('../models/Faq');
+    const Problem = require('../models/helpdesk/incidents/Problem').Problem || require('../models/helpdesk/incidents/Problem');
+    const Faq = require('../models/helpdesk/knowledge/Faq').Faq || require('../models/helpdesk/knowledge/Faq');
     const problem = await Problem.findOne({ _id: req.params.id, ...T(req) });
     if (!problem) return res.status(404).json({ error: 'Problem not found' });
     const faq = await Faq.create({ question: problem.title, answer: problem.workaround || problem.rootCause || '', category: req.body.category || null, tenantId: req.user.tenantId, published: true });
@@ -175,7 +175,7 @@ router.post('/problems/:id/publish-kb', async (req, res) => {
 // War-room / stakeholder updates appended to incident timeline flagged as stakeholder comms
 router.post('/incidents/:id/stakeholder-update', async (req, res) => {
   try {
-    const Incident = require('../models/Incident').Incident || require('../models/Incident');
+    const Incident = require('../models/helpdesk/incidents/Incident').Incident || require('../models/helpdesk/incidents/Incident');
     const incident = await Incident.findOne({ _id: req.params.id, ...T(req) });
     if (!incident) return res.status(404).json({ error: 'Not found' });
     incident.timeline.push({ message: `[STAKEHOLDER] ${req.body.message}`, by: req.user.id });
@@ -186,7 +186,7 @@ router.post('/incidents/:id/stakeholder-update', async (req, res) => {
 });
 router.post('/incidents/:id/resolution-team', async (req, res) => {
   try {
-    const Incident = require('../models/Incident').Incident || require('../models/Incident');
+    const Incident = require('../models/helpdesk/incidents/Incident').Incident || require('../models/helpdesk/incidents/Incident');
     const incident = await Incident.findOneAndUpdate({ _id: req.params.id, ...T(req) }, { resolutionTeam: req.body.agentIds, isMajor: true }, { new: true });
     res.json(incident);
   } catch (e) { res.status(400).json({ error: e.message }); }
@@ -195,7 +195,7 @@ router.post('/incidents/:id/resolution-team', async (req, res) => {
 // ============ PROJECTS OPERATIONS ============
 router.post('/tickets/:number/to-project-task', async (req, res) => {
   try {
-    const Ticket = require('../models/Ticket');
+    const Ticket = require('../models/helpdesk/tickets/Ticket');
     const ProjectTask = require('../models/ProjectTask').ProjectTask || require('../models/ProjectTask');
     const ticket = await Ticket.findOne({ number: req.params.number, ...T(req) });
     if (!ticket) return res.status(404).json({ error: 'Ticket not found' });
@@ -315,7 +315,7 @@ router.post('/custom-tables/:id/records', async (req, res) => { try { const r = 
 function datasetRows(name, tenantId) {
   // returns Promise<[{...doc}]> for supported datasets
   switch (name) {
-    case 'tickets': return require('../models/Ticket').find({ tenantId }).limit(1000).lean();
+    case 'tickets': return require('../models/helpdesk/tickets/Ticket').find({ tenantId }).limit(1000).lean();
     case 'leads': return require('../models/Lead').find({ tenantId }).limit(1000).lean();
     case 'assets': return require('../models/Asset') ? require('../models/Asset').find({ tenantId }).limit(1000).lean() : [];
     case 'licenses': return require('../models/License').License.find({ tenantId }).limit(1000).lean();
@@ -536,7 +536,7 @@ function toIcsDate(d) { return new Date(d).toISOString().replace(/[-:]/g, '').sp
 router.get('/calendar/events.ics', async (req, res) => {
   try {
     const CrmActivity = require('../models/CrmActivity');
-    const Change = require('../models/Change').Change || require('../models/Change');
+    const Change = require('../models/helpdesk/incidents/Change').Change || require('../models/helpdesk/incidents/Change');
     const tenantId = req.user.tenantId;
     const [meetings, changes] = await Promise.all([
       CrmActivity.find({ $or: [{ tenantId }, { company: tenantId }], type: 'meeting' }).limit(200),
@@ -707,7 +707,7 @@ for (const layer of ['/offboarding', '/document-requests', '/policies', '/hr-doc
 
 // ============ 9) DRILL-DOWN REPORTS ============
 const DRILLDOWN_DATASETS = {
-  tickets: { model: () => require('../models/Ticket'), fields: ['status', 'priority', 'category'] },
+  tickets: { model: () => require('../models/helpdesk/tickets/Ticket'), fields: ['status', 'priority', 'category'] },
   leads: { model: () => require('../models/Lead'), fields: ['status', 'source'] },
   opportunities: { model: () => require('../models/Opportunity'), fields: ['stage'] },
 };
@@ -765,9 +765,9 @@ router.put('/incidents/:id/diagnosis', async (req, res) => {
 router.post('/changes/:id/impact-analysis', async (req, res) => {
   try {
     const Resource = require('../models/Resource').Resource || require('../models/Resource');
-    const Ticket = require('../models/Ticket');
-    const change = await require('../models/Change').Change ? null : null; // Change default export
-    const chg = await require('../models/Change');
+    const Ticket = require('../models/helpdesk/tickets/Ticket');
+    const change = await require('../models/helpdesk/incidents/Change').Change ? null : null; // Change default export
+    const chg = await require('../models/helpdesk/incidents/Change');
     const changeDoc = typeof chg === 'function' ? await chg.findById(req.params.id) : await chg.Change.findById(req.params.id);
     if (!changeDoc) return res.status(404).json({ error: 'Change not found' });
     const resources = await Resource.find({ ...T(req), $or: [{ _id: { $in: (changeDoc.resources || []) } }, { name: new RegExp((changeDoc.title || '').split(' ').slice(0, 2).join('|'), 'i') }] }).limit(50);
@@ -930,7 +930,7 @@ router.get('/companies/:id/sla', async (req, res) => {
 router.post('/kb/seed-hr', async (req, res) => {
   try {
     const KnowledgeBase = require('../models/Remaining').KnowledgeBase;
-    const Faq = require('../models/Faq');
+    const Faq = require('../models/helpdesk/knowledge/Faq');
     let kb = await KnowledgeBase.findOne({ ...T(req), name: 'HR Knowledge Base' });
     if (!kb) kb = await KnowledgeBase.create({ name: 'HR Knowledge Base', description: 'Policies, benefits and onboarding answers', visibility: 'internal', ...T(req) });
     const seed = [
@@ -1098,7 +1098,7 @@ router.post('/auth/sso/acs', async (req, res) => {
 // Co-editing presence indicators for a ticket
 router.post('/tickets/:number/presence', async (req, res) => {
   try {
-    const Ticket = require('../models/Ticket');
+    const Ticket = require('../models/helpdesk/tickets/Ticket');
     const t = await Ticket.findOne({ number: req.params.number }).select('_id');
     if (!t) return res.status(404).json({ error: 'Ticket not found' });
     await TicketPresence.findOneAndUpdate(
@@ -1111,7 +1111,7 @@ router.post('/tickets/:number/presence', async (req, res) => {
 });
 router.get('/tickets/:number/presence', async (req, res) => {
   try {
-    const Ticket = require('../models/Ticket');
+    const Ticket = require('../models/helpdesk/tickets/Ticket');
     const t = await Ticket.findOne({ number: req.params.number }).select('_id');
     if (!t) return res.status(404).json({ error: 'Ticket not found' });
     const cutoff = new Date(Date.now() - 90 * 1000);
@@ -1150,7 +1150,7 @@ router.post('/hr/onboarding-cascade/:employeeId', async (req, res) => {
     // 1) HR lifecycle tasks
     created.hrTasks = await LifecycleTask.create({ employee: req.params.employeeId, milestone: 'day_1', title: 'Day-1 onboarding tasks', items: [{ label: 'Welcome session', done: false }, { label: 'Policy acknowledgement pack', done: false }], tenantId: T(req).tenantId });
     // 2) IT access request ticket
-    const Ticket = require('../models/Ticket');
+    const Ticket = require('../models/helpdesk/tickets/Ticket');
     created.itTicket = await Ticket.create({ title: `[IT Onboarding] Provision accounts for employee ${req.params.employeeId}`, body: 'Auto-generated by onboarding cascade', status: 'open', tenantId: T(req).tenantId });
     // 3) Asset assignment lifecycle record
     const AssetLifecycle = require('../models/Stockroom').AssetLifecycle;

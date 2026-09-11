@@ -1,6 +1,6 @@
 const express = require('express');
-const ctrl = require('../controllers/kb.controller');
-const { optionalUser } = require('../middleware/auth');
+const ctrl = require('../../../controllers/helpdesk/knowledge/public.controller');
+const { optionalUser } = require('../../../middleware/auth');
 
 const router = express.Router();
 

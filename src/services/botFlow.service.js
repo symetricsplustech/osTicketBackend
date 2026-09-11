@@ -71,7 +71,7 @@ function nodeReply(node) {
 
 async function resolveTicketStatus(companyId, userId) {
   try {
-    const Ticket = require('../models/Ticket');
+    const Ticket = require('../models/helpdesk/tickets/Ticket');
     const query = { company: companyId };
     if (userId) query.user = userId;
     const ticket = await Ticket.findOne(query).sort('-updatedAt').lean();
@@ -84,7 +84,7 @@ async function resolveTicketStatus(companyId, userId) {
 
 async function resolveKbSearch(companyId, userText) {
   try {
-    const Faq = require('../models/Faq');
+    const Faq = require('../models/helpdesk/knowledge/Faq');
     const articles = await Faq.find({ company: companyId, isPublished: true })
       .select('subject answer content')
       .limit(100)

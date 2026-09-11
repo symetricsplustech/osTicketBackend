@@ -56,7 +56,7 @@ const { checkPermission } = require('../src/services/authorization.service');
   assert(indiaDue.toISOString() === '2026-08-04T03:45:00.000Z', 'business-hours SLA evaluates the plan timezone');
   Holiday.find = originalHolidayFind;
 
-  const Ticket = require('../src/models/Ticket');
+  const Ticket = require('../src/models/helpdesk/tickets/Ticket');
   const urgency = Ticket.schema.path('urgency');
   assert(urgency && urgency.enumValues.includes('medium') && urgency.enumValues.includes('critical'), 'ticket urgency has one compatible schema definition');
 

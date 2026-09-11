@@ -26,7 +26,7 @@ router.post('/retention-policies/:id/run', async (req, res) => {
   try {
     const pol = await P5.RetentionPolicy.findOne({ _id: req.params.id, ...T(req) });
     if (!pol) return res.status(404).json({});
-    const Ticket = require('../models/Ticket');
+    const Ticket = require('../models/helpdesk/tickets/Ticket');
     const cutoff = new Date(Date.now() - (pol.retainDays || 365) * 86400000);
     const q = { ...T(req), createdAt: { $lt: cutoff } };
     if (pol.action === 'archive') { const n = (await Ticket.updateMany(q, { $set: { archived: true } }).catch(() => ({ modifiedCount: 0 }))).modifiedCount || 0; pol.lastRunAt = new Date(); await pol.save(); res.json({ archived: n }); }
@@ -42,7 +42,7 @@ router.get('/dsar/:id/export', async (req, res) => {
   try {
     const d = await P5.DsarRequest.findOne({ _id: req.params.id, ...T(req) });
     if (!d) return res.status(404).json({});
-    const Ticket = require('../models/Ticket');
+    const Ticket = require('../models/helpdesk/tickets/Ticket');
     const tickets = await Ticket.find({ ...T(req), email: d.subjectEmail }).limit(200).lean().catch(() => []);
     const P7r = require('../models/Platform7');
     const pols = await P7r.RegionalPolicy.find({ tenantId: d.tenantId });
@@ -315,7 +315,7 @@ router.get('/inbound-messages', async (req, res) => { try { const q = { ...T(req
 router.post('/channels/webhook', async (req, res) => {
   try {
     if (req.headers['x-ingest-token'] !== (process.env.INGEST_TOKEN || 'dev-ingest')) return res.status(401).json({ error: 'bad token' });
-    const Ticket = require('../models/Ticket');
+    const Ticket = require('../models/helpdesk/tickets/Ticket');
     const User = require('../models/User');
     const sender = String(req.body.from || '');
     const customer = await User.findOne({ phone: sender }).select('_id').catch(() => null);
@@ -389,7 +389,7 @@ router.get('/usage-summary', async (req, res) => {
   try {
     const Agent = require('../models/Agent');
     const User = require('../models/User');
-    const Ticket = require('../models/Ticket');
+    const Ticket = require('../models/helpdesk/tickets/Ticket');
     const Plan = require('../models/Plan');
     const monthStart = new Date(); monthStart.setDate(1); monthStart.setHours(0,0,0,0);
     const [agents, contacts, ticketsThisMonth] = await Promise.all([

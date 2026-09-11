@@ -208,7 +208,7 @@ const predictBreachRisk = async (ticket) => {
     : Math.max(remaining, 1);
   let risk = Math.max(0, Math.min(100, 100 - (remaining / Math.max(total, 1)) * 100));
   // workload penalty
-  const Ticket = require('../models/Ticket');
+  const Ticket = require('../models/helpdesk/tickets/Ticket');
   if (ticket.agent) {
     const workload = await Ticket.countDocuments({ agent: ticket.agent, status: { $in: ['new', 'open', 'triaged', 'assigned', 'in_progress', 'pending_customer', 'pending_vendor', 'pending_approval', 'on_hold', 'escalated', 'overdue'] } });
     if (workload > 8) risk += 10;
@@ -227,7 +227,7 @@ const predictBreachRisk = async (ticket) => {
  * Mark overdue + emit breach events (sla.breached) + optional template email.
  */
 const markOverdueTickets = async () => {
-  const Ticket = require('../models/Ticket');
+  const Ticket = require('../models/helpdesk/tickets/Ticket');
   const now = new Date();
   const candidates = await Ticket.find({
     dueDate: { $ne: null, $lte: now },
@@ -280,7 +280,7 @@ const markOverdueTickets = async () => {
  * Emit sla.at_risk warnings for tickets approaching their due date.
  */
 const checkAtRiskTickets = async () => {
-  const Ticket = require('../models/Ticket');
+  const Ticket = require('../models/helpdesk/tickets/Ticket');
   const config = require('../config/config');
   const threshold = config.sla.warningThresholdHours || 2;
   const windowStart = new Date(Date.now() + threshold * 60 * 60 * 1000);
@@ -296,7 +296,7 @@ const checkAtRiskTickets = async () => {
 };
 
 const executeEscalationRules = async () => {
-  const Ticket = require('../models/Ticket');
+  const Ticket = require('../models/helpdesk/tickets/Ticket');
   const open = await Ticket.find({ sla: { $ne: null }, slaPaused: false, status: { $nin: ['resolved', 'closed', 'archived', 'deleted'] } }).populate('sla').limit(1000);
   let executed = 0;
   for (const ticket of open) {
@@ -327,7 +327,7 @@ const executeEscalationRules = async () => {
  * clock gets its own trackable event stream.
  */
 const markResponseBreaches = async () => {
-  const Ticket = require('../models/Ticket');
+  const Ticket = require('../models/helpdesk/tickets/Ticket');
   const now = new Date();
   const open = await Ticket.find({
     responseDueAt: { $ne: null, $lte: now },

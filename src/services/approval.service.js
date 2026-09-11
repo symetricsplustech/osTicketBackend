@@ -5,8 +5,8 @@ const Team = require('../models/Team');
 const Department = require('../models/Department');
 const User = require('../models/User');
 const Organization = require('../models/Organization');
-const Ticket = require('../models/Ticket');
-const Change = require('../models/Change');
+const Ticket = require('../models/helpdesk/tickets/Ticket');
+const Change = require('../models/helpdesk/incidents/Change');
 const { notifyAgent, notifyAdminRoom } = require('./notification.service');
 const { emit } = require('./events');
 const { sendFromTemplate } = require('./email.service');
@@ -207,7 +207,7 @@ async function notifyOutcome(approval) {
 async function attachResultToRef(approval) {
   const ok = approval.status === 'approved';
   if (approval.refType === 'change') {
-    const Change = require('../models/Change');
+    const Change = require('../models/helpdesk/incidents/Change');
     await Change.updateOne(
       { _id: approval.refId },
       { $set: { status: ok ? 'approved' : 'rejected', rejectionReason: ok ? '' : (approval.result || 'Rejected') } }

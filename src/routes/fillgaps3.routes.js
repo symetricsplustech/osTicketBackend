@@ -125,7 +125,7 @@ async function enforceLimit(req, metric) {
   let used;
   if (metric === 'agents') used = await require('../models/Agent').countDocuments({ company: tenantId });
   else if (metric === 'contacts') used = await require('../models/User').countDocuments({ company: tenantId, role: 'client' }).catch(() => 0);
-  else { const ms = new Date(); ms.setUTCDate(1); ms.setUTCHours(0, 0, 0, 0); used = await require('../models/Ticket').countDocuments({ company: tenantId, createdAt: { $gte: ms } }); }
+  else { const ms = new Date(); ms.setUTCDate(1); ms.setUTCHours(0, 0, 0, 0); used = await require('../models/helpdesk/tickets/Ticket').countDocuments({ company: tenantId, createdAt: { $gte: ms } }); }
   if (used >= cap) { const err = new Error(`Plan limit reached for ${metric} (${used}/${cap})`); err.status = 402; throw err; }
   return { used, cap };
 }
@@ -232,7 +232,7 @@ router.post('/retention-policies/:id/execute', async (req, res) => {
     const pol = await P5.RetentionPolicy.findOne({ _id: req.params.id, ...T(req) });
     if (!pol) return res.status(404).json({});
     if (!req.body.confirmToken || req.body.confirmToken !== `CONFIRM-${pol._id}`) return res.status(422).json({ error: 'Provide confirmToken=CONFIRM-<policyId> after review' });
-    const Ticket = require('../models/Ticket');
+    const Ticket = require('../models/helpdesk/tickets/Ticket');
     const LegalInvestigationM = require('../models/Platform6').LegalInvestigation;
     const holdsActive = await LegalInvestigationM ? false : false; // legal hold lives on matters; check custodian-level below
     const cutoff = new Date(Date.now() - (pol.retainDays || 365) * 86400000);
@@ -273,7 +273,7 @@ router.get('/metrics.prometheus', async (_req, res) => {
 router.post('/channels/voice-call', async (req, res) => {
   try {
     try { const lim = await enforceLimit(req, 'ticketsPerMonth'); if (lim && lim.cap != null && lim.used >= lim.cap) return res.status(402).json({ error: 'Monthly ticket limit reached' }); } catch(e2) {}
-    const CallLog = require('../models/CallLog'); const Ticket = require('../models/Ticket');
+    const CallLog = require('../models/CallLog'); const Ticket = require('../models/helpdesk/tickets/Ticket');
     const log = typeof CallLog === 'function' ? await CallLog.create({ callerNumber: req.body.callerNumber, disposition: 'ticket_created', agent: req.user.id }) : null;
     const ticket = await Ticket.create({ title: `[Phone] ${req.body.summary || 'Inbound call'}`, body: req.body.notes || '', source: 'phone', requesterNumber: req.body.callerNumber, status: 'open', tenantId: T(req).tenantId });
     res.status(201).json({ ticket, callLog: log });
@@ -299,7 +299,7 @@ router.post('/priority-matrix/compute', async (req, res) => {
 crud('/work-schedules', P7.WorkSchedule);
 router.post('/reassignment/sweep', async (req, res) => {
   try {
-    const Ticket = require('../models/Ticket');
+    const Ticket = require('../models/helpdesk/tickets/Ticket');
     const cutoff = new Date(Date.now() - (req.body.inactivityHours || 24) * 3600000);
     const stale = await Ticket.find({ ...T(req), status: { $in: ['open'] }, $or: [{ assignedTo: null }, { assignedTo: { $exists: false } }], createdAt: { $lt: cutoff } }).limit(50);
     const reassigned = [];
@@ -317,7 +317,7 @@ router.post('/reassignment/sweep', async (req, res) => {
 // ---- §3.63/3.64 knowledge scheduling + gap analytics ----
 router.post('/kb/publish-sweep', async (req, res) => {
   try {
-    const Faq = require('../models/Faq');
+    const Faq = require('../models/helpdesk/knowledge/Faq');
     const F = typeof Faq === 'function' ? Faq : Faq.Faq;
     const now = new Date();
     const toPublish = await F.find({ ...T(req), publishAt: { $lte: now }, published: false }).limit(50);
@@ -826,7 +826,7 @@ router.get('/my-approvals', async function(req, res) {
   try {
     var pending = [];
     try {
-      var ChangeM = require('../models/Change'); var Chg = typeof ChangeM === 'function' ? ChangeM : ChangeM.Change;
+      var ChangeM = require('../models/helpdesk/incidents/Change'); var Chg = typeof ChangeM === 'function' ? ChangeM : ChangeM.Change;
       var changes = await Chg.countDocuments({ tenantId: req.user.tenantId || req.user.companyId, status: 'pending_approval' });
       if (changes > 0) pending.push({ source: 'change', count: changes, label: 'Changes awaiting CAB approval' });
     } catch(_) {}

@@ -1,6 +1,6 @@
 const express = require('express');
-const { optionalUser } = require('../middleware/auth');
-const ctrl = require('../controllers/public.controller');
+const { optionalUser, protectTenantPrincipal } = require('../../../middleware/auth');
+const ctrl = require('../../../controllers/helpdesk/tickets/public.controller');
 
 const router = express.Router();
 
@@ -15,8 +15,8 @@ router.post('/chat/:id/messages', ctrl.chatPost);
 router.post('/chat/:id/close', ctrl.chatClose);
 
 // CSAT submission from customer portal (ticket number based)
-router.post('/csat/submit', ctrl.submitCsat);
-router.get('/csat/ticket/:ticketNumber', ctrl.surveysForTicket);
+router.post('/csat/submit', protectTenantPrincipal, ctrl.submitCsat);
+router.get('/csat/ticket/:ticketNumber', protectTenantPrincipal, ctrl.surveysForTicket);
 
 // Company self-registration + inbox verification (no auth)
 router.post('/companies/register', ctrl.registerCompany);

@@ -12,15 +12,15 @@ const SlaPlan = require('../models/SlaPlan');
 const HelpTopic = require('../models/HelpTopic');
 const User = require('../models/User');
 const Organization = require('../models/Organization');
-const Ticket = require('../models/Ticket');
-const TicketThread = require('../models/TicketThread');
+const Ticket = require('../models/helpdesk/tickets/Ticket');
+const TicketThread = require('../models/helpdesk/tickets/TicketThread');
 const Task = require('../models/Task');
-const CannedResponse = require('../models/CannedResponse');
-const FaqCategory = require('../models/FaqCategory');
-const Faq = require('../models/Faq');
-const Announcement = require('../models/Announcement');
+const CannedResponse = require('../models/helpdesk/knowledge/CannedResponse');
+const FaqCategory = require('../models/helpdesk/knowledge/FaqCategory');
+const Faq = require('../models/helpdesk/knowledge/Faq');
+const Announcement = require('../models/helpdesk/knowledge/Announcement');
 const EmailTemplate = require('../models/EmailTemplate');
-const TicketFilter = require('../models/TicketFilter');
+const TicketFilter = require('../models/helpdesk/tickets/TicketFilter');
 const Notification = require('../models/Notification');
 const SystemSetting = require('../models/SystemSetting');
 const SuperAdmin = require('../models/SuperAdmin');
@@ -28,7 +28,7 @@ const Plan = require('../models/Plan');
 const Company = require('../models/Company');
 const Invoice = require('../models/Invoice');
 const AuditLog = require('../models/AuditLog');
-const TicketStatus = require('../models/TicketStatus');
+const TicketStatus = require('../models/helpdesk/tickets/TicketStatus');
 const { emailTemplates } = require('./seedData');
 const { nextTicketNumber } = require('../services/numbering.service');
 const { computeDueDate } = require('../services/sla.service');
@@ -71,10 +71,10 @@ const MODELS = [
   require('../models/Entitlement'),
   require('../models/Asset'),
   require('../models/Dependency'),
-  require('../models/Incident'),
-  require('../models/Problem'),
-  require('../models/Change'),
-  require('../models/TicketLink'),
+  require('../models/helpdesk/incidents/Incident'),
+  require('../models/helpdesk/incidents/Problem'),
+  require('../models/helpdesk/incidents/Change'),
+  require('../models/helpdesk/tickets/TicketLink'),
   require('../models/Approval'),
   require('../models/Conversation'),
   require('../models/ChatMessage'),
@@ -160,7 +160,7 @@ const run = async () => {
     { name: 'Archived', key: 'archived', color: '#95a5a6', sortOrder: 18 },
   ];
   for (const s of defaultStatuses) {
-    await require('../models/TicketStatus').findOneAndUpdate({ key: s.key }, s, { upsert: true });
+    await require('../models/helpdesk/tickets/TicketStatus').findOneAndUpdate({ key: s.key }, s, { upsert: true });
   }
   console.log('Ticket statuses seeded.');
 
@@ -654,10 +654,10 @@ const run = async () => {
   console.log('Enterprise CMDB seeded.');
 
   // ----- Enterprise: incident + problem + change + ticket links -----
-  const Incident = require('../models/Incident');
-  const Problem = require('../models/Problem');
-  const Change = require('../models/Change');
-  const TicketLink = require('../models/TicketLink');
+  const Incident = require('../models/helpdesk/incidents/Incident');
+  const Problem = require('../models/helpdesk/incidents/Problem');
+  const Change = require('../models/helpdesk/incidents/Change');
+  const TicketLink = require('../models/helpdesk/tickets/TicketLink');
   const outageTicket = await Ticket.findOne({ subject: 'Production server down - outage' });
   const incident = await Incident.create({
     number: 'INC-0001',
@@ -726,7 +726,7 @@ const run = async () => {
   console.log('Settings seeded.');
 
   // ----- Assign all seeded data to the demo company -----
-  const companyScoped = [Agent, User, Ticket, TicketThread, Task, Organization, Department, HelpTopic, SlaPlan, Team, Role, CannedResponse, FaqCategory, Faq, Announcement, TicketFilter, Notification, require('../models/Skill'), require('../models/Workflow'), require('../models/Survey'), require('../models/StatusPage'), require('../models/StatusIncident'), require('../models/Webhook'), require('../models/ApiKey'), require('../models/Contract'), require('../models/Entitlement'), require('../models/Asset'), require('../models/Dependency'), require('../models/Incident'), require('../models/Problem'), require('../models/Change'), require('../models/TicketLink'), require('../models/Approval'), require('../models/Conversation'), require('../models/ChatMessage'), require('../models/CallLog'), require('../models/ServiceCatalogItem'), require('../models/Integration'), require('../models/AuditEvent'), require('../models/HealthScore')];
+  const companyScoped = [Agent, User, Ticket, TicketThread, Task, Organization, Department, HelpTopic, SlaPlan, Team, Role, CannedResponse, FaqCategory, Faq, Announcement, TicketFilter, Notification, require('../models/Skill'), require('../models/Workflow'), require('../models/Survey'), require('../models/StatusPage'), require('../models/StatusIncident'), require('../models/Webhook'), require('../models/ApiKey'), require('../models/Contract'), require('../models/Entitlement'), require('../models/Asset'), require('../models/Dependency'), require('../models/helpdesk/incidents/Incident'), require('../models/helpdesk/incidents/Problem'), require('../models/helpdesk/incidents/Change'), require('../models/helpdesk/tickets/TicketLink'), require('../models/Approval'), require('../models/Conversation'), require('../models/ChatMessage'), require('../models/CallLog'), require('../models/ServiceCatalogItem'), require('../models/Integration'), require('../models/AuditEvent'), require('../models/HealthScore')];
   for (const M of companyScoped) {
     await M.updateMany({ company: null }, { company: demoCompany._id });
   }

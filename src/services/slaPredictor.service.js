@@ -1,4 +1,4 @@
-const Ticket = require('../models/Ticket');
+const Ticket = require('../models/helpdesk/tickets/Ticket');
 
 const clamp = (v) => Math.max(0, Math.min(1, v));
 

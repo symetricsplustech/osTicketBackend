@@ -34,9 +34,9 @@ router.post('/status', protectTenantPrincipal, async (req, res) => {
       return res.status(403).json({ error: 'You do not have permission to change tickets' });
     }
 
-    const Ticket = require('../models/Ticket');
+    const Ticket = require('../models/helpdesk/tickets/Ticket');
     const ticketService = require('../services/ticket.service');
-    const { canAccessTicket } = require('../controllers/agent.controller');
+    const { canAccessTicket } = require('../controllers/helpdesk');
     const tickets = await Ticket.find({ _id: { $in: ticketIds }, company: companyId })
       .populate('user', 'name email');
     const found = new Set(tickets.map((t) => String(t._id)));
@@ -104,12 +104,12 @@ router.post('/assign', protectTenantPrincipal, async (req, res) => {
     if (!agentCan(req, 'tickets.assign')) {
       return res.status(403).json({ error: 'Permission denied' });
     }
-    const Ticket = require('../models/Ticket');
+    const Ticket = require('../models/helpdesk/tickets/Ticket');
     const Agent = require('../models/Agent');
     const { notifyAgent } = require('../services/notification.service');
     const { emit } = require('../services/events');
     const ticketService = require('../services/ticket.service');
-    const { canAccessTicket } = require('../controllers/agent.controller');
+    const { canAccessTicket } = require('../controllers/helpdesk');
     const assignee = await Agent.findOne({ _id: assignedTo, company: companyId, isActive: true });
     if (!assignee) return res.status(404).json({ error: 'Agent not found in this tenant' });
     const tickets = await Ticket.find({ _id: { $in: ticketIds }, company: companyId });
@@ -158,7 +158,7 @@ router.post('/priority', protectTenantPrincipal, async (req, res) => {
     if (!(await isValidPriority(priority, companyId))) {
       return res.status(422).json({ error: 'Invalid ticket priority' });
     }
-    const Ticket = require('../models/Ticket');
+    const Ticket = require('../models/helpdesk/tickets/Ticket');
     const ticketService = require('../services/ticket.service');
     const tickets = await Ticket.find({ _id: { $in: ticketIds }, company: companyId });
     const found = new Set(tickets.map((t) => String(t._id)));
@@ -193,7 +193,7 @@ router.post('/tag', protectTenantPrincipal, async (req, res) => {
     if (!agentCan(req, 'tickets.edit')) {
       return res.status(403).json({ error: 'Permission denied' });
     }
-    const Ticket = require('../models/Ticket');
+    const Ticket = require('../models/helpdesk/tickets/Ticket');
     const result = await Ticket.updateMany(
       { _id: { $in: ticketIds }, company: req.companyId },
       { $addToSet: { tags: { $each: tags } } }
@@ -221,7 +221,7 @@ router.post('/delete', protectTenantPrincipal, async (req, res) => {
     if (!isAgent && !hasUserPerm(req.user, USER_PERMISSIONS.TICKET_DELETE)) {
       return res.status(403).json({ error: 'Permission denied' });
     }
-    const Ticket = require('../models/Ticket');
+    const Ticket = require('../models/helpdesk/tickets/Ticket');
     const ticketService = require('../services/ticket.service');
     const tickets = await Ticket.find({ _id: { $in: ticketIds }, company: companyId });
     const found = new Set(tickets.map((t) => String(t._id)));

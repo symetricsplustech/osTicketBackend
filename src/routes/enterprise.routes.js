@@ -9,7 +9,7 @@ const T = req => ({ tenantId: req.user.tenantId || req.user.companyId });
 
 // ============ LEGACY COMPAT LAYER (/enterprise/* core endpoints) ============
 const def = p => { const m = require(p); return typeof m === 'function' ? m : (m[Object.keys(m).find(k => typeof m[k] === 'function' && k[0] !== '_')] || m[Object.keys(m)[0]]); };
-const Inc = def('../models/Incident'), Chg = def('../models/Change'), Prb = def('../models/Problem'),
+const Inc = def('../models/helpdesk/incidents/Incident'), Chg = def('../models/helpdesk/incidents/Change'), Prb = def('../models/helpdesk/incidents/Problem'),
       Wkf = def('../models/Workflow'), Ast = def('../models/Asset');
 
 router.get('/workflows', async (req, res) => {
@@ -237,7 +237,7 @@ router.put('/calls/:id', callsCtrl.updateCallLog);
 router.post('/calls/:id/log-to-ticket', callsCtrl.logCallToTicket);
 router.get('/realtime', async (req, res) => {
   try {
-    const Ticket = require('../models/Ticket');
+    const Ticket = require('../models/helpdesk/tickets/Ticket');
     const [openTickets, openIncidents, pendingChanges] = await Promise.all([
       Ticket.countDocuments({ ...T(req), status: { $nin: ['closed'] } }),
       Inc.countDocuments({ ...T(req), status: { $nin: ['resolved', 'closed'] } }),
@@ -248,7 +248,7 @@ router.get('/realtime', async (req, res) => {
 });
 router.get('/reports/overview', async (req, res) => {
   try {
-    const Ticket = require('../models/Ticket');
+    const Ticket = require('../models/helpdesk/tickets/Ticket');
     const [total, resolved, open] = await Promise.all([
       Ticket.countDocuments(T(req)),
       Ticket.countDocuments({ ...T(req), status: 'closed' }),

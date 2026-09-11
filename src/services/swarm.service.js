@@ -1,4 +1,4 @@
-const Incident = require('../models/Incident');
+const Incident = require('../models/helpdesk/incidents/Incident');
 const Team = require('../models/Team');
 
 async function escalateToSwarm({ company, incidentId, requesterId, message }) {

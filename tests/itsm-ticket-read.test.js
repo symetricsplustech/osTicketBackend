@@ -6,8 +6,8 @@ const Company = require('../src/models/Company');
 const Agent = require('../src/models/Agent');
 const User = require('../src/models/User');
 const Department = require('../src/models/Department');
-const Ticket = require('../src/models/Ticket');
-const TicketThread = require('../src/models/TicketThread');
+const Ticket = require('../src/models/helpdesk/tickets/Ticket');
+const TicketThread = require('../src/models/helpdesk/tickets/TicketThread');
 
 const port = 5108;
 const base = `http://127.0.0.1:${port}/api/v1`;
