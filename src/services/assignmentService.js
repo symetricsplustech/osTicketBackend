@@ -6,6 +6,17 @@ const numberingService = require('./numbering.service');
 const auditEventService = require('./auditEventService');
 const { emitEvent } = require('../realtime/socketManager');
 
+// Register assignment and routing models before retrieving them from Mongoose.
+require('../models/assignment/AssignmentRule');
+require('../models/assignment/Queue');
+require('../models/assignment/AgentPresence');
+require('../models/assignment/AgentCapacity');
+require('../models/assignment/Skill');
+require('../models/assignment/AgentSkill');
+require('../models/assignment/RoutingRule');
+require('../models/assignment/AssignmentEvent');
+require('../models/Agent');
+
 const requireTenant = (ctx) => { if (!ctx.tenantId) throw Object.assign(new Error('Tenant context required'), { statusCode: 400 }); return ctx.tenantId; };
 const pick = (obj, keys) => Object.fromEntries(keys.filter(k => obj[k] !== undefined).map(k => [k, obj[k]]));
 

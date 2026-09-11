@@ -1,0 +1,30 @@
+const { Schema, model } = require('mongoose');
+const ApprovalStepSchema = new Schema({
+  tenantId: { type: Schema.Types.ObjectId, ref: 'Tenant', required: true, index: true },
+  instanceId: { type: Schema.Types.ObjectId, ref: 'ApprovalInstance', required: true, index: true },
+  stepNumber: { type: Number, required: true },
+  name: { type: String, default: '' },
+  assigneeType: { type: String, enum: ['agent', 'role', 'team', 'dept_manager', 'org_manager', 'any_admin', 'custom'], required: true },
+  assignee: { type: Schema.Types.ObjectId, ref: 'User' },
+  assigneeName: { type: String, default: '' },
+  mode: { type: String, enum: ['approve', 'reject', 'acknowledge'], default: 'approve' },
+  status: { type: String, enum: ['pending', 'active', 'approved', 'rejected', 'skipped', 'expired', 'delegated'], default: 'pending', index: true },
+  decidedBy: { type: Schema.Types.ObjectId, ref: 'User' },
+  decidedByName: { type: String },
+  decidedAt: { type: Date },
+  comment: { type: String, trim: true, default: '' },
+  delegatedTo: { type: Schema.Types.ObjectId, ref: 'User' },
+  delegatedToName: { type: String },
+  delegationNote: { type: String, default: '' },
+  escalated: { type: Boolean, default: false },
+  escalatedAt: { type: Date },
+  escalatedTo: { type: Schema.Types.ObjectId, ref: 'User' },
+  dueAt: { type: Date },
+  timeoutHours: { type: Number, default: 0 },
+  autoApproveOnTimeout: { type: Boolean, default: false },
+  required: { type: Boolean, default: true },
+  order: { type: Number, default: 0 },
+  meta: { type: Schema.Types.Mixed, default: {} },
+}, { timestamps: true });
+ApprovalStepSchema.index({ tenantId: 1, instanceId: 1, stepNumber: 1 });
+module.exports = model('ApprovalStep', ApprovalStepSchema);

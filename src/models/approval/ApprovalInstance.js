@@ -1,0 +1,37 @@
+const { Schema, model } = require('mongoose');
+const ApprovalInstanceSchema = new Schema({
+  tenantId: { type: Schema.Types.ObjectId, ref: 'Tenant', required: true, index: true },
+  definitionId: { type: Schema.Types.ObjectId, ref: 'ApprovalDefinition' },
+  number: { type: String, required: true, unique: true },
+  entityType: { type: String, enum: ['ticket', 'change', 'incident', 'problem', 'service_request', 'asset', 'contract', 'knowledge', 'task', 'other'], required: true, index: true },
+  entityId: { type: Schema.Types.ObjectId, required: true, index: true },
+  entityNumber: { type: String },
+  title: { type: String, trim: true, default: '' },
+  description: { type: String, trim: true, default: '' },
+  status: { type: String, enum: ['pending', 'approved', 'rejected', 'expired', 'cancelled', 'skipped'], default: 'pending', index: true },
+  mode: { type: String, enum: ['sequential', 'parallel'], default: 'sequential' },
+  currentStep: { type: Number, default: 1 },
+  totalSteps: { type: Number, default: 1 },
+  requiredApprovals: { type: Number, default: 1 },
+  approvalCount: { type: Number, default: 0 },
+  rejectionCount: { type: Number, default: 0 },
+  condition: { type: Schema.Types.Mixed },
+  initiatedBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+  initiatedByName: { type: String, default: '' },
+  completedAt: { type: Date },
+  dueAt: { type: Date },
+  timeoutHours: { type: Number, default: 0 },
+  autoApproveAfterHours: { type: Number, default: 0 },
+  autoApproveResult: { type: String, enum: ['approved', 'rejected'], default: 'approved' },
+  escalationAfterHours: { type: Number, default: 0 },
+  escalateTo: { type: Schema.Types.ObjectId, ref: 'User' },
+  result: { type: String, enum: ['approved', 'rejected', 'escalated', 'timeout'], default: null },
+  slaImpact: { type: String, enum: ['none', 'pause', 'reset'], default: 'pause' },
+  meta: { type: Schema.Types.Mixed, default: {} },
+  isDeleted: { type: Boolean, default: false },
+  deletedAt: { type: Date },
+  deletedBy: { type: Schema.Types.ObjectId, ref: 'User' },
+}, { timestamps: true });
+ApprovalInstanceSchema.index({ tenantId: 1, entityId: 1, entityType: 1 });
+ApprovalInstanceSchema.index({ tenantId: 1, status: 1, dueAt: 1 });
+module.exports = model('ApprovalInstance', ApprovalInstanceSchema);
