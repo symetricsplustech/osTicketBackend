@@ -100,6 +100,37 @@ const TASK_TRANSITIONS = {
   cancelled: ['open'],
 };
 
+const CART_TRANSITIONS = {
+  active: ['submitted', 'abandoned'],
+  submitted: ['active'],
+  abandoned: ['active'],
+};
+
+const REQUEST_TRANSITIONS = {
+  open: ['work_in_progress', 'closed_complete', 'closed_incomplete', 'closed_canceled'],
+  work_in_progress: ['open', 'closed_complete', 'closed_incomplete', 'closed_canceled'],
+  closed_complete: ['open'],
+  closed_incomplete: ['open'],
+  closed_canceled: ['open'],
+};
+
+const RITM_TRANSITIONS = {
+  pending_approval: ['open', 'closed_canceled'],
+  open: ['work_in_progress', 'pending_approval', 'closed_complete', 'closed_incomplete', 'closed_canceled'],
+  work_in_progress: ['open', 'pending_approval', 'closed_complete', 'closed_incomplete', 'closed_canceled'],
+  closed_complete: ['open'],
+  closed_incomplete: ['open'],
+  closed_canceled: ['open'],
+};
+
+const CATALOG_TASK_TRANSITIONS = {
+  open: ['work_in_progress', 'closed_complete', 'closed_incomplete', 'closed_skipped'],
+  work_in_progress: ['open', 'closed_complete', 'closed_incomplete', 'closed_skipped'],
+  closed_complete: ['open'],
+  closed_incomplete: ['open'],
+  closed_skipped: ['open'],
+};
+
 const MATRICES = {
   ticket: TICKET_TRANSITIONS,
   task: TASK_TRANSITIONS,
@@ -107,6 +138,10 @@ const MATRICES = {
   problem: PROBLEM_TRANSITIONS,
   change: CHANGE_TRANSITIONS,
   faq: FAQ_TRANSITIONS,
+  cart: CART_TRANSITIONS,
+  request: REQUEST_TRANSITIONS,
+  ritm: RITM_TRANSITIONS,
+  catalogTask: CATALOG_TASK_TRANSITIONS,
 };
 
 function allowedTransitions(entity, from, customStatuses = []) {
@@ -147,6 +182,10 @@ module.exports = {
   PROBLEM_TRANSITIONS,
   CHANGE_TRANSITIONS,
   FAQ_TRANSITIONS,
+  CART_TRANSITIONS,
+  REQUEST_TRANSITIONS,
+  RITM_TRANSITIONS,
+  CATALOG_TASK_TRANSITIONS,
   allowedTransitions,
   canTransition,
   assertTransition,
