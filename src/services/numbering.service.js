@@ -11,13 +11,15 @@
  * and covered by portal tests. New ITSM entities use this service.
  */
 
-const Counter = require('../models/Counter');
-const { generateTicketNumber: legacyTicketNumber } = require('../utils/generators');
+const Counter = require("../models/Counter");
+const {
+  generateTicketNumber: legacyTicketNumber,
+} = require("../utils/generators");
 
-const PREFIXES = ['INC', 'PRB', 'CHG', 'REQ', 'RITM', 'TASK'];
+const PREFIXES = ["INC", "PRB", "CHG", "REQ", "RITM", "TASK"];
 
 function formatNumber(prefix, seq) {
-  return `${prefix}-${String(seq).padStart(6, '0')}`;
+  return `${prefix}-${String(seq).padStart(6, "0")}`;
 }
 
 /**
@@ -25,12 +27,13 @@ function formatNumber(prefix, seq) {
  * Safe under concurrency (single-document atomic update).
  */
 async function nextSequence(tenantId, prefix) {
-  if (!tenantId) throw new Error('tenantId is required for numbering');
-  if (!PREFIXES.includes(prefix)) throw new Error(`unknown numbering prefix: ${prefix}`);
+  if (!tenantId) throw new Error("tenantId is required for numbering");
+  if (!PREFIXES.includes(prefix))
+    throw new Error(`unknown numbering prefix: ${prefix}`);
   const doc = await Counter.findOneAndUpdate(
     { _id: `${tenantId}:${prefix}` },
     { $inc: { seq: 1 } },
-    { new: true, upsert: true }
+    { new: true, upsert: true },
   );
   return doc.seq;
 }
@@ -41,7 +44,7 @@ async function nextNumber(tenantId, prefix) {
 }
 
 function formatTicketNumber(year, seq) {
-  return `TKT-${year}-${String(seq).padStart(8, '0')}`;
+  return `TKT-${year}-${String(seq).padStart(8, "0")}`;
 }
 
 /**
@@ -57,10 +60,10 @@ async function nextTicketNumber() {
     const doc = await Counter.findOneAndUpdate(
       { _id: `GLOBAL:TKT:${year}` },
       { $inc: { seq: 1 } },
-      { new: true, upsert: true }
+      { new: true, upsert: true },
     );
     const number = formatTicketNumber(year, doc.seq);
-    const Ticket = require('../models/helpdesk/tickets/Ticket');
+    const Ticket = require("../models/helpdesk/tickets/Ticket");
     const exists = await Ticket.exists({ number });
     if (!exists) return number;
   } catch (_) {
@@ -69,4 +72,11 @@ async function nextTicketNumber() {
   return legacyTicketNumber();
 }
 
-module.exports = { PREFIXES, formatNumber, nextSequence, nextNumber, formatTicketNumber, nextTicketNumber };
+module.exports = {
+  PREFIXES,
+  formatNumber,
+  nextSequence,
+  nextNumber,
+  formatTicketNumber,
+  nextTicketNumber,
+};

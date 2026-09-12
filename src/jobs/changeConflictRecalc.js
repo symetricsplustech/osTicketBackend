@@ -2,15 +2,15 @@
  * Automatic conflict recalculation for scheduled changes.
  * Runs every 10 minutes.
  */
-const Change = require('../models/helpdesk/incidents/Change');
-const ChangeConflict = require('../models/helpdesk/incidents/ChangeConflict');
-const events = require('../services/events');
+const Change = require("../models/helpdesk/incidents/Change");
+const ChangeConflict = require("../models/helpdesk/incidents/ChangeConflict");
+const events = require("../services/events");
 
 const BATCH_SIZE = 50;
 
 async function recalculateConflicts() {
   const scheduledChanges = await Change.find({
-    status: 'scheduled',
+    status: "scheduled",
     isActive: true,
     windowStart: { $gte: new Date() },
   }).limit(BATCH_SIZE);
@@ -24,7 +24,7 @@ async function recalculateConflicts() {
       _id: { $ne: change._id },
       company: change.company,
       isActive: true,
-      status: 'scheduled',
+      status: "scheduled",
       windowStart: { $lt: change.windowEnd },
       windowEnd: { $gt: change.windowStart },
     });
@@ -34,7 +34,7 @@ async function recalculateConflicts() {
         change: change._id,
         conflictingChange: ov._id,
         company: change.company,
-        conflictType: 'schedule_overlap',
+        conflictType: "schedule_overlap",
         description: `Overlaps with ${ov.number}`,
       });
       totalConflicts++;

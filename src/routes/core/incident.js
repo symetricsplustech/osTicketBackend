@@ -1,59 +1,231 @@
-const express = require('express');
-const { requirePermission } = require('../../middleware/auth');
-const ctrl = require('../../controllers/core/incident.controller');
+const express = require("express");
+const { requirePermission } = require("../../middleware/auth");
+const ctrl = require("../../controllers/core/incident.controller");
 
 const router = express.Router();
 
-router.post('/', requirePermission('itsm.incident.incident.create'), ctrl.create);
-router.get('/', requirePermission('itsm.incident.incident.read'), ctrl.list);
-router.get('/duplicates', requirePermission('itsm.incident.incident.read'), ctrl.getDuplicateCandidates);
-router.get('/major', requirePermission('itsm.incident.incident.read'), ctrl.listMajorIncidents);
-router.get('/major/candidates', requirePermission('itsm.incident.incident.read'), ctrl.listMajorCandidates);
-router.get('/pir', requirePermission('itsm.incident.incident.read'), ctrl.listPIRs);
+router.post(
+  "/",
+  requirePermission("itsm.incident.incident.create"),
+  ctrl.create,
+);
+router.get("/", requirePermission("itsm.incident.incident.read"), ctrl.list);
+router.get(
+  "/duplicates",
+  requirePermission("itsm.incident.incident.read"),
+  ctrl.getDuplicateCandidates,
+);
+router.get(
+  "/major",
+  requirePermission("itsm.incident.incident.read"),
+  ctrl.listMajorIncidents,
+);
+router.get(
+  "/major/candidates",
+  requirePermission("itsm.incident.incident.read"),
+  ctrl.listMajorCandidates,
+);
+router.get(
+  "/pir",
+  requirePermission("itsm.incident.incident.read"),
+  ctrl.listPIRs,
+);
 
-router.get('/:id', requirePermission('itsm.incident.incident.read'), ctrl.getById);
-router.put('/:id', requirePermission('itsm.incident.incident.update'), ctrl.update);
-router.post('/:id/transition', requirePermission('itsm.incident.incident.update'), ctrl.transition);
-router.post('/:id/assign', requirePermission('itsm.incident.assign'), ctrl.assign);
-router.post('/:id/comment', requirePermission('itsm.incident.incident.update'), ctrl.addComment);
-router.post('/:id/resolve', requirePermission('itsm.incident.resolve'), ctrl.resolve);
-router.post('/:id/close', requirePermission('itsm.incident.close'), ctrl.close);
-router.post('/:id/reopen', requirePermission('itsm.incident.reopen'), ctrl.reopen);
-router.post('/:id/cancel', requirePermission('itsm.incident.cancel'), ctrl.cancel);
-router.get('/:id/assignment-history', requirePermission('itsm.incident.incident.read'), ctrl.getAssignmentHistory);
+router.get(
+  "/:id",
+  requirePermission("itsm.incident.incident.read"),
+  ctrl.getById,
+);
+router.put(
+  "/:id",
+  requirePermission("itsm.incident.incident.update"),
+  ctrl.update,
+);
+router.post(
+  "/:id/transition",
+  requirePermission("itsm.incident.incident.update"),
+  ctrl.transition,
+);
+router.post(
+  "/:id/assign",
+  requirePermission("itsm.incident.assign"),
+  ctrl.assign,
+);
+router.post(
+  "/:id/comment",
+  requirePermission("itsm.incident.incident.update"),
+  ctrl.addComment,
+);
+router.post(
+  "/:id/resolve",
+  requirePermission("itsm.incident.resolve"),
+  ctrl.resolve,
+);
+router.post("/:id/close", requirePermission("itsm.incident.close"), ctrl.close);
+router.post(
+  "/:id/reopen",
+  requirePermission("itsm.incident.reopen"),
+  ctrl.reopen,
+);
+router.post(
+  "/:id/cancel",
+  requirePermission("itsm.incident.cancel"),
+  ctrl.cancel,
+);
+router.get(
+  "/:id/assignment-history",
+  requirePermission("itsm.incident.incident.read"),
+  ctrl.getAssignmentHistory,
+);
 
-router.post('/:id/ci', requirePermission('itsm.incident.incident.update'), ctrl.linkCI);
-router.delete('/:id/ci/:ciId', requirePermission('itsm.incident.incident.update'), ctrl.unlinkCI);
-router.get('/:id/ci', requirePermission('itsm.incident.incident.read'), ctrl.listCIs);
-router.post('/:id/service-offering', requirePermission('itsm.incident.incident.update'), ctrl.linkServiceOffering);
-router.post('/:id/relationship', requirePermission('itsm.incident.incident.update'), ctrl.linkIncident);
-router.get('/:id/relationship', requirePermission('itsm.incident.incident.read'), ctrl.listRelationships);
+router.post(
+  "/:id/ci",
+  requirePermission("itsm.incident.incident.update"),
+  ctrl.linkCI,
+);
+router.delete(
+  "/:id/ci/:ciId",
+  requirePermission("itsm.incident.incident.update"),
+  ctrl.unlinkCI,
+);
+router.get(
+  "/:id/ci",
+  requirePermission("itsm.incident.incident.read"),
+  ctrl.listCIs,
+);
+router.post(
+  "/:id/service-offering",
+  requirePermission("itsm.incident.incident.update"),
+  ctrl.linkServiceOffering,
+);
+router.post(
+  "/:id/relationship",
+  requirePermission("itsm.incident.incident.update"),
+  ctrl.linkIncident,
+);
+router.get(
+  "/:id/relationship",
+  requirePermission("itsm.incident.incident.read"),
+  ctrl.listRelationships,
+);
 
-router.post('/:id/task', requirePermission('itsm.incident.incident.update'), ctrl.createTask);
-router.get('/:id/task', requirePermission('itsm.incident.incident.read'), ctrl.listTasks);
+router.post(
+  "/:id/task",
+  requirePermission("itsm.incident.incident.update"),
+  ctrl.createTask,
+);
+router.get(
+  "/:id/task",
+  requirePermission("itsm.incident.incident.read"),
+  ctrl.listTasks,
+);
 
-router.post('/:id/major/nominate', requirePermission('itsm.incident.incident.update'), ctrl.nominateMajor);
-router.post('/:id/major/approve', requirePermission('itsm.incident.incident.update'), ctrl.approveMajor);
-router.post('/:id/major/reject', requirePermission('itsm.incident.incident.update'), ctrl.rejectMajor);
-router.get('/:id/major', requirePermission('itsm.incident.incident.read'), ctrl.getMajorIncident);
-router.post('/:id/major/demote', requirePermission('itsm.incident.incident.update'), ctrl.demoteMajor);
-router.put('/:id/major/comm-plan', requirePermission('itsm.incident.incident.update'), ctrl.updateMajorCommPlan);
-router.put('/:id/major/exec-summary', requirePermission('itsm.incident.incident.update'), ctrl.updateMajorExecSummary);
+router.post(
+  "/:id/major/nominate",
+  requirePermission("itsm.incident.incident.update"),
+  ctrl.nominateMajor,
+);
+router.post(
+  "/:id/major/approve",
+  requirePermission("itsm.incident.incident.update"),
+  ctrl.approveMajor,
+);
+router.post(
+  "/:id/major/reject",
+  requirePermission("itsm.incident.incident.update"),
+  ctrl.rejectMajor,
+);
+router.get(
+  "/:id/major",
+  requirePermission("itsm.incident.incident.read"),
+  ctrl.getMajorIncident,
+);
+router.post(
+  "/:id/major/demote",
+  requirePermission("itsm.incident.incident.update"),
+  ctrl.demoteMajor,
+);
+router.put(
+  "/:id/major/comm-plan",
+  requirePermission("itsm.incident.incident.update"),
+  ctrl.updateMajorCommPlan,
+);
+router.put(
+  "/:id/major/exec-summary",
+  requirePermission("itsm.incident.incident.update"),
+  ctrl.updateMajorExecSummary,
+);
 
-router.post('/:id/major/participant', requirePermission('itsm.incident.incident.update'), ctrl.addMajorParticipant);
-router.delete('/:id/major/participant/:userId', requirePermission('itsm.incident.incident.update'), ctrl.removeMajorParticipant);
-router.get('/:id/major/participant', requirePermission('itsm.incident.incident.read'), ctrl.listMajorParticipants);
-router.post('/:id/major/timeline', requirePermission('itsm.incident.incident.update'), ctrl.addMajorTimelineEvent);
-router.get('/:id/major/timeline', requirePermission('itsm.incident.incident.read'), ctrl.listMajorTimelineEvents);
+router.post(
+  "/:id/major/participant",
+  requirePermission("itsm.incident.incident.update"),
+  ctrl.addMajorParticipant,
+);
+router.delete(
+  "/:id/major/participant/:userId",
+  requirePermission("itsm.incident.incident.update"),
+  ctrl.removeMajorParticipant,
+);
+router.get(
+  "/:id/major/participant",
+  requirePermission("itsm.incident.incident.read"),
+  ctrl.listMajorParticipants,
+);
+router.post(
+  "/:id/major/timeline",
+  requirePermission("itsm.incident.incident.update"),
+  ctrl.addMajorTimelineEvent,
+);
+router.get(
+  "/:id/major/timeline",
+  requirePermission("itsm.incident.incident.read"),
+  ctrl.listMajorTimelineEvents,
+);
 
-router.post('/:id/pir', requirePermission('itsm.incident.incident.update'), ctrl.createPIR);
-router.get('/:id/pir/:pirId', requirePermission('itsm.incident.incident.read'), ctrl.getPIR);
-router.put('/:id/pir/:pirId', requirePermission('itsm.incident.incident.update'), ctrl.updatePIR);
-router.post('/:id/pir/:pirId/submit', requirePermission('itsm.incident.incident.update'), ctrl.submitPIRForReview);
-router.post('/:id/pir/:pirId/approve', requirePermission('itsm.incident.incident.update'), ctrl.approvePIR);
-router.post('/:id/pir/:pirId/publish', requirePermission('itsm.incident.incident.update'), ctrl.publishPIR);
-router.post('/:id/pir/:pirId/action-item', requirePermission('itsm.incident.incident.update'), ctrl.addPIRActionItem);
-router.put('/:id/pir/:pirId/action-item/:actionItemId', requirePermission('itsm.incident.incident.update'), ctrl.updatePIRActionItem);
-router.delete('/:id/pir/:pirId/action-item/:actionItemId', requirePermission('itsm.incident.incident.update'), ctrl.deletePIRActionItem);
+router.post(
+  "/:id/pir",
+  requirePermission("itsm.incident.incident.update"),
+  ctrl.createPIR,
+);
+router.get(
+  "/:id/pir/:pirId",
+  requirePermission("itsm.incident.incident.read"),
+  ctrl.getPIR,
+);
+router.put(
+  "/:id/pir/:pirId",
+  requirePermission("itsm.incident.incident.update"),
+  ctrl.updatePIR,
+);
+router.post(
+  "/:id/pir/:pirId/submit",
+  requirePermission("itsm.incident.incident.update"),
+  ctrl.submitPIRForReview,
+);
+router.post(
+  "/:id/pir/:pirId/approve",
+  requirePermission("itsm.incident.incident.update"),
+  ctrl.approvePIR,
+);
+router.post(
+  "/:id/pir/:pirId/publish",
+  requirePermission("itsm.incident.incident.update"),
+  ctrl.publishPIR,
+);
+router.post(
+  "/:id/pir/:pirId/action-item",
+  requirePermission("itsm.incident.incident.update"),
+  ctrl.addPIRActionItem,
+);
+router.put(
+  "/:id/pir/:pirId/action-item/:actionItemId",
+  requirePermission("itsm.incident.incident.update"),
+  ctrl.updatePIRActionItem,
+);
+router.delete(
+  "/:id/pir/:pirId/action-item/:actionItemId",
+  requirePermission("itsm.incident.incident.update"),
+  ctrl.deletePIRActionItem,
+);
 
 module.exports = router;

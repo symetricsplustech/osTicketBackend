@@ -1,1 +1,1 @@
-module.exports = require('./superadmin/index');
+module.exports = require("./superadmin/index");

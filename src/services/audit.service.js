@@ -1,4 +1,4 @@
-const AuditEvent = require('../models/AuditEvent');
+const AuditEvent = require("../models/AuditEvent");
 
 /**
  * audit({ company, actorType, actor, actorName, action, entityType, entityId,
@@ -7,21 +7,26 @@ const AuditEvent = require('../models/AuditEvent');
  */
 async function audit({
   company = null,
-  actorType = 'system',
+  actorType = "system",
   actor = null,
-  actorName = '',
+  actorName = "",
   action,
-  entityType = '',
+  entityType = "",
   entityId = null,
   before = null,
   after = null,
-  reason = '',
+  reason = "",
   req = null,
-  source = '',
+  source = "",
 }) {
   try {
     const changes = [];
-    if (before && after && typeof before === 'object' && typeof after === 'object') {
+    if (
+      before &&
+      after &&
+      typeof before === "object" &&
+      typeof after === "object"
+    ) {
       const keys = new Set([...Object.keys(before), ...Object.keys(after)]);
       for (const k of keys) {
         const b = before[k];
@@ -43,19 +48,25 @@ async function audit({
       after: after ?? null,
       changes: changes.slice(0, 50),
       reason,
-      ip: req?.ip || req?.socket?.remoteAddress || '',
-      userAgent: req?.get?.('user-agent') || '',
-      source: source || (actorType === 'api' ? 'api' : ''),
-      privilegedSessionId: req?.privilegedSession?.sessionId || '',
+      ip: req?.ip || req?.socket?.remoteAddress || "",
+      userAgent: req?.get?.("user-agent") || "",
+      source: source || (actorType === "api" ? "api" : ""),
+      privilegedSessionId: req?.privilegedSession?.sessionId || "",
       realActor: req?.privilegedSession?.realActor || null,
-      realActorName: req?.privilegedSession?.realActorEmail || '',
+      realActorName: req?.privilegedSession?.realActorEmail || "",
     });
   } catch (err) {
     // audit must never break the business flow
   }
 }
 
-async function auditForEntity({ company, entityType, entityId, page = 1, limit = 50 }) {
+async function auditForEntity({
+  company,
+  entityType,
+  entityId,
+  page = 1,
+  limit = 50,
+}) {
   const query = { company, entityType, entityId };
   const items = await AuditEvent.find(query)
     .sort({ createdAt: -1 })

@@ -2,18 +2,20 @@
  * SLA timer background job — checks for breached SLAs on a schedule.
  * Run via: node src/jobs/slaTimer.js
  */
-const mongoose = require('mongoose');
-const config = require('../config/config');
-const { checkBreaches } = require('../services/taskSla.service');
-const logger = require('../utils/logger');
+const mongoose = require("mongoose");
+const config = require("../config/config");
+const { checkBreaches } = require("../services/taskSla.service");
+const logger = require("../utils/logger");
 
 async function connect() {
   await mongoose.connect(config.mongoUri);
-  logger.info('SLA timer connected to MongoDB');
+  logger.info("SLA timer connected to MongoDB");
 }
 
 async function run() {
-  const tenants = await mongoose.connection.db.collection('companies').distinct('_id');
+  const tenants = await mongoose.connection.db
+    .collection("companies")
+    .distinct("_id");
   let total = 0;
   for (const tenantId of tenants) {
     const breached = await checkBreaches(tenantId);
@@ -30,7 +32,7 @@ async function start(intervalMs = 60000) {
     try {
       await run();
     } catch (err) {
-      logger.error('SLA timer error', { error: err.message });
+      logger.error("SLA timer error", { error: err.message });
     }
   }, intervalMs);
   return timer;
@@ -38,7 +40,7 @@ async function start(intervalMs = 60000) {
 
 if (require.main === module) {
   start().catch((err) => {
-    logger.error('SLA timer failed to start', { error: err.message });
+    logger.error("SLA timer failed to start", { error: err.message });
     process.exit(1);
   });
 }

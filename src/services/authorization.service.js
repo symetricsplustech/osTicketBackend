@@ -25,33 +25,38 @@
  * expose sensitive internal authorization reasons to the client").
  */
 
-const ApiError = require('../utils/ApiError');
-const { getTenantCustomAuth, evaluateCustom } = require('./customAuth.service');
-const { expandGrants, isLegacyKey, legacyFromCanonical, canonicalFromLegacy } = require('../permissions/legacyMappings');
-const { isHighRisk } = require('../permissions/itsmCatalog');
+const ApiError = require("../utils/ApiError");
+const { getTenantCustomAuth, evaluateCustom } = require("./customAuth.service");
+const {
+  expandGrants,
+  isLegacyKey,
+  legacyFromCanonical,
+  canonicalFromLegacy,
+} = require("../permissions/legacyMappings");
+const { isHighRisk } = require("../permissions/itsmCatalog");
 
-const ALLOW = 'ALLOW';
-const DENY = 'DENY';
+const ALLOW = "ALLOW";
+const DENY = "DENY";
 
 // Scopes from the ITSM spec (MD §19) mapped to the record fields we evaluate.
 const SCOPES = [
-  'TENANT',
-  'ORGANIZATION',
-  'BUSINESS_UNIT',
-  'DEPARTMENT',
-  'BRANCH',
-  'LOCATION',
-  'TEAM',
-  'GROUP',
-  'ASSIGNMENT_GROUP',
-  'MANAGED_USERS',
-  'OWN',
-  'ASSIGNED_TO_ME',
-  'REQUESTED_BY_ME',
-  'REQUESTED_FOR_ME',
-  'CREATED_BY_ME',
-  'WATCHING',
-  'CUSTOM',
+  "TENANT",
+  "ORGANIZATION",
+  "BUSINESS_UNIT",
+  "DEPARTMENT",
+  "BRANCH",
+  "LOCATION",
+  "TEAM",
+  "GROUP",
+  "ASSIGNMENT_GROUP",
+  "MANAGED_USERS",
+  "OWN",
+  "ASSIGNED_TO_ME",
+  "REQUESTED_BY_ME",
+  "REQUESTED_FOR_ME",
+  "CREATED_BY_ME",
+  "WATCHING",
+  "CUSTOM",
 ];
 
 // ---------------------------------------------------------------------------
@@ -59,28 +64,32 @@ const SCOPES = [
 // ---------------------------------------------------------------------------
 
 const principalId = (p) => {
-  if (!p) return '';
+  if (!p) return "";
   const id = p._id || p.id;
-  return id ? String(id) : '';
+  return id ? String(id) : "";
 };
 
 const principalTenant = (p, tenantId) => {
   if (tenantId) return String(tenantId);
   const t = p && (p.tenantId || p.company);
-  if (!t) return '';
+  if (!t) return "";
   return String(t && t._id ? t._id : t);
 };
 
 const roleListOf = (principal, extraRoles) => {
   const roles = [];
   if (principal && principal.role) roles.push(principal.role);
-  if (Array.isArray(principal && principal.roles)) roles.push(...principal.roles);
+  if (Array.isArray(principal && principal.roles))
+    roles.push(...principal.roles);
   if (Array.isArray(extraRoles)) roles.push(...extraRoles);
   return roles.filter(Boolean);
 };
 
 const isAggregateAdmin = (principal) =>
-  !!principal && (!!principal.isSuperAdmin || !!principal.isAdmin || !!(principal.role && principal.role.isAdmin));
+  !!principal &&
+  (!!principal.isSuperAdmin ||
+    !!principal.isAdmin ||
+    !!(principal.role && principal.role.isAdmin));
 
 // ---------------------------------------------------------------------------
 // Permission resolution (pure, no DB)
@@ -97,12 +106,12 @@ function splitPermissions(list) {
   const allow = new Set();
   const deny = new Set();
   for (const raw of list || []) {
-    if (typeof raw !== 'string' || !raw) continue;
-    if (raw === '*') {
-      allow.add('*');
+    if (typeof raw !== "string" || !raw) continue;
+    if (raw === "*") {
+      allow.add("*");
       continue;
     }
-    if (raw.startsWith('!')) {
+    if (raw.startsWith("!")) {
       const key = raw.slice(1);
       if (key) deny.add(key);
     } else {
@@ -124,12 +133,12 @@ function collectPermissions(principal, extraRoles) {
   const roleDeny = new Set();
   for (const role of roleListOf(principal, extraRoles)) {
     for (const p of role.permissions || []) {
-      if (typeof p === 'string' && p && !p.startsWith('!')) roleAllow.add(p);
+      if (typeof p === "string" && p && !p.startsWith("!")) roleAllow.add(p);
     }
     // Role-level explicit DENYs (Role.deniedPermissions, no enum by design).
     for (const p of role.deniedPermissions || []) {
-      if (typeof p !== 'string' || !p) continue;
-      roleDeny.add(p.startsWith('!') ? p.slice(1) : p);
+      if (typeof p !== "string" || !p) continue;
+      roleDeny.add(p.startsWith("!") ? p.slice(1) : p);
     }
   }
   const deny = new Set([...direct.deny, ...roleDeny]);
@@ -142,18 +151,30 @@ function collectPermissions(principal, extraRoles) {
  * 'deny' | 'wildcard' | 'direct' | 'role' | 'admin_aggregate' | 'none'
  */
 function checkPermission(principal, permission, extraRoles) {
-  if (!principal || !permission) return { granted: false, via: 'none' };
-  if (isAggregateAdmin(principal)) return { granted: true, via: 'admin_aggregate' };
-  const { directAllow, deny, roleAllow } = collectPermissions(principal, extraRoles);
-  const matches = (set, key) => set.has(key) || [...set].some((grant) =>
-    grant === '*' || (grant.endsWith('.*') && key.startsWith(grant.slice(0, -1)))
+  if (!principal || !permission) return { granted: false, via: "none" };
+  if (isAggregateAdmin(principal))
+    return { granted: true, via: "admin_aggregate" };
+  const { directAllow, deny, roleAllow } = collectPermissions(
+    principal,
+    extraRoles,
   );
-  if (directAllow.has('*') || roleAllow.has('*')) return { granted: true, via: 'wildcard' };
+  const matches = (set, key) =>
+    set.has(key) ||
+    [...set].some(
+      (grant) =>
+        grant === "*" ||
+        (grant.endsWith(".*") && key.startsWith(grant.slice(0, -1))),
+    );
+  if (directAllow.has("*") || roleAllow.has("*"))
+    return { granted: true, via: "wildcard" };
   const effectiveDeny = expandGrants([...deny]);
-  if (matches(effectiveDeny, permission) || deny.has('*')) return { granted: false, via: 'deny' };
-  if (matches(expandGrants([...directAllow]), permission)) return { granted: true, via: 'direct' };
-  if (matches(expandGrants([...roleAllow]), permission)) return { granted: true, via: 'role' };
-  return { granted: false, via: 'none' };
+  if (matches(effectiveDeny, permission) || deny.has("*"))
+    return { granted: false, via: "deny" };
+  if (matches(expandGrants([...directAllow]), permission))
+    return { granted: true, via: "direct" };
+  if (matches(expandGrants([...roleAllow]), permission))
+    return { granted: true, via: "role" };
+  return { granted: false, via: "none" };
 }
 
 /** Backward-compatible boolean used by controllers. */
@@ -168,15 +189,22 @@ function hasPermission(principal, permission, extraRoles) {
  * the backend always re‑evaluates via `authorize()`.
  */
 function resolveEffectivePermissions(principal, extraRoles) {
-  const { directAllow, deny, roleAllow } = collectPermissions(principal, extraRoles);
+  const { directAllow, deny, roleAllow } = collectPermissions(
+    principal,
+    extraRoles,
+  );
   const directGrants = [...directAllow];
   const roleGrants = [...roleAllow];
   const rawAll = [...directGrants, ...roleGrants];
   const effective = expandGrants(rawAll);
-  const legacyHeld = rawAll.filter(k => isLegacyKey(k));
+  const legacyHeld = rawAll.filter((k) => isLegacyKey(k));
   const source = {
     direct: directGrants,
-    roles: roleListOf(principal, extraRoles).map(r => ({ id: r._id, name: r.name, permissions: r.permissions || [] })),
+    roles: roleListOf(principal, extraRoles).map((r) => ({
+      id: r._id,
+      name: r.name,
+      permissions: r.permissions || [],
+    })),
   };
   return {
     grants: [...effective],
@@ -184,7 +212,10 @@ function resolveEffectivePermissions(principal, extraRoles) {
     effective,
     denied: [...deny],
     legacy: legacyHeld,
-    aliases: legacyHeld.map(k => ({ legacy: k, canonical: canonicalFromLegacy(k) })),
+    aliases: legacyHeld.map((k) => ({
+      legacy: k,
+      canonical: canonicalFromLegacy(k),
+    })),
     scopes: grantedScopes(principal, extraRoles),
     sources: source,
   };
@@ -195,8 +226,8 @@ function resolveEffectivePermissions(principal, extraRoles) {
 // ---------------------------------------------------------------------------
 
 const idStr = (v) => {
-  if (v == null) return '';
-  if (typeof v === 'object') return String(v._id || v.id || '');
+  if (v == null) return "";
+  if (typeof v === "object") return String(v._id || v.id || "");
   return String(v);
 };
 
@@ -207,7 +238,7 @@ const idList = (v) => {
 };
 
 function recordTenant(record) {
-  if (!record) return '';
+  if (!record) return "";
   return idStr(record.tenantId || record.company || record.tenant);
 }
 
@@ -221,32 +252,52 @@ function evaluateScope(principal, scope, record, tenant, scopeContext) {
   if (!record) return true;
   const me = principalId(principal);
   switch (scope) {
-    case 'TENANT':
+    case "TENANT":
       return !!tenant && recordTenant(record) === String(tenant);
-    case 'OWN':
-    case 'REQUESTED_BY_ME':
-      return ['requester', 'user', 'createdBy', 'owner', 'requestedFor', 'fulfilledFor']
+    case "OWN":
+    case "REQUESTED_BY_ME":
+      return [
+        "requester",
+        "user",
+        "createdBy",
+        "owner",
+        "requestedFor",
+        "fulfilledFor",
+      ]
         .map((f) => idStr(record[f]))
         .some((v) => v && v === me);
-    case 'ASSIGNED_TO_ME':
-      return ['agent', 'assignedTo', 'assignee', 'technician', 'commander', 'owner']
+    case "ASSIGNED_TO_ME":
+      return [
+        "agent",
+        "assignedTo",
+        "assignee",
+        "technician",
+        "commander",
+        "owner",
+      ]
         .map((f) => idStr(record[f]))
         .some((v) => v && v === me);
-    case 'TEAM': {
+    case "TEAM": {
       const mine = new Set([
         ...idList(principal.teams),
         ...idList((principal.role && principal.role.teams) || []),
       ]);
-      const theirs = [...idList(record.team), ...idList(record.teams), ...idList(record.assignmentGroup)];
+      const theirs = [
+        ...idList(record.team),
+        ...idList(record.teams),
+        ...idList(record.assignmentGroup),
+      ];
       if (theirs.some((t) => mine.has(t))) return true;
       // Hierarchy fallback: a team lead sees their team's records even when
       // they are not listed as a member.
       const leads = (scopeContext && scopeContext.teamLeads) || {};
-      return theirs.some((t) => String(leads[t] || '') === me);
+      return theirs.some((t) => String(leads[t] || "") === me);
     }
-    case 'DEPARTMENT': {
+    case "DEPARTMENT": {
       const mine = new Set([
-        ...idList((principal.departments || []).map((d) => (d && d.department) || d)),
+        ...idList(
+          (principal.departments || []).map((d) => (d && d.department) || d),
+        ),
         ...idList(principal.department),
       ]);
       const theirs = [...idList(record.dept), ...idList(record.department)];
@@ -265,19 +316,21 @@ function evaluateScope(principal, scope, record, tenant, scopeContext) {
 function grantedScopes(principal, extraRoles) {
   const scopes = new Set();
   for (const role of roleListOf(principal, extraRoles)) {
-    for (const s of role.recordScopes || []) scopes.add(String(s).toUpperCase());
+    for (const s of role.recordScopes || [])
+      scopes.add(String(s).toUpperCase());
   }
   // Legacy recordScopes enum is lowercase ('own','assigned','team',...); map it.
   const mapped = new Set();
   for (const s of scopes) {
-    if (s === 'OWN') mapped.add('OWN');
-    else if (s === 'ASSIGNED') mapped.add('ASSIGNED_TO_ME');
-    else if (s === 'TEAM') mapped.add('TEAM');
-    else if (s === 'DEPARTMENT') mapped.add('DEPARTMENT');
-    else if (s === 'LOCATION' || s === 'BUSINESS_UNIT' || s === 'ORGANIZATION') mapped.add('TENANT');
+    if (s === "OWN") mapped.add("OWN");
+    else if (s === "ASSIGNED") mapped.add("ASSIGNED_TO_ME");
+    else if (s === "TEAM") mapped.add("TEAM");
+    else if (s === "DEPARTMENT") mapped.add("DEPARTMENT");
+    else if (s === "LOCATION" || s === "BUSINESS_UNIT" || s === "ORGANIZATION")
+      mapped.add("TENANT");
     else mapped.add(s);
   }
-  if (isAggregateAdmin(principal)) mapped.add('TENANT');
+  if (isAggregateAdmin(principal)) mapped.add("TENANT");
   return [...mapped].filter((s) => SCOPES.includes(s));
 }
 
@@ -286,13 +339,23 @@ function grantedScopes(principal, extraRoles) {
  * scope matches the record. `requiredScope` narrows to one scope (e.g. an
  * action that must be ASSIGNED_TO_ME even for team-visible agents).
  */
-function checkScope(principal, record, tenant, requiredScope, extraRoles, scopeContext) {
-  if (!record) return { ok: true, scope: requiredScope || 'ANY' };
-  const scopes = requiredScope ? [requiredScope] : grantedScopes(principal, extraRoles);
+function checkScope(
+  principal,
+  record,
+  tenant,
+  requiredScope,
+  extraRoles,
+  scopeContext,
+) {
+  if (!record) return { ok: true, scope: requiredScope || "ANY" };
+  const scopes = requiredScope
+    ? [requiredScope]
+    : grantedScopes(principal, extraRoles);
   for (const scope of scopes) {
-    if (evaluateScope(principal, scope, record, tenant, scopeContext)) return { ok: true, scope };
+    if (evaluateScope(principal, scope, record, tenant, scopeContext))
+      return { ok: true, scope };
   }
-  return { ok: false, scope: requiredScope || 'NONE_MATCHED' };
+  return { ok: false, scope: requiredScope || "NONE_MATCHED" };
 }
 
 // ---------------------------------------------------------------------------
@@ -312,11 +375,16 @@ const CONTEXT_TOKENS = {
 function matchConditions(principal, record, conditions, tenant) {
   if (!conditions || !conditions.length) return { ok: true };
   const ctx = (token) => {
-    if (typeof token !== 'string') return token;
+    if (typeof token !== "string") return token;
     if (CONTEXT_TOKENS[token]) return CONTEXT_TOKENS[token](principal, tenant);
-    if (token === 'current_user.teams') return idList(principal.teams);
-    if (token === 'current_user.department' || token === 'current_user.departments') {
-      return idList((principal.departments || []).map((d) => (d && d.department) || d));
+    if (token === "current_user.teams") return idList(principal.teams);
+    if (
+      token === "current_user.department" ||
+      token === "current_user.departments"
+    ) {
+      return idList(
+        (principal.departments || []).map((d) => (d && d.department) || d),
+      );
     }
     return token;
   };
@@ -325,14 +393,16 @@ function matchConditions(principal, record, conditions, tenant) {
     const expected = ctx(c.value);
     const actualIds = idList(actual);
     const expectedIds = idList(expected);
-    const eq = actualIds.length || expectedIds.length
-      ? actualIds.some((a) => expectedIds.includes(a))
-      : actual === expected;
-    if (c.op === '!=') {
+    const eq =
+      actualIds.length || expectedIds.length
+        ? actualIds.some((a) => expectedIds.includes(a))
+        : actual === expected;
+    if (c.op === "!=") {
       if (eq) return { ok: false, failed: c };
-    } else if (c.op === 'not_in') {
-      if (actualIds.some((a) => expectedIds.includes(a))) return { ok: false, failed: c };
-    } else if (c.op === 'in' || c.op === '=') {
+    } else if (c.op === "not_in") {
+      if (actualIds.some((a) => expectedIds.includes(a)))
+        return { ok: false, failed: c };
+    } else if (c.op === "in" || c.op === "=") {
       if (!eq) return { ok: false, failed: c };
     } else {
       return { ok: false, failed: c };
@@ -359,9 +429,10 @@ function filterFields(principal, fields, extraRoles) {
     for (const f of role.fieldAccess || []) grants.add(String(f));
   }
   for (const p of (principal && principal.permissions) || []) {
-    if (typeof p === 'string' && p.startsWith('field:')) grants.add(p.slice('field:'.length));
+    if (typeof p === "string" && p.startsWith("field:"))
+      grants.add(p.slice("field:".length));
   }
-  if (isAggregateAdmin(principal) || grants.has('*')) {
+  if (isAggregateAdmin(principal) || grants.has("*")) {
     return { allowedFields: [...requested], deniedFields: [] };
   }
   const allowedFields = requested.filter((f) => grants.has(String(f)));
@@ -373,19 +444,28 @@ function filterFields(principal, fields, extraRoles) {
 // Main entry point
 // ---------------------------------------------------------------------------
 
-function auditDecision({ req, principal, tenant, permission, decision, reason, resource }) {
+function auditDecision({
+  req,
+  principal,
+  tenant,
+  permission,
+  decision,
+  reason,
+  resource,
+}) {
   try {
-    const audit = require('./audit.service');
+    const audit = require("./audit.service");
     audit({
       company: tenant || principalTenant(principal) || null,
-      actorType: principal && principal.isAdmin !== undefined ? 'agent' : 'user',
+      actorType:
+        principal && principal.isAdmin !== undefined ? "agent" : "user",
       actor: principalId(principal) || null,
-      actorName: (principal && principal.name) || '',
-      action: decision === ALLOW ? 'authz.allowed' : 'authz.denied',
-      entityType: (resource && resource.type) || 'permission',
+      actorName: (principal && principal.name) || "",
+      action: decision === ALLOW ? "authz.allowed" : "authz.denied",
+      entityType: (resource && resource.type) || "permission",
       entityId: (resource && resource.id) || permission,
       after: { permission, reason },
-      source: 'authorization',
+      source: "authorization",
       req,
     }).catch(() => {});
   } catch (_) {
@@ -428,28 +508,42 @@ async function authorize({
   extraRoles,
   customAuth, // preloaded { permissions, roles } snapshot, or false to skip
   req,
-  audit = 'deny',
+  audit = "deny",
 }) {
   const fail = (reason, extra) => {
     const result = { decision: DENY, reason, permission, ...extra };
-    if (audit === true || audit === DENY || audit === 'deny') {
-      auditDecision({ req, principal, tenant: tenant || principalTenant(principal), permission, decision: DENY, reason, resource });
+    if (audit === true || audit === DENY || audit === "deny") {
+      auditDecision({
+        req,
+        principal,
+        tenant: tenant || principalTenant(principal),
+        permission,
+        decision: DENY,
+        reason,
+        resource,
+      });
     }
     return result;
   };
 
   // 1. authenticated?
-  if (!principal) return fail('UNAUTHENTICATED');
+  if (!principal) return fail("UNAUTHENTICATED");
   // 2. account active?
-  if (principal.isActive === false || principal.status === 'inactive' || principal.status === 'disabled' || principal.status === 'suspended') {
-    return fail('ACCOUNT_INACTIVE');
+  if (
+    principal.isActive === false ||
+    principal.status === "inactive" ||
+    principal.status === "disabled" ||
+    principal.status === "suspended"
+  ) {
+    return fail("ACCOUNT_INACTIVE");
   }
   // 3. tenant resolved?
   const tenantId = principalTenant(principal, tenant);
-  if (!tenantId) return fail('TENANT_UNRESOLVED');
+  if (!tenantId) return fail("TENANT_UNRESOLVED");
   // 4. membership valid? (principal must belong to the target tenant)
   const membership = principalTenant(principal);
-  if (membership && String(membership) !== String(tenantId)) return fail('MEMBERSHIP_MISMATCH');
+  if (membership && String(membership) !== String(tenantId))
+    return fail("MEMBERSHIP_MISMATCH");
 
   // 5. module entitlement? (in-memory keys only; DB-backed tenant_modules
   //    enforcement lives in middleware/module.js which runs earlier)
@@ -459,10 +553,10 @@ async function authorize({
       ...((principal && principal.moduleKeys) || []),
       ...roleListOf(principal, extraRoles).flatMap((r) => r.moduleKeys || []),
     ]);
-    if (principal.isSuperAdmin || (principal.permissions || []).includes('*')) {
+    if (principal.isSuperAdmin || (principal.permissions || []).includes("*")) {
       // platform aggregate — allowed
     } else if (!keys.has(module)) {
-      return fail('MODULE_NOT_ENTITLED');
+      return fail("MODULE_NOT_ENTITLED");
     }
   }
 
@@ -475,7 +569,11 @@ async function authorize({
   let via = check.via;
   if (customAuth !== false) {
     let snap = null;
-    if (customAuth && typeof customAuth === 'object' && (customAuth.permissions || customAuth.roles)) {
+    if (
+      customAuth &&
+      typeof customAuth === "object" &&
+      (customAuth.permissions || customAuth.roles)
+    ) {
       snap = customAuth;
     } else {
       try {
@@ -486,30 +584,43 @@ async function authorize({
     }
     if (snap) {
       const verdict = evaluateCustom(permission, snap, principal);
-      if (verdict && verdict.decision === 'DENY') {
-        return fail('CUSTOM_DENY', { via: verdict.via });
+      if (verdict && verdict.decision === "DENY") {
+        return fail("CUSTOM_DENY", { via: verdict.via });
       }
-      if (!check.granted && verdict && verdict.decision === 'ALLOW') {
+      if (!check.granted && verdict && verdict.decision === "ALLOW") {
         via = verdict.via;
         if (verdict.scope) requiredScope = verdict.scope;
         if (verdict.conditions) conditions = verdict.conditions;
       } else if (!check.granted) {
-        return fail('PERMISSION_MISSING', { via: check.via });
+        return fail("PERMISSION_MISSING", { via: check.via });
       }
     } else if (!check.granted) {
-      return fail(check.via === 'deny' ? 'EXPLICIT_DENY' : 'PERMISSION_MISSING', { via: check.via });
+      return fail(
+        check.via === "deny" ? "EXPLICIT_DENY" : "PERMISSION_MISSING",
+        { via: check.via },
+      );
     }
   } else if (!check.granted) {
-    return fail(check.via === 'deny' ? 'EXPLICIT_DENY' : 'PERMISSION_MISSING', { via: check.via });
+    return fail(check.via === "deny" ? "EXPLICIT_DENY" : "PERMISSION_MISSING", {
+      via: check.via,
+    });
   }
 
   // 8. scope gate (skipped when no record — collection-level check)
   if (record) {
-    const scopeCheck = checkScope(principal, record, tenantId, requiredScope, extraRoles, scopeContext);
-    if (!scopeCheck.ok) return fail('SCOPE_REJECTED', { scope: scopeCheck.scope });
+    const scopeCheck = checkScope(
+      principal,
+      record,
+      tenantId,
+      requiredScope,
+      extraRoles,
+      scopeContext,
+    );
+    if (!scopeCheck.ok)
+      return fail("SCOPE_REJECTED", { scope: scopeCheck.scope });
     // 9. record conditions
     const cond = matchConditions(principal, record, conditions, tenantId);
-    if (!cond.ok) return fail('RECORD_CONDITION_REJECTED');
+    if (!cond.ok) return fail("RECORD_CONDITION_REJECTED");
     var matchedScope = scopeCheck.scope;
   }
 
@@ -521,14 +632,27 @@ async function authorize({
 
   const result = {
     decision: ALLOW,
-    reason: 'OK',
+    reason: "OK",
     permission,
     via,
-    ...(typeof matchedScope !== 'undefined' ? { scope: matchedScope } : {}),
-    ...(fieldResult ? { allowedFields: fieldResult.allowedFields, deniedFields: fieldResult.deniedFields } : {}),
+    ...(typeof matchedScope !== "undefined" ? { scope: matchedScope } : {}),
+    ...(fieldResult
+      ? {
+          allowedFields: fieldResult.allowedFields,
+          deniedFields: fieldResult.deniedFields,
+        }
+      : {}),
   };
-  if (audit === true || audit === ALLOW || audit === 'allow') {
-    auditDecision({ req, principal, tenant: tenantId, permission, decision: ALLOW, reason: 'OK', resource });
+  if (audit === true || audit === ALLOW || audit === "allow") {
+    auditDecision({
+      req,
+      principal,
+      tenant: tenantId,
+      permission,
+      decision: ALLOW,
+      reason: "OK",
+      resource,
+    });
   }
   return result;
 }
@@ -540,7 +664,7 @@ async function authorize({
 async function assertPermission(options) {
   const result = await authorize(options);
   if (result.decision !== ALLOW) {
-    throw new ApiError(403, 'You do not have permission for this action');
+    throw new ApiError(403, "You do not have permission for this action");
   }
   return result;
 }

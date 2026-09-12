@@ -1,6 +1,6 @@
-const nodemailer = require('nodemailer');
-const config = require('./config');
-const logger = require('../utils/logger');
+const nodemailer = require("nodemailer");
+const config = require("./config");
+const logger = require("../utils/logger");
 
 let transporter = null;
 

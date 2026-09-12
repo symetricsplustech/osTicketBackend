@@ -7,7 +7,7 @@
  *
  * Install: app.use(maskingMiddleware) after auth.
  */
-const P5 = () => require('../models/Platform5');
+const P5 = () => require("../models/Platform5");
 
 // Map model names → mongoose model (lazy to avoid circular deps)
 const registry = new Map();
@@ -17,11 +17,12 @@ function registerModel(modelName, model) {
 }
 
 function shape(value) {
-  if (typeof value === 'string') {
-    if (value.length <= 4) return '*'.repeat(Math.max(1, value.length - 1)) + value.slice(-1);
-    return value.slice(0, 2) + '*'.repeat(value.length - 4) + value.slice(-2);
+  if (typeof value === "string") {
+    if (value.length <= 4)
+      return "*".repeat(Math.max(1, value.length - 1)) + value.slice(-1);
+    return value.slice(0, 2) + "*".repeat(value.length - 4) + value.slice(-2);
   }
-  if (typeof value === 'number') return 0;
+  if (typeof value === "number") return 0;
   if (value instanceof Date) return null;
   return null;
 }
@@ -29,13 +30,19 @@ function shape(value) {
 function applyMask(fieldName, value, maskType) {
   if (value === null || value === undefined) return value;
   switch (maskType) {
-    case 'full':
+    case "full":
       return shape(value);
-    case 'partial':
-      return typeof value === 'string' ? value.replace(/(?<=.{{s}})./g, '*') : shape(value);
-    case 'hash': {
-      const crypto = require('crypto');
-      return crypto.createHash('sha256').update(String(value)).digest('hex').slice(0, 16);
+    case "partial":
+      return typeof value === "string"
+        ? value.replace(/(?<=.{{s}})./g, "*")
+        : shape(value);
+    case "hash": {
+      const crypto = require("crypto");
+      return crypto
+        .createHash("sha256")
+        .update(String(value))
+        .digest("hex")
+        .slice(0, 16);
     }
     default:
       return value;
@@ -43,16 +50,18 @@ function applyMask(fieldName, value, maskType) {
 }
 
 function maskObject(obj, rules, role, path = []) {
-  if (!obj || typeof obj !== 'object') return obj;
+  if (!obj || typeof obj !== "object") return obj;
   const out = Array.isArray(obj) ? [] : {};
   for (const [k, v] of Object.entries(obj)) {
-    const currentPath = [...path, k].join('.');
+    const currentPath = [...path, k].join(".");
     const rule = rules.find((r) => r.field === currentPath || r.field === k);
     if (rule && !(rule.rolesAllowed || []).includes(role)) {
       out[k] = applyMask(currentPath, v, rule.maskType);
-    } else if (v && typeof v === 'object' && !(v instanceof Date)) {
+    } else if (v && typeof v === "object" && !(v instanceof Date)) {
       out[k] = Array.isArray(v)
-        ? v.map((item, i) => maskObject(item, rules, role, [...path, `${k}[${i}]`]))
+        ? v.map((item, i) =>
+            maskObject(item, rules, role, [...path, `${k}[${i}]`]),
+          )
         : maskObject(v, rules, role, [...path, k]);
     } else {
       out[k] = v;
@@ -69,12 +78,16 @@ function maskObject(obj, rules, role, path = []) {
  */
 const maskingMiddleware = async (req, res, next) => {
   try {
-    const role = (req.user && req.user.role) || (req.agent && req.agent.role) || 'guest';
-    const companyId = req.companyId || (req.user && (req.user.tenantId || req.user.companyId));
+    const role =
+      (req.user && req.user.role) || (req.agent && req.agent.role) || "guest";
+    const companyId =
+      req.companyId || (req.user && (req.user.tenantId || req.user.companyId));
     if (!companyId) return next();
 
     const P5mod = P5();
-    const rules = await P5mod.FieldMasking.find({ ...{ tenantId: companyId } }).lean();
+    const rules = await P5mod.FieldMasking.find({
+      ...{ tenantId: companyId },
+    }).lean();
     if (!rules.length) return next();
 
     const originalJson = res.json.bind(res);

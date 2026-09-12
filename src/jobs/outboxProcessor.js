@@ -2,15 +2,15 @@
  * Outbox processor background job — picks up pending events and dispatches them.
  * Run via: node src/jobs/outboxProcessor.js
  */
-const mongoose = require('mongoose');
-const config = require('../config/config');
-const { processNext, getPendingCount } = require('../services/outbox.service');
-const { getIO } = require('../config/socket');
-const logger = require('../utils/logger');
+const mongoose = require("mongoose");
+const config = require("../config/config");
+const { processNext, getPendingCount } = require("../services/outbox.service");
+const { getIO } = require("../config/socket");
+const logger = require("../utils/logger");
 
 async function connect() {
   await mongoose.connect(config.mongoUri);
-  logger.info('Outbox processor connected to MongoDB');
+  logger.info("Outbox processor connected to MongoDB");
 }
 
 async function dispatchHandler(event) {
@@ -25,7 +25,10 @@ async function dispatchHandler(event) {
       });
     }
   } catch (err) {
-    logger.error('Outbox dispatch failed', { error: err.message, eventType: event.eventType });
+    logger.error("Outbox dispatch failed", {
+      error: err.message,
+      eventType: event.eventType,
+    });
     throw err;
   }
 }
@@ -51,7 +54,7 @@ async function start(intervalMs = 5000) {
         logger.info(`Outbox batch processed: ${processed}`);
       }
     } catch (err) {
-      logger.error('Outbox processor error', { error: err.message });
+      logger.error("Outbox processor error", { error: err.message });
     }
   }, intervalMs);
   return timer;
@@ -59,7 +62,7 @@ async function start(intervalMs = 5000) {
 
 if (require.main === module) {
   start().catch((err) => {
-    logger.error('Outbox processor failed to start', { error: err.message });
+    logger.error("Outbox processor failed to start", { error: err.message });
     process.exit(1);
   });
 }

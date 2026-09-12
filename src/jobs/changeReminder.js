@@ -2,8 +2,8 @@
  * Scheduled change reminders.
  * Runs every 30 minutes.
  */
-const Change = require('../models/helpdesk/incidents/Change');
-const events = require('../services/events');
+const Change = require("../models/helpdesk/incidents/Change");
+const events = require("../services/events");
 
 const REMINDER_HOURS = [24, 4];
 
@@ -16,13 +16,13 @@ async function checkScheduledChangeReminders() {
     const threshold = new Date(target.getTime() + 30 * 60000);
 
     const changes = await Change.find({
-      status: 'scheduled',
+      status: "scheduled",
       isActive: true,
       windowStart: { $gte: target, $lte: threshold },
     });
 
     for (const change of changes) {
-      events.emit('change.reminder', {
+      events.emit("change.reminder", {
         changeId: change._id,
         tenantId: change.company,
         number: change.number,

@@ -1,13 +1,19 @@
-const mongoose = require('mongoose');
+const mongoose = require("mongoose");
 
 const planSchema = new mongoose.Schema(
   {
     name: { type: String, required: true, trim: true },
-    code: { type: String, required: true, unique: true, trim: true, lowercase: true },
-    description: { type: String, default: '' },
+    code: {
+      type: String,
+      required: true,
+      unique: true,
+      trim: true,
+      lowercase: true,
+    },
+    description: { type: String, default: "" },
     priceMonthly: { type: Number, default: 0 },
     priceYearly: { type: Number, default: 0 },
-    currency: { type: String, default: 'INR' },
+    currency: { type: String, default: "INR" },
     maxAgents: { type: Number, default: 5 },
     maxUsers: { type: Number, default: 100 },
     maxContacts: { type: Number, default: 0 },
@@ -22,12 +28,19 @@ const planSchema = new mongoose.Schema(
     prioritySupport: { type: Boolean, default: false },
     trialDays: { type: Number, default: 14 },
     gracePeriodDays: { type: Number, default: 7 },
-    subscriptionRestrictions: { type: mongoose.Schema.Types.Mixed, default: {} },
-    platformSlaPolicy: { type: mongoose.Schema.Types.ObjectId, ref: 'PlatformSlaPolicy', default: null },
+    subscriptionRestrictions: {
+      type: mongoose.Schema.Types.Mixed,
+      default: {},
+    },
+    platformSlaPolicy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "PlatformSlaPolicy",
+      default: null,
+    },
     isActive: { type: Boolean, default: true },
     isDefault: { type: Boolean, default: false },
   },
-  { timestamps: true }
+  { timestamps: true },
 );
 
-module.exports = mongoose.model('Plan', planSchema);
+module.exports = mongoose.model("Plan", planSchema);

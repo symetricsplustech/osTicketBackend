@@ -3,10 +3,10 @@
  * Evaluates escalation rules and fires tiered actions.
  * Runs every 5 minutes.
  */
-const Incident = require('../models/helpdesk/incidents/Incident');
-const EscalationRule = require('../models/helpdesk/incidents/EscalationRule');
-const events = require('../services/events');
-const auditEventService = require('../services/auditEventService');
+const Incident = require("../models/helpdesk/incidents/Incident");
+const EscalationRule = require("../models/helpdesk/incidents/EscalationRule");
+const events = require("../services/events");
+const auditEventService = require("../services/auditEventService");
 
 const BATCH_SIZE = 100;
 
@@ -15,14 +15,16 @@ async function evaluateIncidentEscalations() {
   if (!rules.length) return { evaluated: 0, fired: 0 };
 
   const activeIncidents = await Incident.find({
-    status: { $nin: ['resolved', 'closed', 'canceled'] },
+    status: { $nin: ["resolved", "closed", "canceled"] },
     isActive: true,
   }).limit(BATCH_SIZE);
 
   let fired = 0;
 
   for (const incident of activeIncidents) {
-    const incidentAge = Math.floor((Date.now() - incident.createdAt.getTime()) / 60000);
+    const incidentAge = Math.floor(
+      (Date.now() - incident.createdAt.getTime()) / 60000,
+    );
 
     for (const rule of rules) {
       if (!rule.statuses.includes(incident.status)) continue;
@@ -50,7 +52,7 @@ async function evaluateIncidentEscalations() {
           incident[tierKey] = true;
           incident.timeline.push({
             at: new Date(),
-            by: 'system',
+            by: "system",
             message: `Escalation rule '${rule.name}' tier ${tier.afterMinutes}min fired`,
           });
 
@@ -59,16 +61,22 @@ async function evaluateIncidentEscalations() {
           await auditEventService.record({
             tenantId: incident.company,
             actorId: null,
-            action: 'incident.escalated',
-            resourceType: 'Incident',
+            action: "incident.escalated",
+            resourceType: "Incident",
             resourceId: incident._id,
             after: incident.toObject(),
           });
 
-          events.emit('incident.updated', { incidentId: incident._id, tenantId: incident.company });
+          events.emit("incident.updated", {
+            incidentId: incident._id,
+            tenantId: incident.company,
+          });
           fired++;
         } catch (err) {
-          console.error(`[escalation] Failed to escalate incident ${incident._id}:`, err.message);
+          console.error(
+            `[escalation] Failed to escalate incident ${incident._id}:`,
+            err.message,
+          );
         }
       }
     }

@@ -4,10 +4,12 @@
  * Empty/missing list = no restriction. Called from auth guards after the
  * tenant is resolved so spoofed cross-tenant access is impossible.
  */
-const ApiError = require('../utils/ApiError');
+const ApiError = require("../utils/ApiError");
 
 function ipToInt(ip) {
-  const parts = String(ip || '').trim().split('.');
+  const parts = String(ip || "")
+    .trim()
+    .split(".");
   if (parts.length !== 4) return null;
   let n = 0;
   for (const p of parts) {
@@ -18,7 +20,7 @@ function ipToInt(ip) {
 }
 
 function cidrMatches(cidr, ip) {
-  const [range, bitsRaw] = String(cidr || '').split('/');
+  const [range, bitsRaw] = String(cidr || "").split("/");
   const ipInt = ipToInt(ip);
   if (ipInt === null) return false;
   if (bitsRaw === undefined) return ipToInt(range) === ipInt;
@@ -31,20 +33,29 @@ function cidrMatches(cidr, ip) {
 }
 
 const normIp = (req) => {
-  const raw = req.ip || req.connection?.remoteAddress || '';
-  return String(raw).replace(/^::ffff:/, '').trim();
+  const raw = req.ip || req.connection?.remoteAddress || "";
+  return String(raw)
+    .replace(/^::ffff:/, "")
+    .trim();
 };
 
 async function getAllowlist(companyId) {
   try {
-    const mongoose = require('mongoose');
-    const coll = mongoose.connection.db.collection('fieldmaskings');
-    const docs = await coll.find({ model: '__ip_allowlist__' }).limit(20).toArray();
-    const match = companyId ? docs.find((d) => String(d.tenantId || '') === String(companyId)) : null;
+    const mongoose = require("mongoose");
+    const coll = mongoose.connection.db.collection("fieldmaskings");
+    const docs = await coll
+      .find({ model: "__ip_allowlist__" })
+      .limit(20)
+      .toArray();
+    const match = companyId
+      ? docs.find((d) => String(d.tenantId || "") === String(companyId))
+      : null;
     const doc = match || docs.find((d) => !d.tenantId);
     if (!doc?.field) return [];
     const list = JSON.parse(doc.field);
-    return Array.isArray(list) ? list.map((c) => String(c).trim()).filter(Boolean) : [];
+    return Array.isArray(list)
+      ? list.map((c) => String(c).trim()).filter(Boolean)
+      : [];
   } catch (_) {
     return [];
   }
@@ -56,17 +67,21 @@ async function enforceIpAllowlist(req) {
   const ip = normIp(req);
   if (!list.some((cidr) => cidrMatches(cidr, ip))) {
     try {
-      require('../services/audit.service').audit({
-        company: req.companyId || null,
-        actorType: 'system',
-        action: 'security.ip_denied',
-        entityType: 'request',
-        after: { ip, path: req.path },
-        source: 'ip-allowlist',
-        req,
-      }).catch(() => {});
-    } catch (_) { /* never block on audit */ }
-    throw new ApiError(403, 'Access denied for this IP address');
+      require("../services/audit.service")
+        .audit({
+          company: req.companyId || null,
+          actorType: "system",
+          action: "security.ip_denied",
+          entityType: "request",
+          after: { ip, path: req.path },
+          source: "ip-allowlist",
+          req,
+        })
+        .catch(() => {});
+    } catch (_) {
+      /* never block on audit */
+    }
+    throw new ApiError(403, "Access denied for this IP address");
   }
 }
 

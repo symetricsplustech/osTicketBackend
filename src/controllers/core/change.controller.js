@@ -3,12 +3,10 @@ const asyncHandler = require("../../utils/asyncHandler");
 
 const changeController = {
   create: asyncHandler(async (req, res) => {
-    res
-      .status(201)
-      .json({
-        success: true,
-        data: await ChangeService.create(req.body, req.user._id),
-      });
+    res.status(201).json({
+      success: true,
+      data: await ChangeService.create(req.body, req.user._id),
+    });
   }),
   list: asyncHandler(async (req, res) => {
     res.json({
@@ -70,18 +68,16 @@ const changeController = {
   }),
 
   linkCI: asyncHandler(async (req, res) => {
-    res
-      .status(201)
-      .json({
-        success: true,
-        data: await ChangeService.linkCI(
-          req.params.id,
-          req.body.ciId,
-          req.body.role,
-          req.user.company,
-          req.user._id,
-        ),
-      });
+    res.status(201).json({
+      success: true,
+      data: await ChangeService.linkCI(
+        req.params.id,
+        req.body.ciId,
+        req.body.role,
+        req.user.company,
+        req.user._id,
+      ),
+    });
   }),
   unlinkCI: asyncHandler(async (req, res) => {
     await ChangeService.unlinkCI(
@@ -99,18 +95,16 @@ const changeController = {
   }),
 
   linkService: asyncHandler(async (req, res) => {
-    res
-      .status(201)
-      .json({
-        success: true,
-        data: await ChangeService.linkService(
-          req.params.id,
-          req.body.serviceId,
-          req.body.impactLevel,
-          req.user.company,
-          req.user._id,
-        ),
-      });
+    res.status(201).json({
+      success: true,
+      data: await ChangeService.linkService(
+        req.params.id,
+        req.body.serviceId,
+        req.body.impactLevel,
+        req.user.company,
+        req.user._id,
+      ),
+    });
   }),
 
   assessRisk: asyncHandler(async (req, res) => {
@@ -141,17 +135,15 @@ const changeController = {
   }),
 
   createTask: asyncHandler(async (req, res) => {
-    res
-      .status(201)
-      .json({
-        success: true,
-        data: await ChangeService.createTask(
-          req.params.id,
-          req.body,
-          req.user.company,
-          req.user._id,
-        ),
-      });
+    res.status(201).json({
+      success: true,
+      data: await ChangeService.createTask(
+        req.params.id,
+        req.body,
+        req.user.company,
+        req.user._id,
+      ),
+    });
   }),
   listTasks: asyncHandler(async (req, res) => {
     res.json({
@@ -210,17 +202,15 @@ const changeController = {
     });
   }),
   createCABMeeting: asyncHandler(async (req, res) => {
-    res
-      .status(201)
-      .json({
-        success: true,
-        data: await ChangeService.createCABMeeting(
-          req.params.cabId,
-          req.body,
-          req.user.company,
-          req.user._id,
-        ),
-      });
+    res.status(201).json({
+      success: true,
+      data: await ChangeService.createCABMeeting(
+        req.params.cabId,
+        req.body,
+        req.user.company,
+        req.user._id,
+      ),
+    });
   }),
   listCABMeetings: asyncHandler(async (req, res) => {
     res.json({
@@ -229,16 +219,14 @@ const changeController = {
     });
   }),
   addAgendaItem: asyncHandler(async (req, res) => {
-    res
-      .status(201)
-      .json({
-        success: true,
-        data: await ChangeService.addAgendaItem(
-          req.params.meetingId,
-          req.body,
-          req.user.company,
-        ),
-      });
+    res.status(201).json({
+      success: true,
+      data: await ChangeService.addAgendaItem(
+        req.params.meetingId,
+        req.body,
+        req.user.company,
+      ),
+    });
   }),
   listAgendaItems: asyncHandler(async (req, res) => {
     res.json({
@@ -262,16 +250,14 @@ const changeController = {
     });
   }),
   addAttendee: asyncHandler(async (req, res) => {
-    res
-      .status(201)
-      .json({
-        success: true,
-        data: await ChangeService.addAttendee(
-          req.params.meetingId,
-          req.body.userId,
-          req.user.company,
-        ),
-      });
+    res.status(201).json({
+      success: true,
+      data: await ChangeService.addAttendee(
+        req.params.meetingId,
+        req.body.userId,
+        req.user.company,
+      ),
+    });
   }),
   listAttendees: asyncHandler(async (req, res) => {
     res.json({

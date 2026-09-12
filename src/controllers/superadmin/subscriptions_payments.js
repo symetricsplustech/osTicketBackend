@@ -1,26 +1,32 @@
-const SuperAdmin = require('../../models/SuperAdmin');
-const Company = require('../../models/Company');
-const Plan = require('../../models/Plan');
-const Invoice = require('../../models/Invoice');
-const AuditLog = require('../../models/AuditLog');
-const Agent = require('../../models/Agent');
-const User = require('../../models/User');
-const Ticket = require('../../models/helpdesk/tickets/Ticket');
-const ApiError = require('../../utils/ApiError');
-const asyncHandler = require('../../utils/asyncHandler');
-const { signToken } = require('../../middleware/auth');
-const { getPagination, getSortObj } = require('../../utils/pagination');
-const razorpay = require('../../services/razorpay.service');
-const config = require('../../config/config');
-const Notification = require('../../models/Notification');
-const { notifySuperAdmin } = require('../../services/notification.service');
-const emailService = require('../../services/email.service');
-const Subscription = require('../../models/Subscription');
-const BillingAdjustment = require('../../models/BillingAdjustment');
+const SuperAdmin = require("../../models/SuperAdmin");
+const Company = require("../../models/Company");
+const Plan = require("../../models/Plan");
+const Invoice = require("../../models/Invoice");
+const AuditLog = require("../../models/AuditLog");
+const Agent = require("../../models/Agent");
+const User = require("../../models/User");
+const Ticket = require("../../models/helpdesk/tickets/Ticket");
+const ApiError = require("../../utils/ApiError");
+const asyncHandler = require("../../utils/asyncHandler");
+const { signToken } = require("../../middleware/auth");
+const { getPagination, getSortObj } = require("../../utils/pagination");
+const razorpay = require("../../services/razorpay.service");
+const config = require("../../config/config");
+const Notification = require("../../models/Notification");
+const { notifySuperAdmin } = require("../../services/notification.service");
+const emailService = require("../../services/email.service");
+const Subscription = require("../../models/Subscription");
+const BillingAdjustment = require("../../models/BillingAdjustment");
 
 const notifySA = async ({ superAdminId, type, message, link, companyId }) => {
   try {
-    await notifySuperAdmin({ superAdminId, type, message, link, company: companyId });
+    await notifySuperAdmin({
+      superAdminId,
+      type,
+      message,
+      link,
+      company: companyId,
+    });
   } catch (err) {
     // non-blocking
   }
@@ -28,7 +34,7 @@ const notifySA = async ({ superAdminId, type, message, link, companyId }) => {
 
 const notifyAllSAs = async ({ type, message, link, companyId }) => {
   try {
-    const admins = await SuperAdmin.find({ isActive: true }).select('_id');
+    const admins = await SuperAdmin.find({ isActive: true }).select("_id");
     for (const a of admins) {
       await notifySA({ superAdminId: a._id, type, message, link, companyId });
     }
@@ -37,17 +43,23 @@ const notifyAllSAs = async ({ type, message, link, companyId }) => {
   }
 };
 
-const log = async (req, action, entityType = '', entityId = '', details = {}) => {
+const log = async (
+  req,
+  action,
+  entityType = "",
+  entityId = "",
+  details = {},
+) => {
   try {
     await AuditLog.create({
       superAdmin: req.superAdmin?._id || null,
       company: req.query.companyId || req.body.companyId || null,
       action,
       entityType,
-      entityId: entityId ? String(entityId) : '',
+      entityId: entityId ? String(entityId) : "",
       details,
-      ip: req.ip || '',
-      userAgent: req.get('user-agent') || '',
+      ip: req.ip || "",
+      userAgent: req.get("user-agent") || "",
     });
   } catch (err) {
     // non-blocking
@@ -60,98 +72,30 @@ const getCompanyMeta = async (companyId) => {
     User.countDocuments({ company: companyId }),
     Agent.countDocuments({ company: companyId }),
     Ticket.countDocuments({ company: companyId }),
-    Ticket.countDocuments({ company: companyId, status: { $ne: 'closed' } }),
+    Ticket.countDocuments({ company: companyId, status: { $ne: "closed" } }),
   ]);
   return { users, agents, tickets, openTickets };
 };
 
 // ---------------- Auth ----------------
 
-
-
-
-
-
-
-
-
 // ---------------- Dashboard ----------------
-
-
-
-
 
 // ---------------- Plans ----------------
 
-
-
-
-
-
-
-
-
 // ---------------- Companies ----------------
-
-
-
-
 
 // Full company structure: departments -> teams -> agents -> customers, with orgs and roles
 
-
-
-
-
-
-
-
-
-
-
-
 // ---------------- Subscriptions & Payments ----------------
-
-
-
-
-
-
-
-
 
 // ---------------- Impersonation ----------------
 
-
-
-
-
 // ---------------- Super Admin management ----------------
-
-
-
-
-
-
-
-
 
 // ---------------- Global settings ----------------
 
-
-
-
-
 // ---------------- Notifications ----------------
-
-
-
-
-
-
-
-
-
 
 exports.listInvoices = asyncHandler(async (req, res) => {
   const { page, limit, skip, sort } = getPagination(req);
@@ -159,21 +103,33 @@ exports.listInvoices = asyncHandler(async (req, res) => {
   if (req.query.status) q.status = req.query.status;
   if (req.query.companyId) q.company = req.query.companyId;
   const [items, total] = await Promise.all([
-    Invoice.find(q).populate('company', 'name').populate('plan', 'name').sort(getSortObj(sort)).skip(skip).limit(limit),
+    Invoice.find(q)
+      .populate("company", "name")
+      .populate("plan", "name")
+      .sort(getSortObj(sort))
+      .skip(skip)
+      .limit(limit),
     Invoice.countDocuments(q),
   ]);
-  res.json({ success: true, data: items, meta: { page, limit, total, totalPages: Math.ceil(total / limit) } });
+  res.json({
+    success: true,
+    data: items,
+    meta: { page, limit, total, totalPages: Math.ceil(total / limit) },
+  });
 });
 exports.createCheckoutOrder = asyncHandler(async (req, res) => {
   const { companyId, planId, billingCycle } = req.body;
-  if (!config.razorpay.enabled) throw new ApiError(400, 'Razorpay is not configured');
+  if (!config.razorpay.enabled)
+    throw new ApiError(400, "Razorpay is not configured");
   const company = await Company.findById(companyId);
-  if (!company) throw new ApiError(404, 'Company not found');
+  if (!company) throw new ApiError(404, "Company not found");
   const plan = await Plan.findById(planId);
-  if (!plan) throw new ApiError(404, 'Plan not found');
-  const cycle = billingCycle || company.billingCycle || 'monthly';
-  const amount = cycle === 'yearly' ? plan.priceYearly : plan.priceMonthly;
-  const periodEnd = new Date(Date.now() + (cycle === 'yearly' ? 365 : 30) * 24 * 60 * 60 * 1000);
+  if (!plan) throw new ApiError(404, "Plan not found");
+  const cycle = billingCycle || company.billingCycle || "monthly";
+  const amount = cycle === "yearly" ? plan.priceYearly : plan.priceMonthly;
+  const periodEnd = new Date(
+    Date.now() + (cycle === "yearly" ? 365 : 30) * 24 * 60 * 60 * 1000,
+  );
 
   if (!amount) {
     const invoice = await Invoice.create({
@@ -182,26 +138,26 @@ exports.createCheckoutOrder = asyncHandler(async (req, res) => {
       plan: plan._id,
       description: `${plan.name} plan (${cycle}) for ${company.name}`,
       amount: 0,
-      status: 'paid',
-      paymentMethod: 'offline',
+      status: "paid",
+      paymentMethod: "offline",
       periodStart: new Date(),
       periodEnd,
       paidAt: new Date(),
       createdBy: req.superAdmin._id,
     });
     company.plan = plan._id;
-    company.status = 'active';
+    company.status = "active";
     company.planStartedAt = new Date();
     company.planExpiresAt = periodEnd;
     company.trialEndsAt = null;
     await company.save();
-    await log(req, 'payment.verified', 'Invoice', invoice._id, { amount: 0 });
+    await log(req, "payment.verified", "Invoice", invoice._id, { amount: 0 });
     return res.json({
       success: true,
       data: {
-        orderId: '',
+        orderId: "",
         amount: 0,
-        currency: 'INR',
+        currency: "INR",
         keyId: config.razorpay.keyId,
         invoiceId: invoice._id,
         company,
@@ -212,9 +168,13 @@ exports.createCheckoutOrder = asyncHandler(async (req, res) => {
 
   const order = await razorpay.createOrder({
     amount,
-    currency: 'INR',
+    currency: "INR",
     receipt: `sub_${company._id.toString().slice(-8)}_${Date.now().toString().slice(-6)}`,
-    notes: { companyId: String(company._id), planId: String(plan._id), billingCycle: cycle },
+    notes: {
+      companyId: String(company._id),
+      planId: String(plan._id),
+      billingCycle: cycle,
+    },
   });
 
   const invoice = await Invoice.create({
@@ -223,7 +183,7 @@ exports.createCheckoutOrder = asyncHandler(async (req, res) => {
     plan: plan._id,
     description: `${plan.name} plan (${cycle}) for ${company.name}`,
     amount,
-    status: 'pending',
+    status: "pending",
     periodStart: new Date(),
     periodEnd,
     razorpayOrderId: order.id,
@@ -235,7 +195,7 @@ exports.createCheckoutOrder = asyncHandler(async (req, res) => {
     data: {
       orderId: order.id,
       amount,
-      currency: 'INR',
+      currency: "INR",
       keyId: config.razorpay.keyId,
       invoiceId: invoice._id,
       company,
@@ -246,11 +206,13 @@ exports.createCheckoutOrder = asyncHandler(async (req, res) => {
 exports.verifyPayment = asyncHandler(async (req, res) => {
   const { orderId, paymentId, signature, invoiceId } = req.body;
   if (!razorpay.verifyPayment({ orderId, paymentId, signature })) {
-    throw new ApiError(400, 'Payment verification failed');
+    throw new ApiError(400, "Payment verification failed");
   }
-  const invoice = invoiceId ? await Invoice.findById(invoiceId) : await Invoice.findOne({ razorpayOrderId: orderId });
-  if (!invoice) throw new ApiError(404, 'Invoice not found');
-  invoice.status = 'paid';
+  const invoice = invoiceId
+    ? await Invoice.findById(invoiceId)
+    : await Invoice.findOne({ razorpayOrderId: orderId });
+  if (!invoice) throw new ApiError(404, "Invoice not found");
+  invoice.status = "paid";
   invoice.razorpayPaymentId = paymentId;
   invoice.razorpaySignature = signature;
   invoice.paidAt = new Date();
@@ -259,49 +221,58 @@ exports.verifyPayment = asyncHandler(async (req, res) => {
   const company = await Company.findById(invoice.company);
   if (company) {
     company.plan = invoice.plan || company.plan;
-    company.status = 'active';
+    company.status = "active";
     company.planStartedAt = new Date();
-    company.planExpiresAt = new Date(Date.now() + (company.billingCycle === 'yearly' ? 365 : 30) * 24 * 60 * 60 * 1000);
+    company.planExpiresAt = new Date(
+      Date.now() +
+        (company.billingCycle === "yearly" ? 365 : 30) * 24 * 60 * 60 * 1000,
+    );
     company.trialEndsAt = null;
     await company.save();
   }
 
-  await log(req, 'payment.verified', 'Invoice', invoice._id, { orderId, paymentId });
+  await log(req, "payment.verified", "Invoice", invoice._id, {
+    orderId,
+    paymentId,
+  });
   await notifyAllSAs({
-    type: 'payment_received',
-    message: `Payment received for ${company?.name || 'a company'} (INR ${invoice.amount})`,
-    link: '/invoices',
+    type: "payment_received",
+    message: `Payment received for ${company?.name || "a company"} (INR ${invoice.amount})`,
+    link: "/invoices",
     companyId: company?._id,
   });
   res.json({ success: true, data: invoice });
 });
 exports.razorpayWebhook = asyncHandler(async (req, res) => {
-  const signature = req.get('x-razorpay-signature') || '';
+  const signature = req.get("x-razorpay-signature") || "";
   const raw = req.rawBody || JSON.stringify(req.body);
   if (!raw || !razorpay.verifyWebhookSignature(raw, signature)) {
-    throw new ApiError(400, 'Invalid webhook signature');
+    throw new ApiError(400, "Invalid webhook signature");
   }
   const event = req.body.event;
-  if (event === 'payment.captured' || event === 'order.paid') {
-    const payload = req.body.payload?.payment?.entity || req.body.payload?.order?.entity || {};
-    const orderId = payload.order_id || payload.id || '';
-    const paymentId = payload.id || '';
+  if (event === "payment.captured" || event === "order.paid") {
+    const payload =
+      req.body.payload?.payment?.entity ||
+      req.body.payload?.order?.entity ||
+      {};
+    const orderId = payload.order_id || payload.id || "";
+    const paymentId = payload.id || "";
     const invoice = await Invoice.findOne({ razorpayOrderId: orderId });
-    if (invoice && invoice.status !== 'paid') {
-      invoice.status = 'paid';
+    if (invoice && invoice.status !== "paid") {
+      invoice.status = "paid";
       invoice.razorpayPaymentId = paymentId;
       invoice.paidAt = new Date();
       await invoice.save();
       const company = await Company.findById(invoice.company);
       if (company) {
-        company.status = 'active';
+        company.status = "active";
         company.trialEndsAt = null;
         await company.save();
       }
       await notifyAllSAs({
-        type: 'payment_received',
-        message: `Payment received via Razorpay for ${company?.name || 'a company'} (INR ${invoice.amount})`,
-        link: '/invoices',
+        type: "payment_received",
+        message: `Payment received via Razorpay for ${company?.name || "a company"} (INR ${invoice.amount})`,
+        link: "/invoices",
         companyId: company?._id,
       });
     }
@@ -313,32 +284,69 @@ exports.listSubscriptions = asyncHandler(async (req, res) => {
   const query = {};
   if (req.query.status) query.status = req.query.status;
   if (req.query.companyId) query.company = req.query.companyId;
-  const data = await Subscription.find(query).populate('company', 'name status').populate('plan scheduledPlan', 'name code priceMonthly priceYearly').sort({ createdAt: -1 });
+  const data = await Subscription.find(query)
+    .populate("company", "name status")
+    .populate("plan scheduledPlan", "name code priceMonthly priceYearly")
+    .sort({ createdAt: -1 });
   res.json({ success: true, data });
 });
 
 exports.updateSubscription = asyncHandler(async (req, res) => {
   const subscription = await Subscription.findById(req.params.id);
-  if (!subscription) throw new ApiError(404, 'Subscription not found');
-  const allowed = ['status', 'billingCycle', 'cancelAtPeriodEnd', 'scheduledPlan', 'scheduledChangeAt', 'graceEndsAt', 'cancellationReason'];
-  for (const key of allowed) if (req.body[key] !== undefined) subscription[key] = req.body[key];
-  if (subscription.status === 'cancelled') subscription.cancelledAt = new Date();
+  if (!subscription) throw new ApiError(404, "Subscription not found");
+  const allowed = [
+    "status",
+    "billingCycle",
+    "cancelAtPeriodEnd",
+    "scheduledPlan",
+    "scheduledChangeAt",
+    "graceEndsAt",
+    "cancellationReason",
+  ];
+  for (const key of allowed)
+    if (req.body[key] !== undefined) subscription[key] = req.body[key];
+  if (subscription.status === "cancelled")
+    subscription.cancelledAt = new Date();
   await subscription.save();
-  await log(req, 'subscription.updated', 'Subscription', subscription._id, { status: subscription.status, companyId: subscription.company });
+  await log(req, "subscription.updated", "Subscription", subscription._id, {
+    status: subscription.status,
+    companyId: subscription.company,
+  });
   res.json({ success: true, data: subscription });
 });
 
 exports.listBillingAdjustments = asyncHandler(async (req, res) => {
   const query = req.query.companyId ? { company: req.query.companyId } : {};
-  const data = await BillingAdjustment.find(query).populate('company', 'name').populate('invoice', 'invoiceNumber status').sort({ createdAt: -1 });
+  const data = await BillingAdjustment.find(query)
+    .populate("company", "name")
+    .populate("invoice", "invoiceNumber status")
+    .sort({ createdAt: -1 });
   res.json({ success: true, data });
 });
 
 exports.createBillingAdjustment = asyncHandler(async (req, res) => {
   const { companyId, invoiceId, type, amount, reason, code } = req.body;
-  if (!companyId || !type || !Number.isFinite(Number(amount)) || !reason) throw new ApiError(422, 'companyId, type, amount and reason are required');
-  const adjustment = await BillingAdjustment.create({ company: companyId, invoice: invoiceId || null, type, amount: Number(amount), reason, code: code || '', createdBy: req.superAdmin._id });
-  if (type === 'refund' && invoiceId) await Invoice.updateOne({ _id: invoiceId }, { $set: { status: 'refunded' } });
-  await log(req, `billing.${type}`, 'BillingAdjustment', adjustment._id, { companyId, invoiceId, amount: Number(amount), reason });
+  if (!companyId || !type || !Number.isFinite(Number(amount)) || !reason)
+    throw new ApiError(422, "companyId, type, amount and reason are required");
+  const adjustment = await BillingAdjustment.create({
+    company: companyId,
+    invoice: invoiceId || null,
+    type,
+    amount: Number(amount),
+    reason,
+    code: code || "",
+    createdBy: req.superAdmin._id,
+  });
+  if (type === "refund" && invoiceId)
+    await Invoice.updateOne(
+      { _id: invoiceId },
+      { $set: { status: "refunded" } },
+    );
+  await log(req, `billing.${type}`, "BillingAdjustment", adjustment._id, {
+    companyId,
+    invoiceId,
+    amount: Number(amount),
+    reason,
+  });
   res.status(201).json({ success: true, data: adjustment });
 });

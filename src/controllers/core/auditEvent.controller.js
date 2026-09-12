@@ -1,4 +1,4 @@
-const auditService = require('../../services/auditEvent.service');
+const auditService = require("../../services/auditEvent.service");
 
 const ok = (res, data, status = 200) => res.status(status).json(data);
 
@@ -17,5 +17,7 @@ exports.list = async (req, res, next) => {
       endDate: req.query.endDate,
     });
     ok(res, result);
-  } catch (err) { next(err); }
+  } catch (err) {
+    next(err);
+  }
 };

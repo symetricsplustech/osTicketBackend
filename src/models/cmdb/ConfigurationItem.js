@@ -1,0 +1,102 @@
+const { Schema, model } = require("mongoose");
+const ConfigurationItemSchema = new Schema(
+  {
+    tenantId: {
+      type: Schema.Types.ObjectId,
+      ref: "Tenant",
+      required: true,
+      index: true,
+    },
+    name: { type: String, required: true, trim: true },
+    description: { type: String, trim: true, default: "" },
+    number: { type: String, required: true, unique: true },
+    ciClass: { type: String, required: true, index: true },
+    ciSubclass: { type: String, index: true },
+    environment: {
+      type: String,
+      enum: ["production", "staging", "development", "test", "dr"],
+      default: "production",
+      index: true,
+    },
+    criticality: {
+      type: String,
+      enum: ["critical", "high", "medium", "low", "non_critical"],
+      default: "medium",
+      index: true,
+    },
+    status: {
+      type: String,
+      enum: [
+        "planned",
+        "build",
+        "deploy",
+        "active",
+        "degraded",
+        "outage",
+        "maintenance",
+        "retired",
+        "disposed",
+      ],
+      default: "planned",
+      index: true,
+    },
+    lifecycleState: {
+      type: String,
+      enum: [
+        "requested",
+        "approved",
+        "procurement",
+        "received",
+        "installed",
+        "configured",
+        "active",
+        "maintenance",
+        "retired",
+        "disposed",
+      ],
+      default: "requested",
+    },
+    manufacturer: { type: String, trim: true, default: "" },
+    model: { type: String, trim: true, default: "" },
+    serialNumber: { type: String, trim: true, default: "" },
+    assetTag: { type: String, trim: true, default: "" },
+    ipAddress: { type: String, trim: true, default: "" },
+    macAddress: { type: String, trim: true, default: "" },
+    hostname: { type: String, trim: true, default: "" },
+    operatingSystem: { type: String, trim: true, default: "" },
+    version: { type: String, trim: true, default: "" },
+    location: { type: String, trim: true, default: "" },
+    rack: { type: String, trim: true, default: "" },
+    dataCenter: { type: String, trim: true, default: "" },
+    ownerId: { type: Schema.Types.ObjectId, ref: "User" },
+    ownerGroupId: { type: Schema.Types.ObjectId, ref: "Team" },
+    supportGroupId: { type: Schema.Types.ObjectId, ref: "Team" },
+    businessServices: [{ type: Schema.Types.ObjectId, ref: "BusinessService" }],
+    technicalServices: [
+      { type: Schema.Types.ObjectId, ref: "TechnicalService" },
+    ],
+    serviceOfferings: [{ type: Schema.Types.ObjectId, ref: "ServiceOffering" }],
+    attributes: { type: Schema.Types.Mixed, default: {} },
+    customFields: { type: Schema.Types.Mixed, default: {} },
+    lastScannedAt: { type: Date },
+    lastCertifiedAt: { type: Date },
+    certifiedBy: { type: Schema.Types.ObjectId, ref: "User" },
+    metadata: { type: Schema.Types.Mixed, default: {} },
+    createdBy: { type: Schema.Types.ObjectId, ref: "User" },
+    isDeleted: { type: Boolean, default: false },
+    deletedAt: { type: Date },
+    deletedBy: { type: Schema.Types.ObjectId, ref: "User" },
+  },
+  { timestamps: true },
+);
+ConfigurationItemSchema.index({
+  tenantId: 1,
+  ciClass: 1,
+  status: 1,
+  isDeleted: 1,
+});
+ConfigurationItemSchema.index({ tenantId: 1, environment: 1, criticality: 1 });
+ConfigurationItemSchema.index({ tenantId: 1, serialNumber: 1 });
+ConfigurationItemSchema.index({ tenantId: 1, hostname: 1 });
+ConfigurationItemSchema.index({ tenantId: 1, ipAddress: 1 });
+module.exports = model("ConfigurationItem", ConfigurationItemSchema);

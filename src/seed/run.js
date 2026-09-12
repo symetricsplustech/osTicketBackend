@@ -1,37 +1,37 @@
 /* eslint-disable no-console */
-const mongoose = require('mongoose');
-const dns = require('dns');
-const config = require('../config/config');
+const mongoose = require("mongoose");
+const dns = require("dns");
+const config = require("../config/config");
 
-dns.setServers(['8.8.8.8', '1.1.1.1']);
-const Role = require('../models/Role');
-const Agent = require('../models/Agent');
-const Team = require('../models/Team');
-const Department = require('../models/Department');
-const SlaPlan = require('../models/SlaPlan');
-const HelpTopic = require('../models/HelpTopic');
-const User = require('../models/User');
-const Organization = require('../models/Organization');
-const Ticket = require('../models/helpdesk/tickets/Ticket');
-const TicketThread = require('../models/helpdesk/tickets/TicketThread');
-const Task = require('../models/Task');
-const CannedResponse = require('../models/helpdesk/knowledge/CannedResponse');
-const FaqCategory = require('../models/helpdesk/knowledge/FaqCategory');
-const Faq = require('../models/helpdesk/knowledge/Faq');
-const Announcement = require('../models/helpdesk/knowledge/Announcement');
-const EmailTemplate = require('../models/EmailTemplate');
-const TicketFilter = require('../models/helpdesk/tickets/TicketFilter');
-const Notification = require('../models/Notification');
-const SystemSetting = require('../models/SystemSetting');
-const SuperAdmin = require('../models/SuperAdmin');
-const Plan = require('../models/Plan');
-const Company = require('../models/Company');
-const Invoice = require('../models/Invoice');
-const AuditLog = require('../models/AuditLog');
-const TicketStatus = require('../models/helpdesk/tickets/TicketStatus');
-const { emailTemplates } = require('./seedData');
-const { nextTicketNumber } = require('../services/numbering.service');
-const { computeDueDate } = require('../services/sla.service');
+dns.setServers(["8.8.8.8", "1.1.1.1"]);
+const Role = require("../models/Role");
+const Agent = require("../models/Agent");
+const Team = require("../models/Team");
+const Department = require("../models/Department");
+const SlaPlan = require("../models/SlaPlan");
+const HelpTopic = require("../models/HelpTopic");
+const User = require("../models/User");
+const Organization = require("../models/Organization");
+const Ticket = require("../models/helpdesk/tickets/Ticket");
+const TicketThread = require("../models/helpdesk/tickets/TicketThread");
+const Task = require("../models/Task");
+const CannedResponse = require("../models/helpdesk/knowledge/CannedResponse");
+const FaqCategory = require("../models/helpdesk/knowledge/FaqCategory");
+const Faq = require("../models/helpdesk/knowledge/Faq");
+const Announcement = require("../models/helpdesk/knowledge/Announcement");
+const EmailTemplate = require("../models/EmailTemplate");
+const TicketFilter = require("../models/helpdesk/tickets/TicketFilter");
+const Notification = require("../models/Notification");
+const SystemSetting = require("../models/SystemSetting");
+const SuperAdmin = require("../models/SuperAdmin");
+const Plan = require("../models/Plan");
+const Company = require("../models/Company");
+const Invoice = require("../models/Invoice");
+const AuditLog = require("../models/AuditLog");
+const TicketStatus = require("../models/helpdesk/tickets/TicketStatus");
+const { emailTemplates } = require("./seedData");
+const { nextTicketNumber } = require("../services/numbering.service");
+const { computeDueDate } = require("../services/sla.service");
 
 const MODELS = [
   AuditLog,
@@ -59,228 +59,473 @@ const MODELS = [
   Organization,
   User,
   // Enterprise
-  require('../models/Skill'),
-  require('../models/Workflow'),
-  require('../models/Survey'),
-  require('../models/SurveyResponse'),
-  require('../models/StatusPage'),
-  require('../models/StatusIncident'),
-  require('../models/Webhook'),
-  require('../models/ApiKey'),
-  require('../models/Contract'),
-  require('../models/Entitlement'),
-  require('../models/Asset'),
-  require('../models/Dependency'),
-  require('../models/helpdesk/incidents/Incident'),
-  require('../models/helpdesk/incidents/Problem'),
-  require('../models/helpdesk/incidents/Change'),
-  require('../models/helpdesk/tickets/TicketLink'),
-  require('../models/Approval'),
-  require('../models/Conversation'),
-  require('../models/ChatMessage'),
-  require('../models/CallLog'),
-  require('../models/ServiceCatalogItem'),
-  require('../models/Integration'),
-  require('../models/AuditEvent'),
-  require('../models/HealthScore'),
+  require("../models/Skill"),
+  require("../models/Workflow"),
+  require("../models/Survey"),
+  require("../models/SurveyResponse"),
+  require("../models/StatusPage"),
+  require("../models/StatusIncident"),
+  require("../models/Webhook"),
+  require("../models/ApiKey"),
+  require("../models/Contract"),
+  require("../models/Entitlement"),
+  require("../models/Asset"),
+  require("../models/Dependency"),
+  require("../models/helpdesk/incidents/Incident"),
+  require("../models/helpdesk/incidents/Problem"),
+  require("../models/helpdesk/incidents/Change"),
+  require("../models/helpdesk/tickets/TicketLink"),
+  require("../models/Approval"),
+  require("../models/Conversation"),
+  require("../models/ChatMessage"),
+  require("../models/CallLog"),
+  require("../models/ServiceCatalogItem"),
+  require("../models/Integration"),
+  require("../models/AuditEvent"),
+  require("../models/HealthScore"),
 ];
 
-const reset = process.argv.includes('--reset');
+const reset = process.argv.includes("--reset");
 
 const run = async () => {
   await mongoose.connect(config.mongoUri, { serverSelectionTimeoutMS: 15000 });
   console.log(`Connected to MongoDB: ${config.mongoUri}`);
 
   if (reset) {
-    console.log('Resetting database...');
+    console.log("Resetting database...");
     await Promise.all(MODELS.map((M) => M.deleteMany({})));
   }
 
   const existing = await User.countDocuments();
   if (existing > 0 && !reset) {
-    console.log('Database already has data. Use `npm run seed:reset` to reseed.');
+    console.log(
+      "Database already has data. Use `npm run seed:reset` to reseed.",
+    );
     await mongoose.disconnect();
     return;
   }
 
   // ----- Email templates -----
   for (const t of emailTemplates) {
-    await EmailTemplate.findOneAndUpdate({ key: t.key, company: null }, t, { upsert: true });
+    await EmailTemplate.findOneAndUpdate({ key: t.key, company: null }, t, {
+      upsert: true,
+    });
   }
-  console.log('Email templates seeded.');
+  console.log("Email templates seeded.");
 
   // ----- Priorities -----
-  const { defaultPriorities } = require('./seedData');
+  const { defaultPriorities } = require("./seedData");
   for (const p of defaultPriorities) {
-    await require('../models/Priority').findOneAndUpdate({ name: p.name, company: null }, p, { upsert: true });
+    await require("../models/Priority").findOneAndUpdate(
+      { name: p.name, company: null },
+      p,
+      { upsert: true },
+    );
   }
-  console.log('Priorities seeded.');
+  console.log("Priorities seeded.");
 
   // ----- Default Impact × Urgency → Priority matrix (§13, global fallback) -----
   const defaultMatrix = [
-    { impact: 'high', urgency: 'high', priority: 'critical' },
-    { impact: 'high', urgency: 'medium', priority: 'high' },
-    { impact: 'high', urgency: 'low', priority: 'medium' },
-    { impact: 'medium', urgency: 'high', priority: 'high' },
-    { impact: 'medium', urgency: 'medium', priority: 'medium' },
-    { impact: 'medium', urgency: 'low', priority: 'low' },
-    { impact: 'low', urgency: 'high', priority: 'medium' },
-    { impact: 'low', urgency: 'medium', priority: 'low' },
-    { impact: 'low', urgency: 'low', priority: 'low' },
+    { impact: "high", urgency: "high", priority: "critical" },
+    { impact: "high", urgency: "medium", priority: "high" },
+    { impact: "high", urgency: "low", priority: "medium" },
+    { impact: "medium", urgency: "high", priority: "high" },
+    { impact: "medium", urgency: "medium", priority: "medium" },
+    { impact: "medium", urgency: "low", priority: "low" },
+    { impact: "low", urgency: "high", priority: "medium" },
+    { impact: "low", urgency: "medium", priority: "low" },
+    { impact: "low", urgency: "low", priority: "low" },
   ];
   for (const cell of defaultMatrix) {
-    await require('../models/platformIdentity/PriorityMatrix').findOneAndUpdate(
-      { impact: cell.impact, urgency: cell.urgency, tenantId: { $exists: false } },
+    await require("../models/platformIdentity/PriorityMatrix").findOneAndUpdate(
+      {
+        impact: cell.impact,
+        urgency: cell.urgency,
+        tenantId: { $exists: false },
+      },
       { ...cell },
-      { upsert: true }
+      { upsert: true },
     );
   }
-  console.log('Priority matrix seeded.');
+  console.log("Priority matrix seeded.");
 
   // ----- Ticket statuses -----
   const defaultStatuses = [
-    { name: 'New', key: 'new', color: '#0ea5e9', sortOrder: 0 },
-    { name: 'Open', key: 'open', color: '#4a86b0', isDefault: true, sortOrder: 1 },
-    { name: 'Triaged', key: 'triaged', color: '#6366f1', sortOrder: 2 },
-    { name: 'Assigned', key: 'assigned', color: '#8e6bb0', sortOrder: 3 },
-    { name: 'In Progress', key: 'in_progress', color: '#2563eb', sortOrder: 4 },
-    { name: 'Pending Customer', key: 'pending_customer', color: '#d97706', sortOrder: 5, pauseSla: true, waitingOn: 'customer' },
-    { name: 'Pending Vendor', key: 'pending_vendor', color: '#b45309', sortOrder: 6, pauseSla: true, waitingOn: 'vendor' },
-    { name: 'Pending Approval', key: 'pending_approval', color: '#a855f7', sortOrder: 7, pauseSla: true, waitingOn: 'approval' },
-    { name: 'On Hold', key: 'on_hold', color: '#78716c', sortOrder: 8, pauseSla: true, waitingOn: 'customer' },
-    { name: 'Escalated', key: 'escalated', color: '#dc2626', sortOrder: 9 },
-    { name: 'Overdue', key: 'overdue', color: '#c0392b', sortOrder: 10 },
-    { name: 'Resolved', key: 'resolved', color: '#16a34a', sortOrder: 11 },
-    { name: 'Verification', key: 'verification', color: '#059669', sortOrder: 12 },
-    { name: 'Closed', key: 'closed', color: '#6c757d', sortOrder: 13 },
-    { name: 'Cancelled', key: 'cancelled', color: '#9ca3af', sortOrder: 14 },
-    { name: 'Rejected', key: 'rejected', color: '#ef4444', sortOrder: 15 },
-    { name: 'Duplicate', key: 'duplicate', color: '#f59e0b', sortOrder: 16 },
-    { name: 'Spam', key: 'spam', color: '#525252', sortOrder: 17 },
-    { name: 'Archived', key: 'archived', color: '#95a5a6', sortOrder: 18 },
+    { name: "New", key: "new", color: "#0ea5e9", sortOrder: 0 },
+    {
+      name: "Open",
+      key: "open",
+      color: "#4a86b0",
+      isDefault: true,
+      sortOrder: 1,
+    },
+    { name: "Triaged", key: "triaged", color: "#6366f1", sortOrder: 2 },
+    { name: "Assigned", key: "assigned", color: "#8e6bb0", sortOrder: 3 },
+    { name: "In Progress", key: "in_progress", color: "#2563eb", sortOrder: 4 },
+    {
+      name: "Pending Customer",
+      key: "pending_customer",
+      color: "#d97706",
+      sortOrder: 5,
+      pauseSla: true,
+      waitingOn: "customer",
+    },
+    {
+      name: "Pending Vendor",
+      key: "pending_vendor",
+      color: "#b45309",
+      sortOrder: 6,
+      pauseSla: true,
+      waitingOn: "vendor",
+    },
+    {
+      name: "Pending Approval",
+      key: "pending_approval",
+      color: "#a855f7",
+      sortOrder: 7,
+      pauseSla: true,
+      waitingOn: "approval",
+    },
+    {
+      name: "On Hold",
+      key: "on_hold",
+      color: "#78716c",
+      sortOrder: 8,
+      pauseSla: true,
+      waitingOn: "customer",
+    },
+    { name: "Escalated", key: "escalated", color: "#dc2626", sortOrder: 9 },
+    { name: "Overdue", key: "overdue", color: "#c0392b", sortOrder: 10 },
+    { name: "Resolved", key: "resolved", color: "#16a34a", sortOrder: 11 },
+    {
+      name: "Verification",
+      key: "verification",
+      color: "#059669",
+      sortOrder: 12,
+    },
+    { name: "Closed", key: "closed", color: "#6c757d", sortOrder: 13 },
+    { name: "Cancelled", key: "cancelled", color: "#9ca3af", sortOrder: 14 },
+    { name: "Rejected", key: "rejected", color: "#ef4444", sortOrder: 15 },
+    { name: "Duplicate", key: "duplicate", color: "#f59e0b", sortOrder: 16 },
+    { name: "Spam", key: "spam", color: "#525252", sortOrder: 17 },
+    { name: "Archived", key: "archived", color: "#95a5a6", sortOrder: 18 },
   ];
   for (const s of defaultStatuses) {
-    await require('../models/helpdesk/tickets/TicketStatus').findOneAndUpdate({ key: s.key }, s, { upsert: true });
+    await require("../models/helpdesk/tickets/TicketStatus").findOneAndUpdate(
+      { key: s.key },
+      s,
+      { upsert: true },
+    );
   }
-  console.log('Ticket statuses seeded.');
+  console.log("Ticket statuses seeded.");
 
   // ----- Super admin -----
-  let superAdmin = await SuperAdmin.findOne({ email: 'superadmin@osticket.local' });
+  let superAdmin = await SuperAdmin.findOne({
+    email: "superadmin@osticket.local",
+  });
   if (!superAdmin) {
     superAdmin = await SuperAdmin.create({
-      name: 'Platform Super Admin',
-      email: 'superadmin@osticket.local',
-      password: 'SuperAdmin@123',
-      role: 'super_admin',
+      name: "Platform Super Admin",
+      email: "superadmin@osticket.local",
+      password: "SuperAdmin@123",
+      role: "super_admin",
       isActive: true,
-      moduleKeys: ['helpdesk', 'crm', 'csm', 'itam', 'itom', 'projects', 'hr', 'field-service', 'workflow', 'analytics', 'settings'],
+      moduleKeys: [
+        "helpdesk",
+        "crm",
+        "csm",
+        "itam",
+        "itom",
+        "projects",
+        "hr",
+        "field-service",
+        "workflow",
+        "analytics",
+        "settings",
+      ],
     });
   } else {
-    superAdmin.moduleKeys = ['helpdesk', 'crm', 'csm', 'itam', 'itom', 'projects', 'hr', 'field-service', 'workflow', 'analytics', 'settings'];
+    superAdmin.moduleKeys = [
+      "helpdesk",
+      "crm",
+      "csm",
+      "itam",
+      "itom",
+      "projects",
+      "hr",
+      "field-service",
+      "workflow",
+      "analytics",
+      "settings",
+    ];
     await superAdmin.save();
   }
   console.log(`Super admin seeded: ${superAdmin.email} / SuperAdmin@123`);
 
   // ----- Plans -----
-  const freePlan = await Plan.create({ name: 'Free', code: 'free', description: 'For small teams getting started', priceMonthly: 0, priceYearly: 0, maxAgents: 3, maxUsers: 50, features: ['tickets', 'kb', 'basic_reports'], isActive: true, isDefault: true, trialDays: 0 });
-  const proPlan = await Plan.create({ name: 'Pro', code: 'pro', description: 'For growing support teams', priceMonthly: 1999, priceYearly: 19990, maxAgents: 10, maxUsers: 500, features: ['tickets', 'kb', 'reports', 'sla', 'multi_dept', 'canned_responses'], isActive: true, trialDays: 14 });
-  await Plan.create({ name: 'Business', code: 'business', description: 'For larger organizations', priceMonthly: 4999, priceYearly: 49990, maxAgents: 50, maxUsers: 5000, features: ['tickets', 'kb', 'reports', 'sla', 'multi_dept', 'canned_responses', 'api_access', 'priority_support'], isActive: true, apiAccess: true, prioritySupport: true, trialDays: 14 });
-  console.log('Plans seeded.');
+  const freePlan = await Plan.create({
+    name: "Free",
+    code: "free",
+    description: "For small teams getting started",
+    priceMonthly: 0,
+    priceYearly: 0,
+    maxAgents: 3,
+    maxUsers: 50,
+    features: ["tickets", "kb", "basic_reports"],
+    isActive: true,
+    isDefault: true,
+    trialDays: 0,
+  });
+  const proPlan = await Plan.create({
+    name: "Pro",
+    code: "pro",
+    description: "For growing support teams",
+    priceMonthly: 1999,
+    priceYearly: 19990,
+    maxAgents: 10,
+    maxUsers: 500,
+    features: [
+      "tickets",
+      "kb",
+      "reports",
+      "sla",
+      "multi_dept",
+      "canned_responses",
+    ],
+    isActive: true,
+    trialDays: 14,
+  });
+  await Plan.create({
+    name: "Business",
+    code: "business",
+    description: "For larger organizations",
+    priceMonthly: 4999,
+    priceYearly: 49990,
+    maxAgents: 50,
+    maxUsers: 5000,
+    features: [
+      "tickets",
+      "kb",
+      "reports",
+      "sla",
+      "multi_dept",
+      "canned_responses",
+      "api_access",
+      "priority_support",
+    ],
+    isActive: true,
+    apiAccess: true,
+    prioritySupport: true,
+    trialDays: 14,
+  });
+  console.log("Plans seeded.");
 
   // ----- Demo company -----
   const demoCompany = await Company.create({
-    name: 'My Support Center',
-    email: 'support@osticket.local',
-    domain: 'osticket.local',
+    name: "My Support Center",
+    email: "support@osticket.local",
+    domain: "osticket.local",
     plan: proPlan._id,
-    status: 'active',
-    billingCycle: 'monthly',
+    status: "active",
+    billingCycle: "monthly",
     planStartedAt: new Date(),
     planExpiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
     createdBy: superAdmin._id,
   });
   await Invoice.create({
-    invoiceNumber: 'INV-DEMO-0001',
+    invoiceNumber: "INV-DEMO-0001",
     company: demoCompany._id,
     plan: proPlan._id,
-    description: 'Pro plan (monthly) for My Support Center',
+    description: "Pro plan (monthly) for My Support Center",
     amount: 1999,
-    status: 'paid',
+    status: "paid",
     periodStart: new Date(),
     periodEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
     paidAt: new Date(),
     createdBy: superAdmin._id,
   });
-  console.log('Demo company seeded.');
+  console.log("Demo company seeded.");
 
   // ----- Roles -----
   const [adminRole, supportRole, techRole] = await Promise.all([
-    Role.create({ name: 'Administrator', permissions: ['tickets.view', 'tickets.create', 'tickets.edit', 'tickets.assign', 'tickets.transfer', 'tickets.close', 'tickets.delete', 'tickets.reply', 'tickets.note', 'tickets.tasks', 'users.manage', 'kb.manage', 'canned.manage', 'admin.manage', 'orgs.manage', 'escalations.manage'], isAdmin: true }),
-    Role.create({ name: 'Support Agent', permissions: ['tickets.view', 'tickets.create', 'tickets.edit', 'tickets.assign', 'tickets.transfer', 'tickets.close', 'tickets.reply', 'tickets.note', 'tickets.tasks', 'users.manage', 'canned.manage', 'kb.manage'], isAdmin: false }),
-    Role.create({ name: 'Technician', permissions: ['tickets.view', 'tickets.reply', 'tickets.note', 'tickets.assign', 'tickets.close', 'tickets.tasks'], isAdmin: false }),
+    Role.create({
+      name: "Administrator",
+      permissions: [
+        "tickets.view",
+        "tickets.create",
+        "tickets.edit",
+        "tickets.assign",
+        "tickets.transfer",
+        "tickets.close",
+        "tickets.delete",
+        "tickets.reply",
+        "tickets.note",
+        "tickets.tasks",
+        "users.manage",
+        "kb.manage",
+        "canned.manage",
+        "admin.manage",
+        "orgs.manage",
+        "escalations.manage",
+      ],
+      isAdmin: true,
+    }),
+    Role.create({
+      name: "Support Agent",
+      permissions: [
+        "tickets.view",
+        "tickets.create",
+        "tickets.edit",
+        "tickets.assign",
+        "tickets.transfer",
+        "tickets.close",
+        "tickets.reply",
+        "tickets.note",
+        "tickets.tasks",
+        "users.manage",
+        "canned.manage",
+        "kb.manage",
+      ],
+      isAdmin: false,
+    }),
+    Role.create({
+      name: "Technician",
+      permissions: [
+        "tickets.view",
+        "tickets.reply",
+        "tickets.note",
+        "tickets.assign",
+        "tickets.close",
+        "tickets.tasks",
+      ],
+      isAdmin: false,
+    }),
   ]);
   // Read-only company auditor (§1): enforced by the admin-surface guard.
-  await Role.create({ name: 'Company Auditor', permissions: ['audit.view', 'records.view', 'reports.manage'], category: 'auditor', isAdmin: false }).catch(() => {});
+  await Role.create({
+    name: "Company Auditor",
+    permissions: ["audit.view", "records.view", "reports.manage"],
+    category: "auditor",
+    isAdmin: false,
+  }).catch(() => {});
 
   // ----- Departments -----
-  const support = await Department.create({ name: 'Support', isPublic: true, notes: 'General customer support' });
-  const billing = await Department.create({ name: 'Billing', isPublic: true, notes: 'Billing and invoicing' });
-  const sales = await Department.create({ name: 'Sales', isPublic: true, notes: 'Pre-sales inquiries' });
-  const maintenance = await Department.create({ name: 'Maintenance', isPublic: true, notes: 'Scheduled maintenance' });
-  const technical = await Department.create({ name: 'Technical', parent: support._id, isPublic: true, notes: 'Deep technical issues' });
+  const support = await Department.create({
+    name: "Support",
+    isPublic: true,
+    notes: "General customer support",
+  });
+  const billing = await Department.create({
+    name: "Billing",
+    isPublic: true,
+    notes: "Billing and invoicing",
+  });
+  const sales = await Department.create({
+    name: "Sales",
+    isPublic: true,
+    notes: "Pre-sales inquiries",
+  });
+  const maintenance = await Department.create({
+    name: "Maintenance",
+    isPublic: true,
+    notes: "Scheduled maintenance",
+  });
+  const technical = await Department.create({
+    name: "Technical",
+    parent: support._id,
+    isPublic: true,
+    notes: "Deep technical issues",
+  });
 
   // ----- SLA plans -----
-  const sla24 = await SlaPlan.create({ name: '24/7 Response', gracePeriod: 24, schedule: '24/7', notes: 'First response within 24 hours, around the clock' });
-  const slaBusiness = await SlaPlan.create({ name: 'Business Hours', gracePeriod: 8, schedule: 'Business Hours', notes: 'First response within 8 business hours' });
-  const slaCritical = await SlaPlan.create({ name: 'Critical Response', gracePeriod: 4, schedule: '24/7', notes: 'Emergency response within 4 hours' });
-  const slaOneDay = await SlaPlan.create({ name: '1 Business Day', gracePeriod: 24, schedule: 'Business Hours', notes: 'Standard service level' });
+  const sla24 = await SlaPlan.create({
+    name: "24/7 Response",
+    gracePeriod: 24,
+    schedule: "24/7",
+    notes: "First response within 24 hours, around the clock",
+  });
+  const slaBusiness = await SlaPlan.create({
+    name: "Business Hours",
+    gracePeriod: 8,
+    schedule: "Business Hours",
+    notes: "First response within 8 business hours",
+  });
+  const slaCritical = await SlaPlan.create({
+    name: "Critical Response",
+    gracePeriod: 4,
+    schedule: "24/7",
+    notes: "Emergency response within 4 hours",
+  });
+  const slaOneDay = await SlaPlan.create({
+    name: "1 Business Day",
+    gracePeriod: 24,
+    schedule: "Business Hours",
+    notes: "Standard service level",
+  });
 
   // ----- Teams -----
-  const teamSupport = await Team.create({ name: 'Support Team', notes: 'Front-line support' });
-  const teamL2 = await Team.create({ name: 'Level 2 Team', notes: 'Escalation team' });
-  const teamBilling = await Team.create({ name: 'Billing Team', notes: 'Billing specialists' });
+  const teamSupport = await Team.create({
+    name: "Support Team",
+    notes: "Front-line support",
+  });
+  const teamL2 = await Team.create({
+    name: "Level 2 Team",
+    notes: "Escalation team",
+  });
+  const teamBilling = await Team.create({
+    name: "Billing Team",
+    notes: "Billing specialists",
+  });
 
   // ----- Agents -----
   const adminAgent = await Agent.create({
-    name: 'System Administrator',
-    email: 'admin@osticket.local',
-    password: 'Admin@123',
+    name: "System Administrator",
+    email: "admin@osticket.local",
+    password: "Admin@123",
     role: adminRole._id,
     isAdmin: true,
     isActive: true,
-    departments: [{ department: support._id, isPrimary: true }, { department: billing._id }, { department: sales._id }, { department: technical._id }],
+    departments: [
+      { department: support._id, isPrimary: true },
+      { department: billing._id },
+      { department: sales._id },
+      { department: technical._id },
+    ],
     teams: [teamSupport._id, teamL2._id, teamBilling._id],
-    signature: 'System Administrator\nSupport Center',
+    signature: "System Administrator\nSupport Center",
   });
   const agent1 = await Agent.create({
-    name: 'John Agent',
-    email: 'agent@osticket.local',
-    password: 'Agent@123',
+    name: "John Agent",
+    email: "agent@osticket.local",
+    password: "Agent@123",
     role: supportRole._id,
     isActive: true,
-    departments: [{ department: support._id, isPrimary: true }, { department: technical._id }],
+    departments: [
+      { department: support._id, isPrimary: true },
+      { department: technical._id },
+    ],
     teams: [teamSupport._id],
-    signature: 'John Agent\nCustomer Support',
+    signature: "John Agent\nCustomer Support",
   });
   const agent2 = await Agent.create({
-    name: 'Jane Smith',
-    email: 'jane@osticket.local',
-    password: 'Agent@123',
+    name: "Jane Smith",
+    email: "jane@osticket.local",
+    password: "Agent@123",
     role: techRole._id,
     isActive: true,
     departments: [{ department: technical._id, isPrimary: true }],
     teams: [teamL2._id],
-    signature: 'Jane Smith\nTechnical Support',
+    signature: "Jane Smith\nTechnical Support",
   });
   const agent3 = await Agent.create({
-    name: 'Billing Officer',
-    email: 'billing@osticket.local',
-    password: 'Agent@123',
+    name: "Billing Officer",
+    email: "billing@osticket.local",
+    password: "Agent@123",
     role: supportRole._id,
     isActive: true,
     departments: [{ department: billing._id, isPrimary: true }],
     teams: [teamBilling._id],
-    signature: 'Billing Officer\nBilling Department',
+    signature: "Billing Officer\nBilling Department",
   });
 
   // Update dept managers & team leads
@@ -299,66 +544,124 @@ const run = async () => {
   await Promise.all([teamSupport.save(), teamL2.save(), teamBilling.save()]);
 
   // ----- Help topics -----
-  const hwIssue = await HelpTopic.create({ topic: 'Hardware Issue', category: 'Technical', department: technical._id, priority: 'Normal', sla: sla24._id, autoAssignTeam: teamL2._id, isPublic: true });
-  const swIssue = await HelpTopic.create({ topic: 'Software Issue', category: 'Technical', department: technical._id, priority: 'High', sla: slaCritical._id, autoAssignAgent: agent2._id, isPublic: true });
-  const general = await HelpTopic.create({ topic: 'General Inquiry', category: 'Support', department: support._id, priority: 'Normal', sla: slaBusiness._id, autoAssignAgent: agent1._id, isPublic: true });
-  const billingQuery = await HelpTopic.create({ topic: 'Billing Question', category: 'Billing', department: billing._id, priority: 'Normal', sla: slaBusiness._id, autoAssignTeam: teamBilling._id, isPublic: true });
-  const salesQ = await HelpTopic.create({ topic: 'Sales Question', category: 'Sales', department: sales._id, priority: 'Normal', sla: slaBusiness._id, isPublic: true });
-  const report = await HelpTopic.create({ topic: 'Report a Problem', category: 'Support', department: support._id, priority: 'Normal', sla: sla24._id, isPublic: true });
+  const hwIssue = await HelpTopic.create({
+    topic: "Hardware Issue",
+    category: "Technical",
+    department: technical._id,
+    priority: "Normal",
+    sla: sla24._id,
+    autoAssignTeam: teamL2._id,
+    isPublic: true,
+  });
+  const swIssue = await HelpTopic.create({
+    topic: "Software Issue",
+    category: "Technical",
+    department: technical._id,
+    priority: "High",
+    sla: slaCritical._id,
+    autoAssignAgent: agent2._id,
+    isPublic: true,
+  });
+  const general = await HelpTopic.create({
+    topic: "General Inquiry",
+    category: "Support",
+    department: support._id,
+    priority: "Normal",
+    sla: slaBusiness._id,
+    autoAssignAgent: agent1._id,
+    isPublic: true,
+  });
+  const billingQuery = await HelpTopic.create({
+    topic: "Billing Question",
+    category: "Billing",
+    department: billing._id,
+    priority: "Normal",
+    sla: slaBusiness._id,
+    autoAssignTeam: teamBilling._id,
+    isPublic: true,
+  });
+  const salesQ = await HelpTopic.create({
+    topic: "Sales Question",
+    category: "Sales",
+    department: sales._id,
+    priority: "Normal",
+    sla: slaBusiness._id,
+    isPublic: true,
+  });
+  const report = await HelpTopic.create({
+    topic: "Report a Problem",
+    category: "Support",
+    department: support._id,
+    priority: "Normal",
+    sla: sla24._id,
+    isPublic: true,
+  });
 
   // ----- Organization + users -----
-  const acme = await Organization.create({ name: 'Acme Corp', address: '123 Main Street, Springfield', phone: '+1 555 0100', domain: 'acme.com', notes: 'Demo organization' });
-  const globalCo = await Organization.create({ name: 'Globex Ltd', address: '42 Industry Road, Metropolis', phone: '+1 555 0199', domain: 'globex.com', notes: 'Demo organization' });
+  const acme = await Organization.create({
+    name: "Acme Corp",
+    address: "123 Main Street, Springfield",
+    phone: "+1 555 0100",
+    domain: "acme.com",
+    notes: "Demo organization",
+  });
+  const globalCo = await Organization.create({
+    name: "Globex Ltd",
+    address: "42 Industry Road, Metropolis",
+    phone: "+1 555 0199",
+    domain: "globex.com",
+    notes: "Demo organization",
+  });
 
   const user1 = await User.create({
-    name: 'Customer One',
-    email: 'customer@osticket.local',
-    phone: '+1 555 0101',
-    password: 'Customer@123',
+    name: "Customer One",
+    email: "customer@osticket.local",
+    phone: "+1 555 0101",
+    password: "Customer@123",
     isRegistered: true,
     emailConfirmed: true,
     organization: acme._id,
   });
   const user2 = await User.create({
-    name: 'Rahul Sharma',
-    email: 'rahul@acme.com',
-    phone: '+1 555 0102',
-    password: 'Customer@123',
+    name: "Rahul Sharma",
+    email: "rahul@acme.com",
+    phone: "+1 555 0102",
+    password: "Customer@123",
     isRegistered: true,
     emailConfirmed: true,
     organization: acme._id,
   });
   const user3 = await User.create({
-    name: 'Maria Gomez',
-    email: 'maria@globex.com',
-    phone: '+1 555 0198',
+    name: "Maria Gomez",
+    email: "maria@globex.com",
+    phone: "+1 555 0198",
     isRegistered: false,
     emailConfirmed: false,
     organization: globalCo._id,
   });
   const user4 = await User.create({
-    name: 'Wei Chen',
-    email: 'wei@acme.com',
-    phone: '+1 555 0105',
+    name: "Wei Chen",
+    email: "wei@acme.com",
+    phone: "+1 555 0105",
     isRegistered: true,
     emailConfirmed: true,
     organization: acme._id,
   });
 
   const testUsers = [
-    { name: 'Mahima Seldiya 1', email: 'mahimaseldiya1@gmail.com' },
-    { name: 'Mahima Seldiya 3', email: 'mahimaseldiya3@gmail.com' },
-    { name: 'Mahima Seldiya 7', email: 'mahimaseldiya7@gmail.com' },
-    { name: 'Mahima Seldiya 365', email: 'mahimaseldiya365@gmail.com' },
+    { name: "Mahima Seldiya 1", email: "mahimaseldiya1@gmail.com" },
+    { name: "Mahima Seldiya 3", email: "mahimaseldiya3@gmail.com" },
+    { name: "Mahima Seldiya 7", email: "mahimaseldiya7@gmail.com" },
+    { name: "Mahima Seldiya 365", email: "mahimaseldiya365@gmail.com" },
   ];
   for (const tu of testUsers) {
     await User.create({
       name: tu.name,
       email: tu.email,
-      password: 'Customer@123',
+      password: "Customer@123",
       isRegistered: true,
       emailConfirmed: true,
-      status: 'active',
+      status: "active",
       company: demoCompany._id,
     });
   }
@@ -366,7 +669,22 @@ const run = async () => {
   const daysAgo = (d) => new Date(Date.now() - d * 24 * 60 * 60 * 1000);
 
   // ----- Tickets -----
-  const mkTicket = async ({ user, topic, dept, priority, subject, source, status, agent, team, sla, created, lastActivity, body, responses = 0 }) => {
+  const mkTicket = async ({
+    user,
+    topic,
+    dept,
+    priority,
+    subject,
+    source,
+    status,
+    agent,
+    team,
+    sla,
+    created,
+    lastActivity,
+    body,
+    responses = 0,
+  }) => {
     const number = await nextTicketNumber();
     const dueDate = await computeDueDate(sla, created);
     const t = await Ticket.create({
@@ -374,7 +692,7 @@ const run = async () => {
       user: user._id,
       dept: dept ? dept._id : null,
       topic: topic ? topic._id : null,
-      priority: priority || 'Normal',
+      priority: priority || "Normal",
       sla: sla ? sla._id : null,
       agent: agent ? agent._id : null,
       team: team ? team._id : null,
@@ -387,366 +705,744 @@ const run = async () => {
       lastMessageAt: created,
       createdAt: created,
       updatedAt: lastActivity,
-      stats: { responses, messages: 1, firstResponseAt: responses > 0 ? new Date(created.getTime() + 3600000) : null },
+      stats: {
+        responses,
+        messages: 1,
+        firstResponseAt:
+          responses > 0 ? new Date(created.getTime() + 3600000) : null,
+      },
     });
-    await TicketThread.create({ ticket: t._id, type: 'message', posterType: 'user', user: user._id, title: 'Message', body, createdAt: created });
+    await TicketThread.create({
+      ticket: t._id,
+      type: "message",
+      posterType: "user",
+      user: user._id,
+      title: "Message",
+      body,
+      createdAt: created,
+    });
     if (responses > 0) {
       await TicketThread.create({
-        ticket: t._id, type: 'message', posterType: 'agent', agent: (agent || adminAgent)._id, title: 'Response', body: 'Thank you for contacting us. Our team is looking into this and will get back to you shortly.', createdAt: new Date(created.getTime() + 3600000),
+        ticket: t._id,
+        type: "message",
+        posterType: "agent",
+        agent: (agent || adminAgent)._id,
+        title: "Response",
+        body: "Thank you for contacting us. Our team is looking into this and will get back to you shortly.",
+        createdAt: new Date(created.getTime() + 3600000),
       });
     }
     return t;
   };
 
   await mkTicket({
-    user: user1, topic: general, dept: support, priority: 'Normal', subject: 'Cannot access my account', source: 'web', status: Ticket.STATUSES.OPEN, agent: agent1, sla: slaBusiness, created: daysAgo(1), lastActivity: daysAgo(0.5), body: 'I am trying to login but it says invalid credentials. I have tried resetting my password but still cannot access the portal.', responses: 1,
+    user: user1,
+    topic: general,
+    dept: support,
+    priority: "Normal",
+    subject: "Cannot access my account",
+    source: "web",
+    status: Ticket.STATUSES.OPEN,
+    agent: agent1,
+    sla: slaBusiness,
+    created: daysAgo(1),
+    lastActivity: daysAgo(0.5),
+    body: "I am trying to login but it says invalid credentials. I have tried resetting my password but still cannot access the portal.",
+    responses: 1,
   });
   await mkTicket({
-    user: user2, topic: billingQuery, dept: billing, priority: 'High', subject: 'Duplicate invoice charged', source: 'email', status: Ticket.STATUSES.ASSIGNED, team: teamBilling, agent: null, sla: slaBusiness, created: daysAgo(2), lastActivity: daysAgo(1), body: 'I was charged twice for the same invoice this month. Invoice #INV-2024-00123 and #INV-2024-00124 are identical.', responses: 0,
+    user: user2,
+    topic: billingQuery,
+    dept: billing,
+    priority: "High",
+    subject: "Duplicate invoice charged",
+    source: "email",
+    status: Ticket.STATUSES.ASSIGNED,
+    team: teamBilling,
+    agent: null,
+    sla: slaBusiness,
+    created: daysAgo(2),
+    lastActivity: daysAgo(1),
+    body: "I was charged twice for the same invoice this month. Invoice #INV-2024-00123 and #INV-2024-00124 are identical.",
+    responses: 0,
   });
   await mkTicket({
-    user: user3, topic: hwIssue, dept: technical, priority: 'Emergency', subject: 'Production server down - outage', source: 'web', status: Ticket.STATUSES.OVERDUE, team: teamL2, sla: slaCritical, created: daysAgo(5), lastActivity: daysAgo(1.5), body: 'Our production server has been down for 4 hours. This is impacting all customers. Please escalate urgently.', responses: 1,
+    user: user3,
+    topic: hwIssue,
+    dept: technical,
+    priority: "Emergency",
+    subject: "Production server down - outage",
+    source: "web",
+    status: Ticket.STATUSES.OVERDUE,
+    team: teamL2,
+    sla: slaCritical,
+    created: daysAgo(5),
+    lastActivity: daysAgo(1.5),
+    body: "Our production server has been down for 4 hours. This is impacting all customers. Please escalate urgently.",
+    responses: 1,
   });
   await mkTicket({
-    user: user4, topic: swIssue, dept: technical, priority: 'High', subject: 'Mobile app crashes on login', source: 'web', status: Ticket.STATUSES.CLOSED, agent: agent2, sla: slaCritical, created: daysAgo(8), lastActivity: daysAgo(6), body: 'The mobile app crashes every time I try to login on Android 14. Clearing cache does not help.', responses: 2,
+    user: user4,
+    topic: swIssue,
+    dept: technical,
+    priority: "High",
+    subject: "Mobile app crashes on login",
+    source: "web",
+    status: Ticket.STATUSES.CLOSED,
+    agent: agent2,
+    sla: slaCritical,
+    created: daysAgo(8),
+    lastActivity: daysAgo(6),
+    body: "The mobile app crashes every time I try to login on Android 14. Clearing cache does not help.",
+    responses: 2,
   });
   await mkTicket({
-    user: user1, topic: salesQ, dept: sales, priority: 'Normal', subject: 'Enterprise plan pricing', source: 'phone', status: Ticket.STATUSES.CLOSED, agent: null, sla: slaBusiness, created: daysAgo(12), lastActivity: daysAgo(10), body: 'Looking for pricing on the enterprise plan for a 500 seat deployment.', responses: 1,
+    user: user1,
+    topic: salesQ,
+    dept: sales,
+    priority: "Normal",
+    subject: "Enterprise plan pricing",
+    source: "phone",
+    status: Ticket.STATUSES.CLOSED,
+    agent: null,
+    sla: slaBusiness,
+    created: daysAgo(12),
+    lastActivity: daysAgo(10),
+    body: "Looking for pricing on the enterprise plan for a 500 seat deployment.",
+    responses: 1,
   });
   await mkTicket({
-    user: user2, topic: report, dept: support, priority: 'Low', subject: 'Feedback: add dark mode', source: 'web', status: Ticket.STATUSES.ARCHIVED, agent: agent1, sla: sla24, created: daysAgo(20), lastActivity: daysAgo(18), body: 'Would be great to have dark mode in the client portal. Please consider adding it.', responses: 1,
+    user: user2,
+    topic: report,
+    dept: support,
+    priority: "Low",
+    subject: "Feedback: add dark mode",
+    source: "web",
+    status: Ticket.STATUSES.ARCHIVED,
+    agent: agent1,
+    sla: sla24,
+    created: daysAgo(20),
+    lastActivity: daysAgo(18),
+    body: "Would be great to have dark mode in the client portal. Please consider adding it.",
+    responses: 1,
   });
 
   // A task on the open ticket
-  const firstTicket = await Ticket.findOne({ subject: 'Cannot access my account' });
+  const firstTicket = await Ticket.findOne({
+    subject: "Cannot access my account",
+  });
   await Task.create({
     ticket: firstTicket._id,
-    title: 'Verify account status',
-    description: 'Check if the account was disabled and reset the password.',
+    title: "Verify account status",
+    description: "Check if the account was disabled and reset the password.",
     assignedTo: agent1._id,
     createdBy: adminAgent._id,
-    status: 'open',
+    status: "open",
   });
 
-  console.log('Tickets seeded.');
+  console.log("Tickets seeded.");
 
   // ----- Canned responses -----
-  await CannedResponse.create({ title: 'Password Reset Instructions', response: 'Hello %{user.name.first}, you can reset your password by clicking "Forgot Password" on the login page. We will send a reset link to your email.', createdBy: agent1._id });
-  await CannedResponse.create({ title: 'Ticket Received', response: 'Thank you for contacting support. Your ticket #%{ticket.number} has been received and a representative will respond shortly.', createdBy: agent1._id });
-  await CannedResponse.create({ title: 'Issue Resolved', response: 'We believe the issue has been resolved. Please let us know if you continue to experience any problems and we will be happy to help.', createdBy: agent2._id });
-  await CannedResponse.create({ title: 'Billing Confirmation', response: 'We have verified your billing records. If the duplicate charge persists after 5 business days, please contact your bank to dispute it.', createdBy: agent3._id });
-  console.log('Canned responses seeded.');
+  await CannedResponse.create({
+    title: "Password Reset Instructions",
+    response:
+      'Hello %{user.name.first}, you can reset your password by clicking "Forgot Password" on the login page. We will send a reset link to your email.',
+    createdBy: agent1._id,
+  });
+  await CannedResponse.create({
+    title: "Ticket Received",
+    response:
+      "Thank you for contacting support. Your ticket #%{ticket.number} has been received and a representative will respond shortly.",
+    createdBy: agent1._id,
+  });
+  await CannedResponse.create({
+    title: "Issue Resolved",
+    response:
+      "We believe the issue has been resolved. Please let us know if you continue to experience any problems and we will be happy to help.",
+    createdBy: agent2._id,
+  });
+  await CannedResponse.create({
+    title: "Billing Confirmation",
+    response:
+      "We have verified your billing records. If the duplicate charge persists after 5 business days, please contact your bank to dispute it.",
+    createdBy: agent3._id,
+  });
+  console.log("Canned responses seeded.");
 
   // ----- FAQ -----
-  const faqTech = await FaqCategory.create({ name: 'Technical', description: 'Hardware and software related questions', isPublic: true, sortOrder: 1, createdBy: agent1._id });
-  const faqAccount = await FaqCategory.create({ name: 'Account & Billing', description: 'Login, passwords and billing questions', isPublic: true, sortOrder: 2, createdBy: agent3._id });
-  const faqGeneral = await FaqCategory.create({ name: 'General', description: 'General questions about our services', isPublic: true, sortOrder: 3, createdBy: agent1._id });
+  const faqTech = await FaqCategory.create({
+    name: "Technical",
+    description: "Hardware and software related questions",
+    isPublic: true,
+    sortOrder: 1,
+    createdBy: agent1._id,
+  });
+  const faqAccount = await FaqCategory.create({
+    name: "Account & Billing",
+    description: "Login, passwords and billing questions",
+    isPublic: true,
+    sortOrder: 2,
+    createdBy: agent3._id,
+  });
+  const faqGeneral = await FaqCategory.create({
+    name: "General",
+    description: "General questions about our services",
+    isPublic: true,
+    sortOrder: 3,
+    createdBy: agent1._id,
+  });
 
-  await Faq.create({ category: faqTech._id, question: 'How do I reset my password?', answer: 'Go to the login page and click "Forgot Password". Enter your email address and we will send you a secure reset link that expires in 30 minutes.', keywords: ['password', 'reset', 'login'], createdBy: agent1._id });
-  await Faq.create({ category: faqTech._id, question: 'Why is the mobile app crashing on startup?', answer: 'Make sure you have the latest version installed. Go to your app store and check for updates. If the issue persists, try clearing the app cache or reinstalling the app.', keywords: ['app', 'crash', 'mobile'], createdBy: agent2._id });
-  await Faq.create({ category: faqAccount._id, question: 'How do I view my invoices?', answer: 'Log in to the client portal, go to "My Tickets" and open the related ticket. Attached invoices are listed in the ticket thread.', keywords: ['invoice', 'billing', 'payment'], createdBy: agent3._id });
-  await Faq.create({ category: faqGeneral._id, question: 'What are your support hours?', answer: 'Our support team is available 24/7. Responses are guaranteed within the SLA of your ticket priority.', keywords: ['hours', 'support', 'sla'], createdBy: agent1._id });
-  await Faq.create({ category: faqAccount._id, question: 'How do I close a ticket?', answer: 'You can close a ticket from the ticket detail page by clicking the "Close" button, or it will be closed by our team once resolved.', keywords: ['close', 'ticket'], createdBy: agent1._id });
-  console.log('FAQ seeded.');
+  await Faq.create({
+    category: faqTech._id,
+    question: "How do I reset my password?",
+    answer:
+      'Go to the login page and click "Forgot Password". Enter your email address and we will send you a secure reset link that expires in 30 minutes.',
+    keywords: ["password", "reset", "login"],
+    createdBy: agent1._id,
+  });
+  await Faq.create({
+    category: faqTech._id,
+    question: "Why is the mobile app crashing on startup?",
+    answer:
+      "Make sure you have the latest version installed. Go to your app store and check for updates. If the issue persists, try clearing the app cache or reinstalling the app.",
+    keywords: ["app", "crash", "mobile"],
+    createdBy: agent2._id,
+  });
+  await Faq.create({
+    category: faqAccount._id,
+    question: "How do I view my invoices?",
+    answer:
+      'Log in to the client portal, go to "My Tickets" and open the related ticket. Attached invoices are listed in the ticket thread.',
+    keywords: ["invoice", "billing", "payment"],
+    createdBy: agent3._id,
+  });
+  await Faq.create({
+    category: faqGeneral._id,
+    question: "What are your support hours?",
+    answer:
+      "Our support team is available 24/7. Responses are guaranteed within the SLA of your ticket priority.",
+    keywords: ["hours", "support", "sla"],
+    createdBy: agent1._id,
+  });
+  await Faq.create({
+    category: faqAccount._id,
+    question: "How do I close a ticket?",
+    answer:
+      'You can close a ticket from the ticket detail page by clicking the "Close" button, or it will be closed by our team once resolved.',
+    keywords: ["close", "ticket"],
+    createdBy: agent1._id,
+  });
+  console.log("FAQ seeded.");
 
   // ----- Announcements -----
-  await Announcement.create({ title: 'Scheduled Maintenance - Sunday 2:00 AM', body: 'Our systems will undergo scheduled maintenance on Sunday from 2:00 AM to 4:00 AM. The portal may be briefly unavailable during this window.', showDate: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000), createdBy: adminAgent._id, isActive: true });
-  await Announcement.create({ title: 'Welcome to our new Support Center', body: 'We have upgraded our support portal with a new knowledgebase and improved ticket tracking. Please explore and let us know what you think!', createdBy: adminAgent._id, isActive: true });
-  console.log('Announcements seeded.');
+  await Announcement.create({
+    title: "Scheduled Maintenance - Sunday 2:00 AM",
+    body: "Our systems will undergo scheduled maintenance on Sunday from 2:00 AM to 4:00 AM. The portal may be briefly unavailable during this window.",
+    showDate: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000),
+    createdBy: adminAgent._id,
+    isActive: true,
+  });
+  await Announcement.create({
+    title: "Welcome to our new Support Center",
+    body: "We have upgraded our support portal with a new knowledgebase and improved ticket tracking. Please explore and let us know what you think!",
+    createdBy: adminAgent._id,
+    isActive: true,
+  });
+  console.log("Announcements seeded.");
 
   // ----- Filters -----
   await TicketFilter.create({
-    name: 'Route emergency tickets',
-    rules: [{ field: 'priority', method: 'equals', value: 'Emergency' }],
-    actions: [{ action: 'sla', target: String(slaCritical._id) }, { action: 'team', target: String(teamL2._id) }],
-    match: 'all',
-    status: 'active',
+    name: "Route emergency tickets",
+    rules: [{ field: "priority", method: "equals", value: "Emergency" }],
+    actions: [
+      { action: "sla", target: String(slaCritical._id) },
+      { action: "team", target: String(teamL2._id) },
+    ],
+    match: "all",
+    status: "active",
     order: 1,
     createdBy: adminAgent._id,
   });
   await TicketFilter.create({
-    name: 'Billing keywords to billing dept',
-    rules: [{ field: 'subject', method: 'contains', value: 'billing' }, { field: 'subject', method: 'contains', value: 'invoice' }],
-    actions: [{ action: 'dept', target: String(billing._id) }],
-    match: 'any',
-    status: 'active',
+    name: "Billing keywords to billing dept",
+    rules: [
+      { field: "subject", method: "contains", value: "billing" },
+      { field: "subject", method: "contains", value: "invoice" },
+    ],
+    actions: [{ action: "dept", target: String(billing._id) }],
+    match: "any",
+    status: "active",
     order: 2,
     createdBy: adminAgent._id,
   });
-  console.log('Ticket filters seeded.');
+  console.log("Ticket filters seeded.");
 
   // ----- Enterprise: skills & agent skills -----
-  const Skill = require('../models/Skill');
+  const Skill = require("../models/Skill");
   const skillDefs = [
-    { name: 'Network', category: 'Technical', description: 'Connectivity, DNS, VPN, firewalls', level: 3 },
-    { name: 'Billing', category: 'Billing', description: 'Invoicing, payments, refunds', level: 4 },
-    { name: 'Hardware', category: 'Technical', description: 'Servers, desktops, peripherals', level: 3 },
-    { name: 'Software', category: 'Technical', description: 'Applications, OS, mobile', level: 4 },
-    { name: 'Security', category: 'Technical', description: 'Access, vulnerabilities, incidents', level: 4 },
+    {
+      name: "Network",
+      category: "Technical",
+      description: "Connectivity, DNS, VPN, firewalls",
+      level: 3,
+    },
+    {
+      name: "Billing",
+      category: "Billing",
+      description: "Invoicing, payments, refunds",
+      level: 4,
+    },
+    {
+      name: "Hardware",
+      category: "Technical",
+      description: "Servers, desktops, peripherals",
+      level: 3,
+    },
+    {
+      name: "Software",
+      category: "Technical",
+      description: "Applications, OS, mobile",
+      level: 4,
+    },
+    {
+      name: "Security",
+      category: "Technical",
+      description: "Access, vulnerabilities, incidents",
+      level: 4,
+    },
   ];
   const skillIds = {};
   for (const sd of skillDefs) {
-    const s = await Skill.create({ name: sd.name, company: demoCompany._id, category: sd.category, description: sd.description, isActive: true });
+    const s = await Skill.create({
+      name: sd.name,
+      company: demoCompany._id,
+      category: sd.category,
+      description: sd.description,
+      isActive: true,
+    });
     skillIds[sd.name] = s._id;
   }
-  await Agent.updateOne({ email: 'agent@osticket.local' }, { $set: { skills: [skillIds.Network, skillIds.Software] } });
-  await Agent.updateOne({ email: 'jane@osticket.local' }, { $set: { skills: [skillIds.Hardware, skillIds.Security, skillIds.Network] } });
-  await Agent.updateOne({ email: 'billing@osticket.local' }, { $set: { skills: [skillIds.Billing] } });
-  await Agent.updateOne({ email: 'admin@osticket.local' }, { $set: { skills: [skillIds.Software, skillIds.Security] } });
-  console.log('Enterprise skills seeded.');
+  await Agent.updateOne(
+    { email: "agent@osticket.local" },
+    { $set: { skills: [skillIds.Network, skillIds.Software] } },
+  );
+  await Agent.updateOne(
+    { email: "jane@osticket.local" },
+    {
+      $set: {
+        skills: [skillIds.Hardware, skillIds.Security, skillIds.Network],
+      },
+    },
+  );
+  await Agent.updateOne(
+    { email: "billing@osticket.local" },
+    { $set: { skills: [skillIds.Billing] } },
+  );
+  await Agent.updateOne(
+    { email: "admin@osticket.local" },
+    { $set: { skills: [skillIds.Software, skillIds.Security] } },
+  );
+  console.log("Enterprise skills seeded.");
 
   // ----- Enterprise: workflow sample -----
-  const Workflow = require('../models/Workflow');
+  const Workflow = require("../models/Workflow");
   await Workflow.create({
-    name: 'Emergency priority alert',
+    name: "Emergency priority alert",
     company: demoCompany._id,
-    description: 'When a ticket arrives as Emergency priority, notify the department manager and create a follow-up task.',
+    description:
+      "When a ticket arrives as Emergency priority, notify the department manager and create a follow-up task.",
     isActive: true,
-    event: 'ticket.created',
-    triggerFilters: { priority: ['Emergency'] },
+    event: "ticket.created",
+    triggerFilters: { priority: ["Emergency"] },
     actions: [
-      { type: 'notify_dept_manager', config: { message: 'Emergency ticket requires immediate attention' }, delayMinutes: 0 },
-      { type: 'create_task', config: { title: 'Escalation follow-up', description: 'Verify the emergency ticket was actioned within SLA' }, delayMinutes: 30 },
-      { type: 'add_tags', config: { tags: ['emergency'] }, delayMinutes: 0 },
+      {
+        type: "notify_dept_manager",
+        config: { message: "Emergency ticket requires immediate attention" },
+        delayMinutes: 0,
+      },
+      {
+        type: "create_task",
+        config: {
+          title: "Escalation follow-up",
+          description: "Verify the emergency ticket was actioned within SLA",
+        },
+        delayMinutes: 30,
+      },
+      { type: "add_tags", config: { tags: ["emergency"] }, delayMinutes: 0 },
     ],
   });
   await Workflow.create({
-    name: 'Waiting customer reminder',
+    name: "Waiting customer reminder",
     company: demoCompany._id,
-    description: 'When a ticket is set to waiting-on-customer, email them to follow up.',
+    description:
+      "When a ticket is set to waiting-on-customer, email them to follow up.",
     isActive: true,
-    event: 'ticket.status_changed',
-    triggerFilters: { waitingOn: ['customer'] },
+    event: "ticket.status_changed",
+    triggerFilters: { waitingOn: ["customer"] },
     actions: [
-      { type: 'send_email', config: { templateKey: 'waiting_for_customer' }, delayMinutes: 1440 },
+      {
+        type: "send_email",
+        config: { templateKey: "waiting_for_customer" },
+        delayMinutes: 1440,
+      },
     ],
   });
-  console.log('Enterprise workflows seeded.');
+  console.log("Enterprise workflows seeded.");
 
   // ----- Enterprise: CSAT survey + status page + webhooks + API key -----
-  const Survey = require('../models/Survey');
+  const Survey = require("../models/Survey");
   await Survey.create({
-    name: 'Default CSAT',
+    name: "Default CSAT",
     company: demoCompany._id,
-    type: 'csat',
-    question: 'How would you rate your support experience?',
+    type: "csat",
+    question: "How would you rate your support experience?",
     scale: 5,
-    trigger: 'on_close',
+    trigger: "on_close",
     isActive: true,
-    customMessage: 'We value your feedback!',
+    customMessage: "We value your feedback!",
   });
 
-  const StatusPage = require('../models/StatusPage');
+  const StatusPage = require("../models/StatusPage");
   await StatusPage.create({
-    name: 'System Status',
+    name: "System Status",
     company: demoCompany._id,
-    slug: 'status',
-    description: 'Live status of our services',
+    slug: "status",
+    description: "Live status of our services",
     isPublic: true,
-    branding: { primaryColor: '#2563eb' },
+    branding: { primaryColor: "#2563eb" },
     components: [
-      { name: 'API', group: 'Core', status: 'operational', order: 0 },
-      { name: 'Web Portal', group: 'Core', status: 'operational', order: 1 },
-      { name: 'Email', group: 'Core', status: 'operational', order: 2 },
-      { name: 'Payments', group: 'Billing', status: 'operational', order: 3 },
+      { name: "API", group: "Core", status: "operational", order: 0 },
+      { name: "Web Portal", group: "Core", status: "operational", order: 1 },
+      { name: "Email", group: "Core", status: "operational", order: 2 },
+      { name: "Payments", group: "Billing", status: "operational", order: 3 },
     ],
   });
 
-  const Webhook = require('../models/Webhook');
+  const Webhook = require("../models/Webhook");
   await Webhook.create({
-    name: 'Slack #support-alerts',
+    name: "Slack #support-alerts",
     company: demoCompany._id,
-    url: 'https://hooks.slack.com/services/T0000/B0000/XXXX',
-    secret: '',
-    events: ['ticket.created', 'ticket.assigned', 'ticket.breached'],
+    url: "https://hooks.slack.com/services/T0000/B0000/XXXX",
+    secret: "",
+    events: ["ticket.created", "ticket.assigned", "ticket.breached"],
     isActive: true,
   });
 
-  const ApiKey = require('../models/ApiKey');
-  const demoKeyRaw = 'ost_demo_dev_secret_key_0001';
+  const ApiKey = require("../models/ApiKey");
+  const demoKeyRaw = "ost_demo_dev_secret_key_0001";
   await ApiKey.create({
-    name: 'Demo integration',
+    name: "Demo integration",
     company: demoCompany._id,
     keyHash: ApiKey.hashKey(demoKeyRaw),
     keyPrefix: demoKeyRaw.slice(0, 12),
-    scopes: ['*'],
+    scopes: ["*"],
     isActive: true,
   });
-  console.log('Enterprise status page, survey, webhook, API key seeded.');
+  console.log("Enterprise status page, survey, webhook, API key seeded.");
 
   // ----- Enterprise: contract + entitlements for Acme Corp -----
-  const Contract = require('../models/Contract');
-  const Entitlement = require('../models/Entitlement');
+  const Contract = require("../models/Contract");
+  const Entitlement = require("../models/Entitlement");
   const acmeContract = await Contract.create({
-    number: 'CTR-ACME-0001',
-    name: 'Acme Premier Support',
+    number: "CTR-ACME-0001",
+    name: "Acme Premier Support",
     company: demoCompany._id,
     organization: acme._id,
     startDate: daysAgo(-60),
     endDate: new Date(Date.now() + 305 * 24 * 60 * 60 * 1000),
-    status: 'active',
+    status: "active",
     sla: slaCritical._id,
     autoRenew: true,
-    renewalType: 'auto',
+    renewalType: "auto",
   });
-  await Entitlement.create({ name: 'Ticket quota', contract: acmeContract._id, company: demoCompany._id, limitType: 'count', limitValue: 500, window: 'month' });
-  await Entitlement.create({ name: 'Priority access', contract: acmeContract._id, company: demoCompany._id, limitType: 'unlimited' });
-  console.log('Enterprise contracts & entitlements seeded.');
+  await Entitlement.create({
+    name: "Ticket quota",
+    contract: acmeContract._id,
+    company: demoCompany._id,
+    limitType: "count",
+    limitValue: 500,
+    window: "month",
+  });
+  await Entitlement.create({
+    name: "Priority access",
+    contract: acmeContract._id,
+    company: demoCompany._id,
+    limitType: "unlimited",
+  });
+  console.log("Enterprise contracts & entitlements seeded.");
 
   // ----- Enterprise: service catalog -----
-  const ServiceCatalogItem = require('../models/ServiceCatalogItem');
+  const ServiceCatalogItem = require("../models/ServiceCatalogItem");
   const catalogSeed = [
-    { name: 'Standard Support', description: 'Email and portal support for eligible users.', category: 'Support', sla: sla24._id, priority: 'Normal', estimatedTime: '~8 hours' },
-    { name: 'Priority Support', description: 'Priority queue with faster response SLAs.', category: 'Support', sla: slaCritical._id, priority: 'High', estimatedTime: '~2 hours' },
-    { name: 'Live Chat', description: 'Real-time chat with a support agent.', category: 'Support', priority: 'Normal', estimatedTime: 'Immediate' },
-    { name: 'Onboarding Consultation', description: '1:1 onboarding session with your account manager.', category: 'Services', priority: 'Normal', estimatedTime: '~48 hours', price: 250, needsPayment: true },
-    { name: 'Self-Service Knowledgebase', description: '24x7 access to guides and FAQs.', category: 'Support', priority: 'Normal', estimatedTime: '24x7' },
+    {
+      name: "Standard Support",
+      description: "Email and portal support for eligible users.",
+      category: "Support",
+      sla: sla24._id,
+      priority: "Normal",
+      estimatedTime: "~8 hours",
+    },
+    {
+      name: "Priority Support",
+      description: "Priority queue with faster response SLAs.",
+      category: "Support",
+      sla: slaCritical._id,
+      priority: "High",
+      estimatedTime: "~2 hours",
+    },
+    {
+      name: "Live Chat",
+      description: "Real-time chat with a support agent.",
+      category: "Support",
+      priority: "Normal",
+      estimatedTime: "Immediate",
+    },
+    {
+      name: "Onboarding Consultation",
+      description: "1:1 onboarding session with your account manager.",
+      category: "Services",
+      priority: "Normal",
+      estimatedTime: "~48 hours",
+      price: 250,
+      needsPayment: true,
+    },
+    {
+      name: "Self-Service Knowledgebase",
+      description: "24x7 access to guides and FAQs.",
+      category: "Support",
+      priority: "Normal",
+      estimatedTime: "24x7",
+    },
   ];
   for (const c of catalogSeed) {
-    await ServiceCatalogItem.create({ ...c, company: demoCompany._id, visibleInPortal: true, isActive: true, sortOrder: catalogSeed.indexOf(c) });
+    await ServiceCatalogItem.create({
+      ...c,
+      company: demoCompany._id,
+      visibleInPortal: true,
+      isActive: true,
+      sortOrder: catalogSeed.indexOf(c),
+    });
   }
-  console.log('Enterprise service catalog seeded.');
+  console.log("Enterprise service catalog seeded.");
 
   // ----- Enterprise: CMDB assets with dependencies -----
-  const Asset = require('../models/Asset');
-  const Dependency = require('../models/Dependency');
+  const Asset = require("../models/Asset");
+  const Dependency = require("../models/Dependency");
   const prodServer = await Asset.create({
-    name: 'prod-web-01',
+    name: "prod-web-01",
     company: demoCompany._id,
     organization: acme._id,
-    type: 'server',
-    serial: 'SN-PROD-1001',
-    ip: '10.0.1.10',
-    hostname: 'prod-web-01.acme.internal',
-    environment: 'production',
-    criticality: 'critical',
-    status: 'active',
+    type: "server",
+    serial: "SN-PROD-1001",
+    ip: "10.0.1.10",
+    hostname: "prod-web-01.acme.internal",
+    environment: "production",
+    criticality: "critical",
+    status: "active",
     purchaseDate: daysAgo(400),
   });
   const dbServer = await Asset.create({
-    name: 'prod-db-01',
+    name: "prod-db-01",
     company: demoCompany._id,
     organization: acme._id,
-    type: 'server',
-    serial: 'SN-PROD-1002',
-    ip: '10.0.1.11',
-    hostname: 'prod-db-01.acme.internal',
-    environment: 'production',
-    criticality: 'critical',
-    status: 'active',
+    type: "server",
+    serial: "SN-PROD-1002",
+    ip: "10.0.1.11",
+    hostname: "prod-db-01.acme.internal",
+    environment: "production",
+    criticality: "critical",
+    status: "active",
     purchaseDate: daysAgo(400),
   });
   const coreSwitch = await Asset.create({
-    name: 'core-sw-01',
+    name: "core-sw-01",
     company: demoCompany._id,
     organization: acme._id,
-    type: 'network',
-    serial: 'SN-PROD-1003',
-    ip: '10.0.1.1',
-    environment: 'production',
-    criticality: 'critical',
-    status: 'active',
+    type: "network",
+    serial: "SN-PROD-1003",
+    ip: "10.0.1.1",
+    environment: "production",
+    criticality: "critical",
+    status: "active",
     purchaseDate: daysAgo(700),
   });
-  await Dependency.create({ company: demoCompany._id, from: prodServer._id, to: dbServer._id, relationshipType: 'connects_to' });
-  await Dependency.create({ company: demoCompany._id, from: prodServer._id, to: coreSwitch._id, relationshipType: 'connects_to' });
-  await Dependency.create({ company: demoCompany._id, from: dbServer._id, to: coreSwitch._id, relationshipType: 'connects_to' });
-  console.log('Enterprise CMDB seeded.');
+  await Dependency.create({
+    company: demoCompany._id,
+    from: prodServer._id,
+    to: dbServer._id,
+    relationshipType: "connects_to",
+  });
+  await Dependency.create({
+    company: demoCompany._id,
+    from: prodServer._id,
+    to: coreSwitch._id,
+    relationshipType: "connects_to",
+  });
+  await Dependency.create({
+    company: demoCompany._id,
+    from: dbServer._id,
+    to: coreSwitch._id,
+    relationshipType: "connects_to",
+  });
+  console.log("Enterprise CMDB seeded.");
 
   // ----- Enterprise: incident + problem + change + ticket links -----
-  const Incident = require('../models/helpdesk/incidents/Incident');
-  const Problem = require('../models/helpdesk/incidents/Problem');
-  const Change = require('../models/helpdesk/incidents/Change');
-  const TicketLink = require('../models/helpdesk/tickets/TicketLink');
-  const outageTicket = await Ticket.findOne({ subject: 'Production server down - outage' });
+  const Incident = require("../models/helpdesk/incidents/Incident");
+  const Problem = require("../models/helpdesk/incidents/Problem");
+  const Change = require("../models/helpdesk/incidents/Change");
+  const TicketLink = require("../models/helpdesk/tickets/TicketLink");
+  const outageTicket = await Ticket.findOne({
+    subject: "Production server down - outage",
+  });
   const incident = await Incident.create({
-    number: 'INC-0001',
+    number: "INC-0001",
     company: demoCompany._id,
-    title: 'Production server outage',
-    description: 'Production web server unreachable for 4+ hours, impacting all customers.',
-    priority: 'P1',
-    status: 'resolved',
+    title: "Production server outage",
+    description:
+      "Production web server unreachable for 4+ hours, impacting all customers.",
+    priority: "P1",
+    status: "resolved",
     startedAt: daysAgo(5),
     resolvedAt: daysAgo(4.5),
     affectedTickets: [outageTicket._id],
-    affectedServices: ['Web Portal', 'API'],
+    affectedServices: ["Web Portal", "API"],
   });
   await Problem.create({
-    number: 'PRB-0001',
+    number: "PRB-0001",
     company: demoCompany._id,
-    title: 'Recurring core switch instability',
-    description: 'Intermittent packet loss on core-sw-01 causing periodic outages.',
-    priority: 'High',
-    status: 'investigation',
+    title: "Recurring core switch instability",
+    description:
+      "Intermittent packet loss on core-sw-01 causing periodic outages.",
+    priority: "High",
+    status: "investigation",
     relatedTicket: outageTicket._id,
     relatedIncident: incident._id,
     relatedAsset: coreSwitch._id,
   });
   await Change.create({
-    number: 'CHG-0001',
+    number: "CHG-0001",
     company: demoCompany._id,
-    title: 'Upgrade core-sw-01 firmware',
-    description: 'Apply vendor firmware patch to resolve intermittent packet loss.',
-    type: 'standard',
-    priority: 'High',
-    status: 'scheduled',
+    title: "Upgrade core-sw-01 firmware",
+    description:
+      "Apply vendor firmware patch to resolve intermittent packet loss.",
+    type: "standard",
+    priority: "High",
+    status: "scheduled",
     windowStart: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000),
-    windowEnd: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000 + 2 * 60 * 60 * 1000),
-    risk: 'medium',
-    implementationPlan: 'Backup config, apply firmware, validate connectivity, rollback if degraded.',
-    rollbackPlan: 'Restore backed-up config via console access.',
+    windowEnd: new Date(
+      Date.now() + 3 * 24 * 60 * 60 * 1000 + 2 * 60 * 60 * 1000,
+    ),
+    risk: "medium",
+    implementationPlan:
+      "Backup config, apply firmware, validate connectivity, rollback if degraded.",
+    rollbackPlan: "Restore backed-up config via console access.",
   });
-  await TicketLink.create({ company: demoCompany._id, from: outageTicket._id, to: firstTicket._id, type: 'related', createdBy: adminAgent._id });
-  console.log('Enterprise incident/problem/change/linked tickets seeded.');
+  await TicketLink.create({
+    company: demoCompany._id,
+    from: outageTicket._id,
+    to: firstTicket._id,
+    type: "related",
+    createdBy: adminAgent._id,
+  });
+  console.log("Enterprise incident/problem/change/linked tickets seeded.");
 
   // ----- System settings -----
-  await SystemSetting.setSetting('company.name', 'My Support Center');
-  await SystemSetting.setSetting('company.email', 'support@osticket.local');
-  await SystemSetting.setSetting('company.url', 'https://osticket.local');
-  await SystemSetting.setSetting('system.defaultDept', String(support._id));
-  await SystemSetting.setSetting('system.defaultSla', String(slaBusiness._id));
-  await SystemSetting.setSetting('system.defaultPriority', 'Normal');
-  await SystemSetting.setSetting('system.autoLockTickets', true);
-  await SystemSetting.setSetting('system.ticketLockMinutes', 5);
-  await SystemSetting.setSetting('system.allowTicketReopen', true);
-  await SystemSetting.setSetting('system.emailToTicket', require('../config/config').email.user);
-  await SystemSetting.setSetting('tickets.autoResponder', true);
-  await SystemSetting.setSetting('tickets.autoAssign', true);
-  await SystemSetting.setSetting('tickets.notifyNewTicketToDept', true);
-  await SystemSetting.setSetting('autoresponder.enabled', true);
-  await SystemSetting.setSetting('autoresponder.subject', 'Ticket received - [ticket.number]');
-  await SystemSetting.setSetting('alerts.notifyNewTicket', true);
-  await SystemSetting.setSetting('alerts.notifyAssignment', true);
-  await SystemSetting.setSetting('auth.registrationEnabled', true);
-  await SystemSetting.setSetting('auth.allowGuestTickets', true);
-  await SystemSetting.setSetting('auth.passwordMinLength', 8);
-  await SystemSetting.setSetting('schedules.timezone', 'Asia/Kolkata');
-  await SystemSetting.setSetting('routing.algorithm', 'skill_based');
-  await SystemSetting.setSetting('csat.enabled', true);
-  console.log('Settings seeded.');
+  await SystemSetting.setSetting("company.name", "My Support Center");
+  await SystemSetting.setSetting("company.email", "support@osticket.local");
+  await SystemSetting.setSetting("company.url", "https://osticket.local");
+  await SystemSetting.setSetting("system.defaultDept", String(support._id));
+  await SystemSetting.setSetting("system.defaultSla", String(slaBusiness._id));
+  await SystemSetting.setSetting("system.defaultPriority", "Normal");
+  await SystemSetting.setSetting("system.autoLockTickets", true);
+  await SystemSetting.setSetting("system.ticketLockMinutes", 5);
+  await SystemSetting.setSetting("system.allowTicketReopen", true);
+  await SystemSetting.setSetting(
+    "system.emailToTicket",
+    require("../config/config").email.user,
+  );
+  await SystemSetting.setSetting("tickets.autoResponder", true);
+  await SystemSetting.setSetting("tickets.autoAssign", true);
+  await SystemSetting.setSetting("tickets.notifyNewTicketToDept", true);
+  await SystemSetting.setSetting("autoresponder.enabled", true);
+  await SystemSetting.setSetting(
+    "autoresponder.subject",
+    "Ticket received - [ticket.number]",
+  );
+  await SystemSetting.setSetting("alerts.notifyNewTicket", true);
+  await SystemSetting.setSetting("alerts.notifyAssignment", true);
+  await SystemSetting.setSetting("auth.registrationEnabled", true);
+  await SystemSetting.setSetting("auth.allowGuestTickets", true);
+  await SystemSetting.setSetting("auth.passwordMinLength", 8);
+  await SystemSetting.setSetting("schedules.timezone", "Asia/Kolkata");
+  await SystemSetting.setSetting("routing.algorithm", "skill_based");
+  await SystemSetting.setSetting("csat.enabled", true);
+  console.log("Settings seeded.");
 
   // ----- Assign all seeded data to the demo company -----
-  const companyScoped = [Agent, User, Ticket, TicketThread, Task, Organization, Department, HelpTopic, SlaPlan, Team, Role, CannedResponse, FaqCategory, Faq, Announcement, TicketFilter, Notification, require('../models/Skill'), require('../models/Workflow'), require('../models/Survey'), require('../models/StatusPage'), require('../models/StatusIncident'), require('../models/Webhook'), require('../models/ApiKey'), require('../models/Contract'), require('../models/Entitlement'), require('../models/Asset'), require('../models/Dependency'), require('../models/helpdesk/incidents/Incident'), require('../models/helpdesk/incidents/Problem'), require('../models/helpdesk/incidents/Change'), require('../models/helpdesk/tickets/TicketLink'), require('../models/Approval'), require('../models/Conversation'), require('../models/ChatMessage'), require('../models/CallLog'), require('../models/ServiceCatalogItem'), require('../models/Integration'), require('../models/AuditEvent'), require('../models/HealthScore')];
+  const companyScoped = [
+    Agent,
+    User,
+    Ticket,
+    TicketThread,
+    Task,
+    Organization,
+    Department,
+    HelpTopic,
+    SlaPlan,
+    Team,
+    Role,
+    CannedResponse,
+    FaqCategory,
+    Faq,
+    Announcement,
+    TicketFilter,
+    Notification,
+    require("../models/Skill"),
+    require("../models/Workflow"),
+    require("../models/Survey"),
+    require("../models/StatusPage"),
+    require("../models/StatusIncident"),
+    require("../models/Webhook"),
+    require("../models/ApiKey"),
+    require("../models/Contract"),
+    require("../models/Entitlement"),
+    require("../models/Asset"),
+    require("../models/Dependency"),
+    require("../models/helpdesk/incidents/Incident"),
+    require("../models/helpdesk/incidents/Problem"),
+    require("../models/helpdesk/incidents/Change"),
+    require("../models/helpdesk/tickets/TicketLink"),
+    require("../models/Approval"),
+    require("../models/Conversation"),
+    require("../models/ChatMessage"),
+    require("../models/CallLog"),
+    require("../models/ServiceCatalogItem"),
+    require("../models/Integration"),
+    require("../models/AuditEvent"),
+    require("../models/HealthScore"),
+  ];
   for (const M of companyScoped) {
     await M.updateMany({ company: null }, { company: demoCompany._id });
   }
-  console.log('Seeded data assigned to demo company.');
+  console.log("Seeded data assigned to demo company.");
 
-  console.log('');
-  console.log('==============================================');
-  console.log('Seed completed successfully!');
-  console.log('----------------------------------------------');
-  console.log('Demo logins:');
-  console.log('  Super Admin Panel  superadmin@osticket.local / SuperAdmin@123');
-  console.log('  Customer Portal     customer@osticket.local / Customer@123');
-  console.log('  Agent Panel         agent@osticket.local / Agent@123');
-  console.log('  Admin Panel         admin@osticket.local / Admin@123');
-  console.log('==============================================');
+  console.log("");
+  console.log("==============================================");
+  console.log("Seed completed successfully!");
+  console.log("----------------------------------------------");
+  console.log("Demo logins:");
+  console.log(
+    "  Super Admin Panel  superadmin@osticket.local / SuperAdmin@123",
+  );
+  console.log("  Customer Portal     customer@osticket.local / Customer@123");
+  console.log("  Agent Panel         agent@osticket.local / Agent@123");
+  console.log("  Admin Panel         admin@osticket.local / Admin@123");
+  console.log("==============================================");
 
   await mongoose.disconnect();
 };
 
 run().catch((err) => {
-  console.error('Seed failed:', err.message);
+  console.error("Seed failed:", err.message);
   process.exit(1);
 });

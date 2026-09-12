@@ -1,7 +1,7 @@
-const path = require('path');
-const fs = require('fs');
+const path = require("path");
+const fs = require("fs");
 
-const dir = path.join(__dirname, '../logs');
+const dir = path.join(__dirname, "../logs");
 try {
   fs.mkdirSync(dir, { recursive: true });
 } catch (err) {
@@ -20,16 +20,16 @@ function write(level, msg) {
 }
 
 function log(level, msg) {
-  if (levels[level] === undefined) level = 'info';
+  if (levels[level] === undefined) level = "info";
   const line = `[${new Date().toISOString()}] [${level.toUpperCase()}] ${msg}`;
-  if (level === 'error') console.error(line);
+  if (level === "error") console.error(line);
   else console.log(line);
   write(level, msg);
 }
 
 module.exports = {
-  error: (msg) => log('error', msg),
-  warn: (msg) => log('warn', msg),
-  info: (msg) => log('info', msg),
-  debug: (msg) => log('debug', msg),
+  error: (msg) => log("error", msg),
+  warn: (msg) => log("warn", msg),
+  info: (msg) => log("info", msg),
+  debug: (msg) => log("debug", msg),
 };

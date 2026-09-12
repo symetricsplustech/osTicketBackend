@@ -1,18 +1,18 @@
-const Notification = require('../models/Notification');
-const Agent = require('../models/Agent');
-const SystemSetting = require('../models/SystemSetting');
-const { getIO } = require('../config/socket');
+const Notification = require("../models/Notification");
+const Agent = require("../models/Agent");
+const SystemSetting = require("../models/SystemSetting");
+const { getIO } = require("../config/socket");
 
 const EVENT_TO_SETTING = {
-  new_ticket: 'notifyNewTicket',
-  transfer: 'notifyTransfer',
-  reply: 'notifyMessage',
-  new_message: 'notifyMessage',
-  assignment: 'notifyAssignment',
-  overdue: 'notifyOverdue',
-  escalation: 'notifyEscalation',
-  status_change: 'notifyClosed',
-  closed: 'notifyClosed',
+  new_ticket: "notifyNewTicket",
+  transfer: "notifyTransfer",
+  reply: "notifyMessage",
+  new_message: "notifyMessage",
+  assignment: "notifyAssignment",
+  overdue: "notifyOverdue",
+  escalation: "notifyEscalation",
+  status_change: "notifyClosed",
+  closed: "notifyClosed",
 };
 
 let alertCache = null;
@@ -33,15 +33,28 @@ const isAlertEnabled = async (type) => {
   return alertCache[key] !== false;
 };
 
-const notifyAgent = async ({ agentId, type, message, link, ticket, company }) => {
+const notifyAgent = async ({
+  agentId,
+  type,
+  message,
+  link,
+  ticket,
+  company,
+}) => {
   if (!agentId) return;
   if (!(await isAlertEnabled(type))) return;
   try {
-    const pref = ((await Agent.findById(agentId).select('notificationPrefs email company').lean()) || {});
-    const mode = (pref.notificationPrefs || {})[type] || (pref.notificationPrefs || {})['*'] || 'both';
-    if (mode === 'off') return;
+    const pref =
+      (await Agent.findById(agentId)
+        .select("notificationPrefs email company")
+        .lean()) || {};
+    const mode =
+      (pref.notificationPrefs || {})[type] ||
+      (pref.notificationPrefs || {})["*"] ||
+      "both";
+    if (mode === "off") return;
     await Notification.create({
-      recipientType: 'agent',
+      recipientType: "agent",
       recipient: agentId,
       company: company || null,
       type,
@@ -50,28 +63,53 @@ const notifyAgent = async ({ agentId, type, message, link, ticket, company }) =>
       ticket,
     });
     const io = getIO();
-    if (io) io.to(`agent:${agentId}`).emit('notification', { type, message, link, ticket });
-    if (mode === 'email' || mode === 'both') {
-      const emailService = require('./email.service');
-      const quietHours = require('./quietHours.service');
-      const sendEmail = () => emailService.sendFromTemplate({
-        key: 'notification',
-        to: pref.email,
-        data: { message, link, type, agent: { name: pref.name || '' }, ticketNumber: ticket && typeof ticket === 'object' && ticket.number ? ticket.number : '' },
-        event: 'notification',
-        ticket: ticket && typeof ticket === 'object' ? ticket._id || null : null,
-        company,
-      }).catch(() => {});
-      // §2.36 quiet-hours: non-urgent agent emails are deferred during curfew
-      await quietHours.sendOrDefer({
-        channel: 'email',
+    if (io)
+      io.to(`agent:${agentId}`).emit("notification", {
         type,
-        recipientType: 'agent',
-        recipient: agentId,
-        payload: { templateKey: 'notification', to: pref.email, data: { message, link, type } },
-        sendFn: sendEmail,
-        tenantId: company || null,
-      }).catch(() => {});
+        message,
+        link,
+        ticket,
+      });
+    if (mode === "email" || mode === "both") {
+      const emailService = require("./email.service");
+      const quietHours = require("./quietHours.service");
+      const sendEmail = () =>
+        emailService
+          .sendFromTemplate({
+            key: "notification",
+            to: pref.email,
+            data: {
+              message,
+              link,
+              type,
+              agent: { name: pref.name || "" },
+              ticketNumber:
+                ticket && typeof ticket === "object" && ticket.number
+                  ? ticket.number
+                  : "",
+            },
+            event: "notification",
+            ticket:
+              ticket && typeof ticket === "object" ? ticket._id || null : null,
+            company,
+          })
+          .catch(() => {});
+      // §2.36 quiet-hours: non-urgent agent emails are deferred during curfew
+      await quietHours
+        .sendOrDefer({
+          channel: "email",
+          type,
+          recipientType: "agent",
+          recipient: agentId,
+          payload: {
+            templateKey: "notification",
+            to: pref.email,
+            data: { message, link, type },
+          },
+          sendFn: sendEmail,
+          tenantId: company || null,
+        })
+        .catch(() => {});
     }
   } catch (err) {
     // swallow notification errors
@@ -82,7 +120,7 @@ const notifyUser = async ({ userId, type, message, link, ticket, company }) => {
   if (!userId) return;
   try {
     await Notification.create({
-      recipientType: 'user',
+      recipientType: "user",
       recipient: userId,
       company: company || null,
       type,
@@ -91,17 +129,30 @@ const notifyUser = async ({ userId, type, message, link, ticket, company }) => {
       ticket,
     });
     const io = getIO();
-    if (io) io.to(`user:${userId}`).emit('notification', { type, message, link, ticket });
+    if (io)
+      io.to(`user:${userId}`).emit("notification", {
+        type,
+        message,
+        link,
+        ticket,
+      });
   } catch (err) {
     // swallow notification errors
   }
 };
 
-const notifySuperAdmin = async ({ superAdminId, type, message, link, company, ticket }) => {
+const notifySuperAdmin = async ({
+  superAdminId,
+  type,
+  message,
+  link,
+  company,
+  ticket,
+}) => {
   if (!superAdminId) return;
   try {
     await Notification.create({
-      recipientType: 'superadmin',
+      recipientType: "superadmin",
       recipient: superAdminId,
       company: company || null,
       type,
@@ -110,7 +161,14 @@ const notifySuperAdmin = async ({ superAdminId, type, message, link, company, ti
       ticket: ticket || null,
     });
     const io = getIO();
-    if (io) io.to(`superadmin:${superAdminId}`).emit('notification', { type, message, link, company, ticket });
+    if (io)
+      io.to(`superadmin:${superAdminId}`).emit("notification", {
+        type,
+        message,
+        link,
+        company,
+        ticket,
+      });
   } catch (err) {
     // swallow notification errors
   }
@@ -118,12 +176,15 @@ const notifySuperAdmin = async ({ superAdminId, type, message, link, company, ti
 
 const notifyAdminRoom = async ({ type, message, link, ticket, company }) => {
   try {
-    const agents = await Agent.find({ isActive: true, ...(company ? { company } : {}) }).populate('role', 'isAdmin');
+    const agents = await Agent.find({
+      isActive: true,
+      ...(company ? { company } : {}),
+    }).populate("role", "isAdmin");
     const io = getIO();
     for (const a of agents) {
       if (a.isAdmin || a.role?.isAdmin) {
         await Notification.create({
-          recipientType: 'agent',
+          recipientType: "agent",
           recipient: a._id,
           company: company || null,
           type,
@@ -131,10 +192,17 @@ const notifyAdminRoom = async ({ type, message, link, ticket, company }) => {
           link,
           ticket,
         });
-        if (io) io.to(`agent:${a._id}`).emit('notification', { type, message, link, ticket });
+        if (io)
+          io.to(`agent:${a._id}`).emit("notification", {
+            type,
+            message,
+            link,
+            ticket,
+          });
       }
     }
-    if (io) io.to('admin:room').emit('notification', { type, message, link, ticket });
+    if (io)
+      io.to("admin:room").emit("notification", { type, message, link, ticket });
   } catch (err) {
     // swallow
   }

@@ -1,36 +1,49 @@
-const mongoose = require('mongoose');
+const mongoose = require("mongoose");
 
 const filterRuleSchema = new mongoose.Schema(
   {
     field: { type: String, required: true }, // subject, from, name, body, topic, priority
-    method: { type: String, enum: ['contains', 'equals', 'regex', 'starts_with', 'ends_with'], default: 'contains' },
-    value: { type: String, default: '' },
+    method: {
+      type: String,
+      enum: ["contains", "equals", "regex", "starts_with", "ends_with"],
+      default: "contains",
+    },
+    value: { type: String, default: "" },
   },
-  { _id: false }
+  { _id: false },
 );
 
 const filterActionSchema = new mongoose.Schema(
   {
     action: { type: String, required: true }, // dept, agent, team, priority, sla, reject, canned_response, topic
-    target: { type: String, default: '' },
+    target: { type: String, default: "" },
   },
-  { _id: false }
+  { _id: false },
 );
 
 const ticketFilterSchema = new mongoose.Schema(
   {
     name: { type: String, required: true, trim: true },
-    company: { type: mongoose.Schema.Types.ObjectId, ref: 'Company', default: null, index: true },
+    company: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Company",
+      default: null,
+      index: true,
+    },
     rules: { type: [filterRuleSchema], default: [] },
     actions: { type: [filterActionSchema], default: [] },
-    match: { type: String, enum: ['all', 'any'], default: 'all' },
-    status: { type: String, enum: ['active', 'disabled'], default: 'active' },
+    match: { type: String, enum: ["all", "any"], default: "all" },
+    status: { type: String, enum: ["active", "disabled"], default: "active" },
     order: { type: Number, default: 0 },
-    createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Agent', default: null },
+    createdBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Agent",
+      default: null,
+    },
   },
-  { timestamps: true }
+  { timestamps: true },
 );
 
 ticketFilterSchema.index({ company: 1, name: 1 }, { unique: true });
 
-module.exports = mongoose.model('TicketFilter', ticketFilterSchema);
+module.exports = mongoose.model("TicketFilter", ticketFilterSchema);

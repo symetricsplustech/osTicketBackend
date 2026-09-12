@@ -1,9 +1,14 @@
-const asyncHandler = require('../utils/asyncHandler');
-const { globalSearch } = require('../services/search.service');
+const asyncHandler = require("../utils/asyncHandler");
+const { globalSearch } = require("../services/search.service");
 
 exports.search = asyncHandler(async (req, res) => {
-  const q = String(req.query.q || '').trim();
-  if (!q) return res.json({ query: { text: '', filters: {} }, results: [], total: 0 });
+  const q = String(req.query.q || "").trim();
+  if (!q)
+    return res.json({
+      query: { text: "", filters: {} },
+      results: [],
+      total: 0,
+    });
 
   const result = await globalSearch({
     company: req.companyId,

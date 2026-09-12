@@ -18,8 +18,8 @@
  *   - Unregistered routes default to no permission requirement (open).
  */
 
-const asyncHandler = require('../utils/asyncHandler');
-const ApiError = require('../utils/ApiError');
+const asyncHandler = require("../utils/asyncHandler");
+const ApiError = require("../utils/ApiError");
 
 const routePermissionMap = new Map();
 
@@ -39,8 +39,8 @@ function registerRoute(path, method, requiredPermission) {
  * Normalize a path+method key for consistent lookup.
  */
 function normalizeKey(path, method) {
-  const normalizedPath = (path || '').trim().toLowerCase();
-  const normalizedMethod = (method || '').trim().toUpperCase();
+  const normalizedPath = (path || "").trim().toLowerCase();
+  const normalizedMethod = (method || "").trim().toUpperCase();
   return `${normalizedMethod} ${normalizedPath}`;
 }
 
@@ -94,8 +94,8 @@ function validateAllRoutes({ registeredRoutes } = {}) {
  * @returns {string|null} The required permission, or null if not registered
  */
 function lookupRequiredPermissionFromReq(req) {
-  const path = (req.originalUrl || req.path || '').trim().toLowerCase();
-  const method = (req.method || '').trim().toUpperCase();
+  const path = (req.originalUrl || req.path || "").trim().toLowerCase();
+  const method = (req.method || "").trim().toUpperCase();
   const key = `${method} ${path}`;
   return routePermissionMap.get(key) || null;
 }
@@ -120,11 +120,11 @@ function checkRoutePermissionMiddleware({ permissionOverride } = {}) {
       return next();
     }
 
-    const { authorize } = require('../services/authorization.service');
+    const { authorize } = require("../services/authorization.service");
     const principal = req.agent || req.user;
 
     if (!principal) {
-      return next(new ApiError(401, 'Not authorized'));
+      return next(new ApiError(401, "Not authorized"));
     }
 
     const result = await authorize({
@@ -134,8 +134,10 @@ function checkRoutePermissionMiddleware({ permissionOverride } = {}) {
       req,
     });
 
-    if (result.decision !== 'ALLOW') {
-      return next(new ApiError(403, 'You do not have permission for this action'));
+    if (result.decision !== "ALLOW") {
+      return next(
+        new ApiError(403, "You do not have permission for this action"),
+      );
     }
 
     req.authz = result;
@@ -159,13 +161,13 @@ function withPermissionRegistry(router, defaultPermission) {
   const originalUse = router.use.bind(router);
   router.use = (...args) => {
     const [route] = args;
-    if (route && typeof route === 'object' && route.stack) {
+    if (route && typeof route === "object" && route.stack) {
       for (const layer of route.stack) {
         if (layer.route) {
           const path = layer.route.path;
           const methods = layer.route.methods || {};
           for (const method of Object.keys(methods)) {
-            if (method.toUpperCase() !== 'ALL') {
+            if (method.toUpperCase() !== "ALL") {
               registerRoute(path, method, defaultPermission);
             }
           }
@@ -185,35 +187,35 @@ function withPermissionRegistry(router, defaultPermission) {
  */
 function registerAllRoutes(app) {
   const routeFiles = [
-    './routes/helpdesk/public',
-    './routes/auth.routes',
-    './routes/user.routes',
-    './routes/helpdesk/tickets/customer.routes',
-    './routes/helpdesk/tickets/agent.routes',
-    './routes/admin.routes',
-    './routes/superadmin.routes',
-    './routes/helpdesk/knowledge',
-    './routes/crm.routes',
-    './routes/itom.routes',
-    './routes/projects.routes',
-    './routes/hr.routes',
-    './routes/fieldservice.routes',
-    './routes/product.routes',
-    './routes/license.routes',
-    './routes/stockroom.routes',
-    './routes/customerService.routes',
-    './routes/platform.routes',
-    './routes/bulk.routes',
-    './routes/rbac.routes',
-    './routes/enterprise.routes',
-    './routes/i18n.routes',
-    './routes/remaining.routes',
-    './routes/ops.routes',
-    './routes/fillgaps.routes',
-    './routes/fillgaps2.routes',
-    './routes/fillgaps3.routes',
-    './routes/crud.routes',
-    './routes/backendGaps.routes',
+    "./routes/helpdesk/public",
+    "./routes/auth.routes",
+    "./routes/user.routes",
+    "./routes/helpdesk/tickets/customer.routes",
+    "./routes/helpdesk/tickets/agent.routes",
+    "./routes/admin.routes",
+    "./routes/superadmin.routes",
+    "./routes/helpdesk/knowledge",
+    "./routes/crm.routes",
+    "./routes/itom.routes",
+    "./routes/projects.routes",
+    "./routes/hr.routes",
+    "./routes/fieldservice.routes",
+    "./routes/product.routes",
+    "./routes/license.routes",
+    "./routes/stockroom.routes",
+    "./routes/customerService.routes",
+    "./routes/platform.routes",
+    "./routes/bulk.routes",
+    "./routes/rbac.routes",
+    "./routes/enterprise.routes",
+    "./routes/i18n.routes",
+    "./routes/remaining.routes",
+    "./routes/ops.routes",
+    "./routes/fillgaps.routes",
+    "./routes/fillgaps2.routes",
+    "./routes/fillgaps3.routes",
+    "./routes/crud.routes",
+    "./routes/backendGaps.routes",
   ];
 
   for (const routeFile of routeFiles) {
@@ -225,7 +227,7 @@ function registerAllRoutes(app) {
             const path = layer.route.path;
             const methods = layer.route.methods || {};
             for (const method of Object.keys(methods)) {
-              if (method.toUpperCase() !== 'ALL') {
+              if (method.toUpperCase() !== "ALL") {
                 const perm = inferRequiredPermission(path, method);
                 if (perm) {
                   registerRoute(path, method, perm);
@@ -251,25 +253,25 @@ function registerAllRoutes(app) {
  * @returns {string|null} The inferred permission key, or null if cannot be inferred
  */
 function inferRequiredPermission(path, method) {
-  const pathLower = (path || '').toLowerCase();
-  const methodUpper = (method || '').toUpperCase();
+  const pathLower = (path || "").toLowerCase();
+  const methodUpper = (method || "").toUpperCase();
 
   // Remove leading slash
-  const cleanPath = pathLower.replace(/^\/+/, '');
+  const cleanPath = pathLower.replace(/^\/+/, "");
 
   // Map HTTP methods to permission prefixes
   const methodPrefix = {
-    GET: 'view',
-    POST: 'create',
-    PUT: 'update',
-    PATCH: 'update',
-    DELETE: 'delete',
+    GET: "view",
+    POST: "create",
+    PUT: "update",
+    PATCH: "update",
+    DELETE: "delete",
   }[methodUpper];
 
   if (!methodPrefix) return null;
 
   // Try to extract resource name from path
-  const parts = cleanPath.split('/').filter(Boolean);
+  const parts = cleanPath.split("/").filter(Boolean);
   if (parts.length === 0) return null;
 
   const resource = parts[0]; // first path segment is the resource name

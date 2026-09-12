@@ -1,52 +1,96 @@
-const User = require('../models/User');
-const Ticket = require('../models/helpdesk/tickets/Ticket');
-const TicketThread = require('../models/helpdesk/tickets/TicketThread');
-const HelpTopic = require('../models/HelpTopic');
-const Department = require('../models/Department');
-const Team = require('../models/Team');
-const Agent = require('../models/Agent');
-const TicketFilter = require('../models/helpdesk/tickets/TicketFilter');
-const SystemSetting = require('../models/SystemSetting');
-const { generateConfirmationToken } = require('../utils/generators');
-const { nextTicketNumber } = require('./numbering.service');
-const { computeDueDate, resumeSla } = require('./sla.service');
-const emailService = require('./email.service');
-const { notifyAgent, notifyUser, notifyAdminRoom } = require('./notification.service');
-const { getIO } = require('../config/socket');
-const { emit } = require('./events');
-const config = require('../config/config');
-const logger = require('../utils/logger');
-const auditService = require('./audit.service');
-const ApiError = require('../utils/ApiError');
-const TicketStatus = require('../models/helpdesk/tickets/TicketStatus');
-const { assertTransition } = require('./stateMachine.service');
+const User = require("../models/User");
+const Ticket = require("../models/helpdesk/tickets/Ticket");
+const TicketThread = require("../models/helpdesk/tickets/TicketThread");
+const HelpTopic = require("../models/HelpTopic");
+const Department = require("../models/Department");
+const Team = require("../models/Team");
+const Agent = require("../models/Agent");
+const TicketFilter = require("../models/helpdesk/tickets/TicketFilter");
+const SystemSetting = require("../models/SystemSetting");
+const { generateConfirmationToken } = require("../utils/generators");
+const { nextTicketNumber } = require("./numbering.service");
+const { computeDueDate, resumeSla } = require("./sla.service");
+const emailService = require("./email.service");
+const {
+  notifyAgent,
+  notifyUser,
+  notifyAdminRoom,
+} = require("./notification.service");
+const { getIO } = require("../config/socket");
+const { emit } = require("./events");
+const config = require("../config/config");
+const logger = require("../utils/logger");
+const auditService = require("./audit.service");
+const ApiError = require("../utils/ApiError");
+const TicketStatus = require("../models/helpdesk/tickets/TicketStatus");
+const { assertTransition } = require("./stateMachine.service");
 
 const audit = (args) => auditService.audit(args).catch(() => {});
 
 const resolveDepartment = async (helpTopic, companyId = null) => {
-  const scope = { status: 'active' };
+  const scope = { status: "active" };
   if (companyId) scope.company = companyId;
   if (helpTopic && helpTopic.department) {
     const dept = await Department.findById(helpTopic.department);
-    if (dept && dept.status === 'active' && (!companyId || !dept.company || String(dept.company) === String(companyId))) return dept;
+    if (
+      dept &&
+      dept.status === "active" &&
+      (!companyId ||
+        !dept.company ||
+        String(dept.company) === String(companyId))
+    )
+      return dept;
   }
   const settings = await SystemSetting.getSettings();
   if (settings.system.defaultDept) {
     const dept = await Department.findById(settings.system.defaultDept);
-    if (dept && dept.status === 'active' && (!companyId || !dept.company || String(dept.company) === String(companyId))) return dept;
+    if (
+      dept &&
+      dept.status === "active" &&
+      (!companyId ||
+        !dept.company ||
+        String(dept.company) === String(companyId))
+    )
+      return dept;
   }
   return Department.findOne(scope);
 };
 
-const applyFilters = async ({ ticket, topic, subject, body, userEmail, userName, priority, companyId, toAddresses = [] }) => {
-  const filterQuery = { status: 'active' };
+const applyFilters = async ({
+  ticket,
+  topic,
+  subject,
+  body,
+  userEmail,
+  userName,
+  priority,
+  companyId,
+  toAddresses = [],
+}) => {
+  const filterQuery = { status: "active" };
   if (companyId) filterQuery.company = companyId;
   const filters = await TicketFilter.find(filterQuery).sort({ order: 1 });
-  const actions = { dept: null, agent: null, team: null, priority: null, sla: null, canned: null, reject: false };
-  const ruleCtx = { subject, body, userEmail, userName, priority, topic, toAddrs: toAddresses };
+  const actions = {
+    dept: null,
+    agent: null,
+    team: null,
+    priority: null,
+    sla: null,
+    canned: null,
+    reject: false,
+  };
+  const ruleCtx = {
+    subject,
+    body,
+    userEmail,
+    userName,
+    priority,
+    topic,
+    toAddrs: toAddresses,
+  };
   for (const filter of filters) {
     let matched = false;
-    if (filter.match === 'all') {
+    if (filter.match === "all") {
       matched = filter.rules.every((r) => matchRule(r, ruleCtx));
     } else {
       matched = filter.rules.some((r) => matchRule(r, ruleCtx));
@@ -54,25 +98,25 @@ const applyFilters = async ({ ticket, topic, subject, body, userEmail, userName,
     if (matched) {
       for (const action of filter.actions) {
         switch (action.action) {
-          case 'dept':
+          case "dept":
             if (!actions.dept) actions.dept = action.target;
             break;
-          case 'agent':
+          case "agent":
             if (!actions.agent) actions.agent = action.target;
             break;
-          case 'team':
+          case "team":
             if (!actions.team) actions.team = action.target;
             break;
-          case 'priority':
+          case "priority":
             if (!actions.priority) actions.priority = action.target;
             break;
-          case 'sla':
+          case "sla":
             if (!actions.sla) actions.sla = action.target;
             break;
-          case 'reject':
+          case "reject":
             actions.reject = true;
             break;
-          case 'canned_response':
+          case "canned_response":
             if (!actions.canned) actions.canned = action.target;
             break;
           default:
@@ -85,34 +129,67 @@ const applyFilters = async ({ ticket, topic, subject, body, userEmail, userName,
 };
 
 const matchRule = (rule, ctx) => {
-  let field = '';
+  let field = "";
   switch (rule.field) {
-    case 'subject': field = ctx.subject || ''; break;
-    case 'body': field = ctx.body || ''; break;
-    case 'from': field = ctx.userEmail || ''; break;
-    case 'name': field = ctx.userName || ''; break;
-    case 'priority': field = ctx.priority || ''; break;
-    case 'topic': field = typeof ctx.topic === 'object' ? ctx.topic?.topic : ctx.topic || ''; break;
-    case 'to': field = (ctx.toAddrs || []).join(' '); break;
-    default: field = '';
+    case "subject":
+      field = ctx.subject || "";
+      break;
+    case "body":
+      field = ctx.body || "";
+      break;
+    case "from":
+      field = ctx.userEmail || "";
+      break;
+    case "name":
+      field = ctx.userName || "";
+      break;
+    case "priority":
+      field = ctx.priority || "";
+      break;
+    case "topic":
+      field =
+        typeof ctx.topic === "object" ? ctx.topic?.topic : ctx.topic || "";
+      break;
+    case "to":
+      field = (ctx.toAddrs || []).join(" ");
+      break;
+    default:
+      field = "";
   }
-  const value = String(rule.value || '').toLowerCase();
+  const value = String(rule.value || "").toLowerCase();
   field = String(field).toLowerCase();
   switch (rule.method) {
-    case 'contains': return field.includes(value);
-    case 'equals': return field === value;
-    case 'starts_with': return field.startsWith(value);
-    case 'ends_with': return field.endsWith(value);
-    case 'regex':
-      try { return new RegExp(rule.value).test(String(field)); } catch (e) { return false; }
-    default: return false;
+    case "contains":
+      return field.includes(value);
+    case "equals":
+      return field === value;
+    case "starts_with":
+      return field.startsWith(value);
+    case "ends_with":
+      return field.endsWith(value);
+    case "regex":
+      try {
+        return new RegExp(rule.value).test(String(field));
+      } catch (e) {
+        return false;
+      }
+    default:
+      return false;
   }
 };
 
-const findOrCreateUser = async ({ name, email, phone, registerPassword, organization, company, userType }) => {
-  email = (email || '').toLowerCase().trim();
+const findOrCreateUser = async ({
+  name,
+  email,
+  phone,
+  registerPassword,
+  organization,
+  company,
+  userType,
+}) => {
+  email = (email || "").toLowerCase().trim();
   if (registerPassword) {
-    const { assertPasswordPolicy } = require('../utils/passwordPolicy');
+    const { assertPasswordPolicy } = require("../utils/passwordPolicy");
     await assertPasswordPolicy(registerPassword, company || null);
   }
   let user = company
@@ -130,18 +207,18 @@ const findOrCreateUser = async ({ name, email, phone, registerPassword, organiza
     await user.save();
     return user;
   }
-  const isRegistered = !!(registerPassword);
+  const isRegistered = !!registerPassword;
   user = await User.create({
-    name: name || email.split('@')[0],
+    name: name || email.split("@")[0],
     email,
-    phone: phone || '',
+    phone: phone || "",
     password: registerPassword || null,
     isRegistered,
     emailConfirmed: isRegistered,
     confirmationToken: isRegistered ? null : generateConfirmationToken(),
     organization: organization || null,
     company: company || null,
-    userType: userType === 'external' ? 'external' : 'employee',
+    userType: userType === "external" ? "external" : "employee",
   });
   return user;
 };
@@ -151,7 +228,7 @@ const buildTicketContext = async (ticket) => {
     User.findById(ticket.user),
     HelpTopic.findById(ticket.topic),
     Department.findById(ticket.dept),
-    ticket.sla ? require('../models/SlaPlan').findById(ticket.sla) : null,
+    ticket.sla ? require("../models/SlaPlan").findById(ticket.sla) : null,
     Agent.findById(ticket.agent),
     Team.findById(ticket.team),
     SystemSetting.getSettings(),
@@ -167,20 +244,20 @@ const buildTicketContext = async (ticket) => {
       due: ticket.dueDate,
     },
     user: {
-      name: user?.name || '',
-      email: user?.email || '',
-      first: user?.name?.split(' ')[0] || '',
-      phone: user?.phone || '',
+      name: user?.name || "",
+      email: user?.email || "",
+      first: user?.name?.split(" ")[0] || "",
+      phone: user?.phone || "",
     },
-    dept: { name: dept?.name || '' },
-    topic: { name: topic?.topic || '' },
-    sla: { name: sla?.name || '' },
-    agent: { name: agent?.name || '' },
-    team: { name: team?.name || '' },
+    dept: { name: dept?.name || "" },
+    topic: { name: topic?.topic || "" },
+    sla: { name: sla?.name || "" },
+    agent: { name: agent?.name || "" },
+    team: { name: team?.name || "" },
     company: {
-      name: company.name || 'My Support Center',
-      email: company.email || '',
-      phone: company.phone || '',
+      name: company.name || "My Support Center",
+      email: company.email || "",
+      phone: company.phone || "",
       url: company.url || config.urls.client,
     },
     urls: {
@@ -192,7 +269,12 @@ const buildTicketContext = async (ticket) => {
   };
 };
 
-const MATRIX_PRIORITY_MAP = { critical: 'Emergency', high: 'High', medium: 'Normal', low: 'Low' };
+const MATRIX_PRIORITY_MAP = {
+  critical: "Emergency",
+  high: "High",
+  medium: "Normal",
+  low: "Low",
+};
 
 /**
  * Impact × Urgency → Priority (§13). Tenant matrix first, global default
@@ -200,13 +282,22 @@ const MATRIX_PRIORITY_MAP = { critical: 'Emergency', high: 'High', medium: 'Norm
  */
 const computeMatrixPriority = async ({ companyId, impact, urgency }) => {
   if (!impact || !urgency) return null;
-  const valid = ['low', 'medium', 'high'];
+  const valid = ["low", "medium", "high"];
   if (!valid.includes(impact) || !valid.includes(urgency)) return null;
   try {
-    const PriorityMatrix = require('../models/platformIdentity/PriorityMatrix');
-    const cell = (await PriorityMatrix.findOne({ tenantId: companyId, impact, urgency }).lean())
-      || (await PriorityMatrix.findOne({ tenantId: { $exists: false }, impact, urgency }).lean())
-      || (await PriorityMatrix.findOne({ impact, urgency }).lean());
+    const PriorityMatrix = require("../models/platformIdentity/PriorityMatrix");
+    const cell =
+      (await PriorityMatrix.findOne({
+        tenantId: companyId,
+        impact,
+        urgency,
+      }).lean()) ||
+      (await PriorityMatrix.findOne({
+        tenantId: { $exists: false },
+        impact,
+        urgency,
+      }).lean()) ||
+      (await PriorityMatrix.findOne({ impact, urgency }).lean());
     if (!cell?.priority) return null;
     return MATRIX_PRIORITY_MAP[cell.priority] || null;
   } catch (_) {
@@ -214,14 +305,40 @@ const computeMatrixPriority = async ({ companyId, impact, urgency }) => {
   }
 };
 
-const createTicket = async ({ user, orgOwner, createdBy, subject, details, topicId, priority, impact, urgency, deptId, source = 'web', attachments = [], customData = {}, toAddresses = [] }) => {
+const createTicket = async ({
+  user,
+  orgOwner,
+  createdBy,
+  subject,
+  details,
+  topicId,
+  priority,
+  impact,
+  urgency,
+  deptId,
+  source = "web",
+  attachments = [],
+  customData = {},
+  toAddresses = [],
+}) => {
   const companyId = user?.company || null;
   const helpTopic = topicId ? await HelpTopic.findById(topicId) : null;
-  if (helpTopic && companyId && helpTopic.company && String(helpTopic.company) !== String(companyId)) {
-    throw new Error('Invalid help topic for this tenant');
+  if (
+    helpTopic &&
+    companyId &&
+    helpTopic.company &&
+    String(helpTopic.company) !== String(companyId)
+  ) {
+    throw new Error("Invalid help topic for this tenant");
   }
   let dept = deptId ? await Department.findById(deptId) : null;
-  if (dept && companyId && dept.company && String(dept.company) !== String(companyId)) dept = null;
+  if (
+    dept &&
+    companyId &&
+    dept.company &&
+    String(dept.company) !== String(companyId)
+  )
+    dept = null;
   if (!dept) dept = await resolveDepartment(helpTopic, companyId);
 
   const filterActions = await applyFilters({
@@ -231,34 +348,46 @@ const createTicket = async ({ user, orgOwner, createdBy, subject, details, topic
     body: details,
     userEmail: user.email,
     userName: user.name,
-    priority: priority || helpTopic?.priority || 'Normal',
+    priority: priority || helpTopic?.priority || "Normal",
     companyId,
     toAddresses,
   });
 
   if (filterActions.reject) {
-    throw Object.assign(new Error('Ticket rejected by filter rules'), { rejected: true });
+    throw Object.assign(new Error("Ticket rejected by filter rules"), {
+      rejected: true,
+    });
   }
 
   let targetDept = dept;
   if (filterActions.dept) {
     const fd = await Department.findById(filterActions.dept);
-    if (fd && (!companyId || !fd.company || String(fd.company) === String(companyId))) targetDept = fd;
+    if (
+      fd &&
+      (!companyId || !fd.company || String(fd.company) === String(companyId))
+    )
+      targetDept = fd;
   }
 
-  let targetPriority = priority || helpTopic?.priority || 'Normal';
+  let targetPriority = priority || helpTopic?.priority || "Normal";
   if (filterActions.priority) targetPriority = filterActions.priority;
   // Impact × Urgency wins over a stated priority (§13): customers don't get
   // to self-declare P1 — the matrix decides.
   if (impact || urgency) {
-    const matrixPriority = await computeMatrixPriority({ companyId, impact, urgency });
+    const matrixPriority = await computeMatrixPriority({
+      companyId,
+      impact,
+      urgency,
+    });
     if (matrixPriority) targetPriority = matrixPriority;
   }
 
   let targetSla = helpTopic?.sla || dept?.sla || null;
   if (filterActions.sla) targetSla = filterActions.sla;
   if (!targetSla && user.organization) {
-    const org = await require('../models/Organization').findById(user.organization).lean();
+    const org = await require("../models/Organization")
+      .findById(user.organization)
+      .lean();
     if (org?.sla) targetSla = org.sla;
   }
 
@@ -276,44 +405,59 @@ const createTicket = async ({ user, orgOwner, createdBy, subject, details, topic
   }
 
   // ---- Enterprise: entitlement evaluation (soft gate; records coverage) ----
-  let entitlementStatus = 'unknown';
+  let entitlementStatus = "unknown";
   let contractId = null;
   let slaOverride = null;
   try {
-    const entitlementService = require('./entitlement.service');
+    const entitlementService = require("./entitlement.service");
     const evalResult = await entitlementService.evaluateEntitlement({
       company: companyId,
       user,
       helpTopicId: helpTopic?._id || null,
-      serviceType: 'help_topic',
+      serviceType: "help_topic",
     });
     entitlementStatus = evalResult.status;
     contractId = evalResult.contract?._id || null;
     slaOverride = evalResult.slaOverride || null;
     if (slaOverride) targetSla = slaOverride;
-    if (contractId && entitlementStatus === 'covered') {
-      entitlementService.consumeEntitlement({ company: companyId, contractId, orgId: user.organization, helpTopicId: helpTopic?._id || null }).catch(() => {});
+    if (contractId && entitlementStatus === "covered") {
+      entitlementService
+        .consumeEntitlement({
+          company: companyId,
+          contractId,
+          orgId: user.organization,
+          helpTopicId: helpTopic?._id || null,
+        })
+        .catch(() => {});
     }
   } catch (err) {
     // entitlement engine must never block ticket creation
   }
 
   // ---- Enterprise: smart routing (skill-based / round-robin / least-workload) ----
-  const { needsCustomerApproval } = require('./ticketApprovalFlow.service');
+  const { needsCustomerApproval } = require("./ticketApprovalFlow.service");
   const awaitingCustomerApproval = needsCustomerApproval(user);
-  const routingAlgorithm = settings.routing?.algorithm || 'skill_based';
-  if (!awaitingCustomerApproval && autoAssign && !targetAgent && !targetTeam && routingAlgorithm !== 'none') {
+  const routingAlgorithm = settings.routing?.algorithm || "skill_based";
+  if (
+    !awaitingCustomerApproval &&
+    autoAssign &&
+    !targetAgent &&
+    !targetTeam &&
+    routingAlgorithm !== "none"
+  ) {
     try {
-      const routing = require('./routing.service');
+      const routing = require("./routing.service");
       const skills = await routing.skillsForTopic(helpTopic?._id);
-      const slaPlan = targetSla ? await require('../models/SlaPlan').findById(targetSla).lean() : null;
+      const slaPlan = targetSla
+        ? await require("../models/SlaPlan").findById(targetSla).lean()
+        : null;
       const best = await routing.findBestAgent({
         company: companyId,
         deptId: targetDept?._id,
         requiredSkills: skills,
         priority: targetPriority,
         slaHours: slaPlan?.gracePeriod || 0,
-        customerTier: user.tier || 'standard',
+        customerTier: user.tier || "standard",
         algorithm: routingAlgorithm,
       });
       if (best) targetAgent = best._id;
@@ -322,8 +466,10 @@ const createTicket = async ({ user, orgOwner, createdBy, subject, details, topic
     }
   }
 
-  const { startClocks } = require('./sla.service');
-  const clocks = await startClocks(targetSla, new Date(), { company: companyId });
+  const { startClocks } = require("./sla.service");
+  const clocks = await startClocks(targetSla, new Date(), {
+    company: companyId,
+  });
 
   const ticket = await Ticket.create({
     number: await nextTicketNumber(),
@@ -350,44 +496,61 @@ const createTicket = async ({ user, orgOwner, createdBy, subject, details, topic
     entitlementStatus,
     contract: contractId,
   });
-  if (targetSla) await require('./sla.service').recordSlaEvent(ticket, 'started', 'all', { metadata: { responseDueAt: clocks.responseDue, resolutionDueAt: clocks.resolutionDue } });
+  if (targetSla)
+    await require("./sla.service").recordSlaEvent(ticket, "started", "all", {
+      metadata: {
+        responseDueAt: clocks.responseDue,
+        resolutionDueAt: clocks.resolutionDue,
+      },
+    });
 
   await TicketThread.create({
     ticket: ticket._id,
     company: companyId,
-    type: 'message',
-    posterType: 'user',
+    type: "message",
+    posterType: "user",
     user: user._id,
-    title: 'Message',
-    body: details || '',
+    title: "Message",
+    body: details || "",
     attachments: attachments || [],
   });
 
-  const status = targetAgent || targetTeam ? Ticket.STATUSES.ASSIGNED : Ticket.STATUSES.OPEN;
+  const status =
+    targetAgent || targetTeam ? Ticket.STATUSES.ASSIGNED : Ticket.STATUSES.OPEN;
   if (ticket.status !== status) ticket.status = status;
   await ticket.save();
 
   // Learned auto-routing: if no agent assigned and department set, try learned routing
   if (!awaitingCustomerApproval && !ticket.agent && ticket.dept) {
     try {
-      const { autoRoute } = require('./learnedRouting.service');
-      const route = await autoRoute({ company: companyId, departmentId: ticket.dept, subject: ticket.subject, details, priority: ticket.priority });
+      const { autoRoute } = require("./learnedRouting.service");
+      const route = await autoRoute({
+        company: companyId,
+        departmentId: ticket.dept,
+        subject: ticket.subject,
+        details,
+        priority: ticket.priority,
+      });
       if (route && route.agentId) {
         ticket.agent = route.agentId;
         ticket.status = Ticket.STATUSES.ASSIGNED;
         await ticket.save();
       }
-    } catch (_) { /* routing failure is non-fatal */ }
+    } catch (_) {
+      /* routing failure is non-fatal */
+    }
   }
 
   // Customer approval gate: external member tickets must be approved by the
   // organization manager before they reach a helpdesk team/lead.
   if (awaitingCustomerApproval) {
     try {
-      const { startCustomerApproval } = require('./ticketApprovalFlow.service');
+      const { startCustomerApproval } = require("./ticketApprovalFlow.service");
       await startCustomerApproval({ ticket, user, companyId });
     } catch (err) {
-      logger.error(`Customer approval gate failed for ticket ${ticket.number}: ${err.message}`);
+      logger.error(
+        `Customer approval gate failed for ticket ${ticket.number}: ${err.message}`,
+      );
     }
   }
 
@@ -397,21 +560,21 @@ const createTicket = async ({ user, orgOwner, createdBy, subject, details, topic
     await notifyAgent({
       agentId: targetAgent,
       company: companyId,
-      type: 'new_ticket',
+      type: "new_ticket",
       message: `New ticket ${ticket.number} assigned to you: ${ticket.subject}`,
       link: `/tickets/${ticket.number}`,
       ticket: ticket._id,
     });
   }
   if (!awaitingCustomerApproval && targetTeam) {
-    const teamDoc = await Team.findById(targetTeam).populate('members');
+    const teamDoc = await Team.findById(targetTeam).populate("members");
     const members = teamDoc?.members || [];
     for (const m of members) {
       if (String(m._id) !== String(targetAgent)) {
         await notifyAgent({
           agentId: m._id,
           company: companyId,
-          type: 'new_ticket',
+          type: "new_ticket",
           message: `New ticket ${ticket.number} assigned to team ${teamDoc.name}`,
           link: `/tickets/${ticket.number}`,
           ticket: ticket._id,
@@ -419,49 +582,70 @@ const createTicket = async ({ user, orgOwner, createdBy, subject, details, topic
       }
     }
   }
-  const deptAgents = await Agent.find({ 'departments.department': targetDept?._id, isActive: true, ...(companyId ? { company: companyId } : {}) });
+  const deptAgents = await Agent.find({
+    "departments.department": targetDept?._id,
+    isActive: true,
+    ...(companyId ? { company: companyId } : {}),
+  });
   if (!awaitingCustomerApproval && settings.tickets?.notifyNewTicketToDept) {
     for (const a of deptAgents) {
       if (!targetAgent || String(a._id) !== String(targetAgent)) {
         await notifyAgent({
           agentId: a._id,
           company: companyId,
-          type: 'new_ticket',
-          message: `New ticket ${ticket.number} in ${targetDept?.name || 'Support'}: ${ticket.subject}`,
+          type: "new_ticket",
+          message: `New ticket ${ticket.number} in ${targetDept?.name || "Support"}: ${ticket.subject}`,
           link: `/tickets/${ticket.number}`,
           ticket: ticket._id,
         });
       }
     }
   }
-  if (!awaitingCustomerApproval) await notifyAdminRoom({ type: 'new_ticket', message: `New ticket ${ticket.number}: ${ticket.subject}`, link: `/tickets/${ticket.number}`, ticket: ticket._id, company: companyId });
+  if (!awaitingCustomerApproval)
+    await notifyAdminRoom({
+      type: "new_ticket",
+      message: `New ticket ${ticket.number}: ${ticket.subject}`,
+      link: `/tickets/${ticket.number}`,
+      ticket: ticket._id,
+      company: companyId,
+    });
 
   // Emails
   const ctx = await buildTicketContext(ticket);
   const autoresp = settings.autoresponder || {};
   const topicResp = helpTopic?.autoresponder || {};
-  const useTopicResp = topicResp.enabled === true && (topicResp.subject || topicResp.body);
+  const useTopicResp =
+    topicResp.enabled === true && (topicResp.subject || topicResp.body);
   const autoSubject = useTopicResp ? topicResp.subject : autoresp.subject;
   const autoBody = useTopicResp ? topicResp.body : autoresp.body;
   try {
-    if ((autoresp.enabled !== false || useTopicResp) && (settings.tickets?.autoResponder !== false)) {
+    if (
+      (autoresp.enabled !== false || useTopicResp) &&
+      settings.tickets?.autoResponder !== false
+    ) {
       if (autoSubject || autoBody) {
-        const render = (tpl) => tpl.replace(/\[([\w.]+)\]/g, (m, key) => key.split('.').reduce((o, k) => (o == null ? '' : o[k]), ctx) ?? '');
+        const render = (tpl) =>
+          tpl.replace(
+            /\[([\w.]+)\]/g,
+            (m, key) =>
+              key.split(".").reduce((o, k) => (o == null ? "" : o[k]), ctx) ??
+              "",
+          );
         await emailService.sendMail({
           to: user.email,
           subject: autoSubject ? render(autoSubject) : ctx.subject,
-          body: autoBody ? render(autoBody) : '',
-          event: 'new_ticket_confirmation',
+          body: autoBody ? render(autoBody) : "",
+          event: "new_ticket_confirmation",
           ticket: ticket._id,
           user: user._id,
           company: companyId,
         });
       } else {
         await emailService.sendFromTemplate({
-          key: 'new_ticket_confirmation',
+          key: "new_ticket_confirmation",
           to: user.email,
           data: ctx,
-          event: 'new_ticket_confirmation',
+          event: "new_ticket_confirmation",
           ticket: ticket._id,
           user: user._id,
           company: companyId,
@@ -472,18 +656,22 @@ const createTicket = async ({ user, orgOwner, createdBy, subject, details, topic
     logger.error(`Confirmation email failed: ${err.message}`);
   }
   try {
-    if (!awaitingCustomerApproval && settings.tickets?.notifyNewTicketToDept !== false) {
+    if (
+      !awaitingCustomerApproval &&
+      settings.tickets?.notifyNewTicketToDept !== false
+    ) {
       const recipients = new Set();
       if (targetAgent) recipients.add(String(targetAgent));
-      if (deptAgents.length && !targetAgent) deptAgents.forEach((a) => recipients.add(String(a._id)));
+      if (deptAgents.length && !targetAgent)
+        deptAgents.forEach((a) => recipients.add(String(a._id)));
       for (const rid of recipients) {
         const agentDoc = await Agent.findById(rid);
         if (!agentDoc) continue;
         await emailService.sendFromTemplate({
-          key: 'new_ticket_alert',
+          key: "new_ticket_alert",
           to: agentDoc.email,
           data: { ...ctx, recipient: { name: agentDoc.name } },
-          event: 'new_ticket_alert',
+          event: "new_ticket_alert",
           ticket: ticket._id,
           user: user._id,
           company: companyId,
@@ -495,7 +683,7 @@ const createTicket = async ({ user, orgOwner, createdBy, subject, details, topic
   }
 
   // ---- Enterprise: platform events + AI intelligence (async, non-blocking) ----
-  emit('ticket.created', {
+  emit("ticket.created", {
     company: companyId,
     ticketId: ticket._id,
     ticketNumber: ticket.number,
@@ -507,21 +695,36 @@ const createTicket = async ({ user, orgOwner, createdBy, subject, details, topic
   });
   audit({
     company: companyId,
-    actorType: createdBy ? 'agent' : 'user',
+    actorType: createdBy ? "agent" : "user",
     actor: createdBy || user._id || null,
     actorName: createdBy ? String(createdBy) : `${user.name} <${user.email}>`,
-    action: 'ticket.created',
-    entityType: 'ticket',
+    action: "ticket.created",
+    entityType: "ticket",
     entityId: ticket._id,
-    after: { number: ticket.number, subject: ticket.subject, priority: ticket.priority, source },
+    after: {
+      number: ticket.number,
+      subject: ticket.subject,
+      priority: ticket.priority,
+      source,
+    },
   });
-  const realtime = require('./realtime.service');
+  const realtime = require("./realtime.service");
   realtime.broadcastSnapshot({ company: companyId }).catch(() => {});
 
   return ticket;
 };
 
-const addThreadEntry = async ({ ticket, type = 'message', posterType, user, agent, body, title, attachments = [], systemMessage }) => {
+const addThreadEntry = async ({
+  ticket,
+  type = "message",
+  posterType,
+  user,
+  agent,
+  body,
+  title,
+  attachments = [],
+  systemMessage,
+}) => {
   const entry = await TicketThread.create({
     ticket: ticket._id,
     company: ticket.company || null,
@@ -529,41 +732,68 @@ const addThreadEntry = async ({ ticket, type = 'message', posterType, user, agen
     posterType,
     user: user?._id || null,
     agent: agent?._id || null,
-    title: title || (posterType === 'agent' ? 'Response' : 'Message'),
-    body: body || '',
-    systemMessage: systemMessage || '',
+    title: title || (posterType === "agent" ? "Response" : "Message"),
+    body: body || "",
+    systemMessage: systemMessage || "",
     attachments,
   });
 
-  if (type === 'message' || type === 'note') {
+  if (type === "message" || type === "note") {
     ticket.lastActivity = new Date();
     let reopenedByCustomerReply = false;
-    if (posterType === 'agent' && type === 'message') {
+    if (posterType === "agent" && type === "message") {
       ticket.stats.responses += 1;
-      if (!ticket.stats.firstResponseAt) ticket.stats.firstResponseAt = new Date();
+      if (!ticket.stats.firstResponseAt)
+        ticket.stats.firstResponseAt = new Date();
       if (!ticket.responseMetAt) {
         ticket.responseMetAt = new Date();
-        await require('./sla.service').recordSlaEvent(ticket, ticket.responseDueAt && ticket.responseMetAt > ticket.responseDueAt ? 'breached' : 'met', 'first_response', { completedAt: ticket.responseMetAt, durationMs: ticket.responseMetAt - new Date(ticket.slaStartedAt || ticket.createdAt) });
+        await require("./sla.service").recordSlaEvent(
+          ticket,
+          ticket.responseDueAt && ticket.responseMetAt > ticket.responseDueAt
+            ? "breached"
+            : "met",
+          "first_response",
+          {
+            completedAt: ticket.responseMetAt,
+            durationMs:
+              ticket.responseMetAt -
+              new Date(ticket.slaStartedAt || ticket.createdAt),
+          },
+        );
       }
       ticket.lastMessageAt = new Date();
-      if (ticket.status === Ticket.STATUSES.OPEN || ticket.status === Ticket.STATUSES.OVERDUE) {
+      if (
+        ticket.status === Ticket.STATUSES.OPEN ||
+        ticket.status === Ticket.STATUSES.OVERDUE
+      ) {
         ticket.status = Ticket.STATUSES.OPEN;
         ticket.isOverdue = false;
       }
       // agent responded -> SLA resumes from pause
       if (ticket.slaPaused) await resumeSla(ticket);
-      emit('ticket.replied', { company: ticket.company, ticketId: ticket._id, ticketNumber: ticket.number, actor: agent?._id || null });
-    } else if (posterType === 'user') {
+      emit("ticket.replied", {
+        company: ticket.company,
+        ticketId: ticket._id,
+        ticketNumber: ticket.number,
+        actor: agent?._id || null,
+      });
+    } else if (posterType === "user") {
       ticket.stats.messages += 1;
       ticket.lastMessageAt = new Date();
       // customer responded -> SLA resumes from pause
       if (ticket.slaPaused) await resumeSla(ticket);
       // Customer reply reopens resolved/closed tickets (lifecycle §22/§40)
       // inside the configured window — covers portal AND email replies.
-      if (ticket.status === Ticket.STATUSES.RESOLVED || ticket.status === Ticket.STATUSES.CLOSED) {
+      if (
+        ticket.status === Ticket.STATUSES.RESOLVED ||
+        ticket.status === Ticket.STATUSES.CLOSED
+      ) {
         try {
           const reopenSettings = await SystemSetting.getSettings();
-          if (reopenSettings.system?.allowTicketReopen !== false && reopenWindowAllows(ticket, reopenSettings)) {
+          if (
+            reopenSettings.system?.allowTicketReopen !== false &&
+            reopenWindowAllows(ticket, reopenSettings)
+          ) {
             ticket.status = Ticket.STATUSES.OPEN;
             ticket.stats.reopened += 1;
             ticket.closedAt = null;
@@ -573,13 +803,22 @@ const addThreadEntry = async ({ ticket, type = 'message', posterType, user, agen
             ticket.resolutionMetAt = null;
             reopenedByCustomerReply = true;
           }
-        } catch (_) { /* reopen check must never block the reply */ }
+        } catch (_) {
+          /* reopen check must never block the reply */
+        }
       }
-      emit('customer.replied', { company: ticket.company, ticketId: ticket._id, ticketNumber: ticket.number });
+      emit("customer.replied", {
+        company: ticket.company,
+        ticketId: ticket._id,
+        ticketNumber: ticket.number,
+      });
     }
     await ticket.save();
     if (reopenedByCustomerReply) {
-      await addSystemEvent({ ticket, message: 'Ticket reopened by customer reply' });
+      await addSystemEvent({
+        ticket,
+        message: "Ticket reopened by customer reply",
+      });
       await handleTicketReopened(ticket).catch(() => {});
     }
   }
@@ -591,9 +830,9 @@ const addSystemEvent = async ({ ticket, message }) => {
   return TicketThread.create({
     ticket: ticket._id,
     company: ticket.company || null,
-    type: 'system',
-    posterType: 'system',
-    title: 'System',
+    type: "system",
+    posterType: "system",
+    title: "System",
     systemMessage: message,
     isSystem: true,
   });
@@ -603,7 +842,7 @@ const addSystemEvent = async ({ ticket, message }) => {
  * Fire post-close hooks: platform event + CSAT survey (if enabled).
  */
 const handleTicketClosed = async (ticket, opts = {}) => {
-  emit('ticket.closed', {
+  emit("ticket.closed", {
     company: ticket.company,
     ticketId: ticket._id,
     ticketNumber: ticket.number,
@@ -612,25 +851,25 @@ const handleTicketClosed = async (ticket, opts = {}) => {
   });
   audit({
     company: ticket.company,
-    actorType: opts.actor ? 'agent' : 'system',
+    actorType: opts.actor ? "agent" : "system",
     actor: opts.agentId || opts.actor || null,
-    actorName: opts.actor ? String(opts.actor) : 'auto-close',
-    action: 'ticket.closed',
-    entityType: 'ticket',
+    actorName: opts.actor ? String(opts.actor) : "auto-close",
+    action: "ticket.closed",
+    entityType: "ticket",
     entityId: ticket._id,
-    after: { number: ticket.number, status: 'closed' },
+    after: { number: ticket.number, status: "closed" },
   });
   try {
-    const csat = require('./csat.service');
+    const csat = require("./csat.service");
     const settings = await SystemSetting.getSettings();
     if (settings.csat?.enabled !== false) {
-      csat.sendSurveyForTicket(ticket, { trigger: 'on_close' }).catch(() => {});
+      csat.sendSurveyForTicket(ticket, { trigger: "on_close" }).catch(() => {});
     }
   } catch (err) {
     // ignore
   }
   try {
-    const realtime = require('./realtime.service');
+    const realtime = require("./realtime.service");
     realtime.broadcastSnapshot({ company: ticket.company }).catch(() => {});
   } catch (err) {
     // ignore
@@ -664,7 +903,14 @@ const reopenWindowAllows = (ticket, settings) => {
  * closed ticket whose reply window expired. Keeps history connected without
  * resurrecting ancient tickets.
  */
-const createFollowUpTicket = async ({ ticket, user, body, attachments = [], source = 'web', actorId = null }) => {
+const createFollowUpTicket = async ({
+  ticket,
+  user,
+  body,
+  attachments = [],
+  source = "web",
+  actorId = null,
+}) => {
   const orgOwner = user.createdBy || user._id;
   const created = await createTicket({
     user,
@@ -674,25 +920,30 @@ const createFollowUpTicket = async ({ ticket, user, body, attachments = [], sour
     details: body,
     topicId: ticket.topic || null,
     deptId: ticket.dept || null,
-    priority: ticket.priority || 'Normal',
+    priority: ticket.priority || "Normal",
     source,
     attachments,
   });
   try {
-    const TicketLink = require('../models/helpdesk/tickets/TicketLink');
+    const TicketLink = require("../models/helpdesk/tickets/TicketLink");
     await TicketLink.create({
       company: ticket.company || null,
       from: created._id,
       to: ticket._id,
-      type: 'related',
+      type: "related",
       createdBy: actorId,
     });
-  } catch (_) { /* linking must never block creation */ }
-  await addSystemEvent({ ticket, message: `Follow-up created as ticket ${created.number} (reply window expired)` });
+  } catch (_) {
+    /* linking must never block creation */
+  }
+  await addSystemEvent({
+    ticket,
+    message: `Follow-up created as ticket ${created.number} (reply window expired)`,
+  });
   return created;
 };
 const handleTicketResolved = async (ticket, opts = {}) => {
-  emit('ticket.resolved', {
+  emit("ticket.resolved", {
     company: ticket.company,
     ticketId: ticket._id,
     ticketNumber: ticket.number,
@@ -701,16 +952,16 @@ const handleTicketResolved = async (ticket, opts = {}) => {
   });
   audit({
     company: ticket.company,
-    actorType: opts.actor ? 'agent' : 'system',
+    actorType: opts.actor ? "agent" : "system",
     actor: opts.agentId || opts.actor || null,
-    actorName: opts.actor ? String(opts.actor) : 'system',
-    action: 'ticket.resolved',
-    entityType: 'ticket',
+    actorName: opts.actor ? String(opts.actor) : "system",
+    action: "ticket.resolved",
+    entityType: "ticket",
     entityId: ticket._id,
-    after: { number: ticket.number, status: 'resolved' },
+    after: { number: ticket.number, status: "resolved" },
   });
   try {
-    const realtime = require('./realtime.service');
+    const realtime = require("./realtime.service");
     realtime.broadcastSnapshot({ company: ticket.company }).catch(() => {});
   } catch (err) {
     // ignore
@@ -722,15 +973,27 @@ const handleTicketResolved = async (ticket, opts = {}) => {
  * mails, events and audit stay identical everywhere. Returns { ticket, prev }.
  * Throws ApiError(422) on unknown status or illegal transition.
  */
-const applyStatusChange = async (ticket, status, { actorType = 'agent', actorId = null, actorName = 'System', reason = '', resolution = null } = {}) => {
+const applyStatusChange = async (
+  ticket,
+  status,
+  {
+    actorType = "agent",
+    actorId = null,
+    actorName = "System",
+    reason = "",
+    resolution = null,
+  } = {},
+) => {
   const builtIn = Object.values(Ticket.STATUSES);
-  const configured = await TicketStatus.find({ isActive: true }).select('key pauseSla waitingOn isClosed');
+  const configured = await TicketStatus.find({ isActive: true }).select(
+    "key pauseSla waitingOn isClosed",
+  );
   const customKeys = configured.map((s) => s.key);
   if (!new Set([...builtIn, ...customKeys]).has(status)) {
-    throw new ApiError(422, 'Invalid status');
+    throw new ApiError(422, "Invalid status");
   }
   const prev = ticket.status;
-  assertTransition('ticket', prev, status, customKeys);
+  assertTransition("ticket", prev, status, customKeys);
   if (status === prev) return { ticket, prev, noop: true };
   ticket.status = status;
 
@@ -739,29 +1002,38 @@ const applyStatusChange = async (ticket, status, { actorType = 'agent', actorId 
   if (status === Ticket.STATUSES.RESOLVED) {
     const resSettings = await SystemSetting.getSettings().catch(() => null);
     if (resSettings?.tickets?.requireResolution !== false) {
-      const code = String(resolution?.code || '').trim();
-      const solution = String(resolution?.solution || '').trim();
+      const code = String(resolution?.code || "").trim();
+      const solution = String(resolution?.solution || "").trim();
       if (!code || !solution) {
-        throw new ApiError(422, 'Resolution code and solution are required to resolve a ticket');
+        throw new ApiError(
+          422,
+          "Resolution code and solution are required to resolve a ticket",
+        );
       }
       ticket.resolution = {
         code,
-        category: String(resolution?.category || '').trim(),
-        rootCause: String(resolution?.rootCause || '').trim(),
+        category: String(resolution?.category || "").trim(),
+        rootCause: String(resolution?.rootCause || "").trim(),
         solution,
-        workaround: String(resolution?.workaround || '').trim(),
-        timeSpentMinutes: resolution?.timeSpentMinutes != null ? Number(resolution.timeSpentMinutes) : null,
+        workaround: String(resolution?.workaround || "").trim(),
+        timeSpentMinutes:
+          resolution?.timeSpentMinutes != null
+            ? Number(resolution.timeSpentMinutes)
+            : null,
         asset: resolution?.asset || null,
         kbArticle: resolution?.kbArticle || null,
       };
     } else if (resolution) {
       ticket.resolution = {
-        code: String(resolution.code || ''),
-        category: String(resolution.category || ''),
-        rootCause: String(resolution.rootCause || ''),
-        solution: String(resolution.solution || ''),
-        workaround: String(resolution.workaround || ''),
-        timeSpentMinutes: resolution.timeSpentMinutes != null ? Number(resolution.timeSpentMinutes) : null,
+        code: String(resolution.code || ""),
+        category: String(resolution.category || ""),
+        rootCause: String(resolution.rootCause || ""),
+        solution: String(resolution.solution || ""),
+        workaround: String(resolution.workaround || ""),
+        timeSpentMinutes:
+          resolution.timeSpentMinutes != null
+            ? Number(resolution.timeSpentMinutes)
+            : null,
         asset: resolution.asset || null,
         kbArticle: resolution.kbArticle || null,
       };
@@ -769,29 +1041,53 @@ const applyStatusChange = async (ticket, status, { actorType = 'agent', actorId 
   }
 
   // Parent stays open until subtasks finish (§22).
-  if (status === Ticket.STATUSES.RESOLVED || status === Ticket.STATUSES.CLOSED) {
+  if (
+    status === Ticket.STATUSES.RESOLVED ||
+    status === Ticket.STATUSES.CLOSED
+  ) {
     const taskSettings = await SystemSetting.getSettings().catch(() => null);
     if (taskSettings?.tickets?.blockCloseOnOpenTasks !== false) {
-      const Task = require('../models/Task');
-      const openTasks = await Task.countDocuments({ ticket: ticket._id, status: 'open' });
+      const Task = require("../models/Task");
+      const openTasks = await Task.countDocuments({
+        ticket: ticket._id,
+        status: "open",
+      });
       if (openTasks > 0) {
-        throw new ApiError(422, `Cannot ${status} — ${openTasks} open task(s) must finish first`);
+        throw new ApiError(
+          422,
+          `Cannot ${status} — ${openTasks} open task(s) must finish first`,
+        );
       }
     }
   }
 
   if (status === Ticket.STATUSES.RESOLVED) {
     ticket.resolvedAt = new Date();
-    ticket.resolvedBy = actorType === 'agent' ? actorId : null;
+    ticket.resolvedBy = actorType === "agent" ? actorId : null;
     ticket.resolutionMetAt = new Date();
-    await require('./sla.service').recordSlaEvent(ticket, ticket.resolutionDueAt && ticket.resolutionMetAt > ticket.resolutionDueAt ? 'breached' : 'met', 'resolution', { completedAt: ticket.resolutionMetAt, durationMs: ticket.resolutionMetAt - new Date(ticket.slaStartedAt || ticket.createdAt) });
+    await require("./sla.service").recordSlaEvent(
+      ticket,
+      ticket.resolutionDueAt && ticket.resolutionMetAt > ticket.resolutionDueAt
+        ? "breached"
+        : "met",
+      "resolution",
+      {
+        completedAt: ticket.resolutionMetAt,
+        durationMs:
+          ticket.resolutionMetAt -
+          new Date(ticket.slaStartedAt || ticket.createdAt),
+      },
+    );
     ticket.isOverdue = false;
   } else if (status === Ticket.STATUSES.CLOSED) {
     ticket.closedAt = new Date();
-    ticket.closedBy = actorType === 'agent' ? actorId : null;
+    ticket.closedBy = actorType === "agent" ? actorId : null;
     ticket.lockedBy = null;
     ticket.lockExpiresAt = null;
-  } else if (prev === Ticket.STATUSES.CLOSED || prev === Ticket.STATUSES.RESOLVED) {
+  } else if (
+    prev === Ticket.STATUSES.CLOSED ||
+    prev === Ticket.STATUSES.RESOLVED
+  ) {
     if (prev === Ticket.STATUSES.CLOSED) {
       ticket.closedAt = null;
       ticket.closedBy = null;
@@ -804,9 +1100,9 @@ const applyStatusChange = async (ticket, status, { actorType = 'agent', actorId 
 
   // SLA pause/resume on configurable statuses
   const statusDef = configured.find((s) => s.key === status);
-  const { pauseSla, resumeSla } = require('./sla.service');
+  const { pauseSla, resumeSla } = require("./sla.service");
   if (statusDef && statusDef.pauseSla) {
-    await pauseSla(ticket, statusDef.waitingOn || 'customer');
+    await pauseSla(ticket, statusDef.waitingOn || "customer");
   } else if (ticket.slaPaused) {
     await resumeSla(ticket);
   }
@@ -817,34 +1113,83 @@ const applyStatusChange = async (ticket, status, { actorType = 'agent', actorId 
   await ticket.save();
   await addSystemEvent({
     ticket,
-    message: `Status changed from ${prev} to ${status}${reason ? ` (${reason})` : ''} by ${actorName}`,
+    message: `Status changed from ${prev} to ${status}${reason ? ` (${reason})` : ""} by ${actorName}`,
   });
-  emit('ticket.status_changed', { company: ticket.company, ticketId: ticket._id, ticketNumber: ticket.number, from: prev, to: status, actor: actorId });
+  emit("ticket.status_changed", {
+    company: ticket.company,
+    ticketId: ticket._id,
+    ticketNumber: ticket.number,
+    from: prev,
+    to: status,
+    actor: actorId,
+  });
 
-  const ctx = (status === Ticket.STATUSES.RESOLVED || status === Ticket.STATUSES.CLOSED)
-    ? await buildTicketContext(ticket)
-    : null;
+  const ctx =
+    status === Ticket.STATUSES.RESOLVED || status === Ticket.STATUSES.CLOSED
+      ? await buildTicketContext(ticket)
+      : null;
   if (status === Ticket.STATUSES.RESOLVED) {
     try {
       if (ctx.user.email) {
-        await emailService.sendFromTemplate({ key: 'ticket_resolved', to: ctx.user.email, data: ctx, event: 'ticket_resolved', ticket: ticket._id, user: ticket.user, company: ticket.company });
+        await emailService.sendFromTemplate({
+          key: "ticket_resolved",
+          to: ctx.user.email,
+          data: ctx,
+          event: "ticket_resolved",
+          ticket: ticket._id,
+          user: ticket.user,
+          company: ticket.company,
+        });
       }
-    } catch (err) { /* non-blocking */ }
-    const { notifyUser } = require('./notification.service');
-    await notifyUser({ userId: ticket.user, company: ticket.company, type: 'status_change', message: `Your ticket ${ticket.number} has been resolved — reply if the issue remains`, link: `/ticket/${ticket.number}`, ticket: ticket._id }).catch(() => {});
-    await handleTicketResolved(ticket, { actor: actorId, agentId: actorType === 'agent' ? actorId : ticket.agent });
+    } catch (err) {
+      /* non-blocking */
+    }
+    const { notifyUser } = require("./notification.service");
+    await notifyUser({
+      userId: ticket.user,
+      company: ticket.company,
+      type: "status_change",
+      message: `Your ticket ${ticket.number} has been resolved — reply if the issue remains`,
+      link: `/ticket/${ticket.number}`,
+      ticket: ticket._id,
+    }).catch(() => {});
+    await handleTicketResolved(ticket, {
+      actor: actorId,
+      agentId: actorType === "agent" ? actorId : ticket.agent,
+    });
   }
   if (status === Ticket.STATUSES.CLOSED) {
     try {
       if (ctx.user.email) {
-        await emailService.sendFromTemplate({ key: 'ticket_closed', to: ctx.user.email, data: ctx, event: 'ticket_closed', ticket: ticket._id, user: ticket.user, company: ticket.company });
+        await emailService.sendFromTemplate({
+          key: "ticket_closed",
+          to: ctx.user.email,
+          data: ctx,
+          event: "ticket_closed",
+          ticket: ticket._id,
+          user: ticket.user,
+          company: ticket.company,
+        });
       }
-    } catch (err) { /* non-blocking */ }
-    const { notifyUser } = require('./notification.service');
-    await notifyUser({ userId: ticket.user, company: ticket.company, type: 'status_change', message: `Your ticket ${ticket.number} has been closed`, link: `/ticket/${ticket.number}`, ticket: ticket._id }).catch(() => {});
+    } catch (err) {
+      /* non-blocking */
+    }
+    const { notifyUser } = require("./notification.service");
+    await notifyUser({
+      userId: ticket.user,
+      company: ticket.company,
+      type: "status_change",
+      message: `Your ticket ${ticket.number} has been closed`,
+      link: `/ticket/${ticket.number}`,
+      ticket: ticket._id,
+    }).catch(() => {});
     await handleTicketClosed(ticket, { actor: actorId });
   }
-  if ((prev === Ticket.STATUSES.CLOSED || prev === Ticket.STATUSES.RESOLVED) && status !== Ticket.STATUSES.CLOSED && status !== Ticket.STATUSES.RESOLVED) {
+  if (
+    (prev === Ticket.STATUSES.CLOSED || prev === Ticket.STATUSES.RESOLVED) &&
+    status !== Ticket.STATUSES.CLOSED &&
+    status !== Ticket.STATUSES.RESOLVED
+  ) {
     await handleTicketReopened(ticket);
   }
   return { ticket, prev };
@@ -854,9 +1199,16 @@ const applyStatusChange = async (ticket, status, { actorType = 'agent', actorId 
  * Fire post-reopen hooks + CSAT reset.
  */
 const handleTicketReopened = async (ticket) => {
-  emit('ticket.reopened', { company: ticket.company, ticketId: ticket._id, ticketNumber: ticket.number });
+  emit("ticket.reopened", {
+    company: ticket.company,
+    ticketId: ticket._id,
+    ticketNumber: ticket.number,
+  });
   if (ticket.csatRating) {
-    await Ticket.updateOne({ _id: ticket._id }, { $set: { csatRating: null, csatComment: '', csatSentAt: null } }).catch(() => {});
+    await Ticket.updateOne(
+      { _id: ticket._id },
+      { $set: { csatRating: null, csatComment: "", csatSentAt: null } },
+    ).catch(() => {});
   }
 };
 
@@ -879,25 +1231,32 @@ const autoCloseResolvedTickets = async () => {
     }).limit(100);
     summary.checked = due.length;
     const blockOnTasks = settings.tickets?.blockCloseOnOpenTasks !== false;
-    const Task = blockOnTasks ? require('../models/Task') : null;
+    const Task = blockOnTasks ? require("../models/Task") : null;
     for (const ticket of due) {
       try {
-        if (Task && (await Task.countDocuments({ ticket: ticket._id, status: 'open' })) > 0) {
+        if (
+          Task &&
+          (await Task.countDocuments({ ticket: ticket._id, status: "open" })) >
+            0
+        ) {
           continue; // parent waits for subtasks (§22)
         }
         ticket.status = Ticket.STATUSES.CLOSED;
         ticket.closedAt = new Date();
         ticket.closedBy = null; // system
         await ticket.save();
-        await addSystemEvent({ ticket, message: `Ticket auto-closed after ${hours}h without customer reply` });
+        await addSystemEvent({
+          ticket,
+          message: `Ticket auto-closed after ${hours}h without customer reply`,
+        });
         try {
           const ctx = await buildTicketContext(ticket);
           if (ctx.user.email) {
             await emailService.sendFromTemplate({
-              key: 'ticket_closed',
+              key: "ticket_closed",
               to: ctx.user.email,
               data: ctx,
-              event: 'ticket_closed',
+              event: "ticket_closed",
               ticket: ticket._id,
               user: ticket.user,
               company: ticket.company,
@@ -906,11 +1265,11 @@ const autoCloseResolvedTickets = async () => {
         } catch (err) {
           logger.error(`Auto-close email failed: ${err.message}`);
         }
-        const { notifyUser } = require('./notification.service');
+        const { notifyUser } = require("./notification.service");
         await notifyUser({
           userId: ticket.user,
           company: ticket.company,
-          type: 'status_change',
+          type: "status_change",
           message: `Your ticket ${ticket.number} has been closed`,
           link: `/ticket/${ticket.number}`,
           ticket: ticket._id,
@@ -930,14 +1289,18 @@ const autoCloseResolvedTickets = async () => {
 };
 
 const scheduleAutoCloseCheck = () => {
-  setInterval(async () => {
-    try {
-      const s = await autoCloseResolvedTickets();
-      if (s.closed > 0) logger.info(`Auto-close summary: ${JSON.stringify(s)}`);
-    } catch (err) {
-      // ignore
-    }
-  }, 30 * 60 * 1000);
+  setInterval(
+    async () => {
+      try {
+        const s = await autoCloseResolvedTickets();
+        if (s.closed > 0)
+          logger.info(`Auto-close summary: ${JSON.stringify(s)}`);
+      } catch (err) {
+        // ignore
+      }
+    },
+    30 * 60 * 1000,
+  );
 };
 
 module.exports = {

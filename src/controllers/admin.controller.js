@@ -1,1 +1,1 @@
-module.exports = require('./admin/index');
+module.exports = require("./admin/index");

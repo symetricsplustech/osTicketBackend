@@ -5,12 +5,12 @@
  * requests with HTTP 429 when a hardBlock limit is exceeded.
  * Attached via app.js → usageGuard('apiCalls') style.
  */
-const { UsageMeter, UsageLimit } = require('../models/UsageLimit');
-const ApiError = require('../utils/ApiError');
+const { UsageMeter, UsageLimit } = require("../models/UsageLimit");
+const ApiError = require("../utils/ApiError");
 
 function currentPeriod() {
   const d = new Date();
-  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
 }
 
 /** Increment a metric counter (fire-and-forget). */
@@ -19,7 +19,7 @@ function meter(tenantId, metric, amount = 1) {
   UsageMeter.findOneAndUpdate(
     { tenantId, period: currentPeriod() },
     { $inc: { [metric]: amount } },
-    { upsert: true }
+    { upsert: true },
   ).catch(() => {});
 }
 
@@ -31,17 +31,34 @@ function meter(tenantId, metric, amount = 1) {
  */
 const usageGuard = (metric) => async (req, res, next) => {
   try {
-    const tenantId = req.companyId || (req.user && (req.user.tenantId || req.user.companyId)) || null;
+    const tenantId =
+      req.companyId ||
+      (req.user && (req.user.tenantId || req.user.companyId)) ||
+      null;
     if (!tenantId) return next();
     const period = currentPeriod();
 
     let limitDoc = await UsageLimit.findOne({ tenantId, metric }).lean();
     if (!limitDoc) {
-      const Company = require('../models/Company');
-      const company = await Company.findById(tenantId).populate('plan').lean();
-      const planField = { apiCalls: 'apiMonthlyLimit', storageBytes: 'storageLimit', agents: 'maxAgents', users: 'maxUsers', tickets: 'maxTickets' }[metric];
-      const inheritedLimit = planField ? Number(company?.plan?.[planField] || 0) : 0;
-      if (inheritedLimit > 0) limitDoc = { limit: inheritedLimit, hardBlock: true, warnAtPct: 80, inheritedFromPlan: true };
+      const Company = require("../models/Company");
+      const company = await Company.findById(tenantId).populate("plan").lean();
+      const planField = {
+        apiCalls: "apiMonthlyLimit",
+        storageBytes: "storageLimit",
+        agents: "maxAgents",
+        users: "maxUsers",
+        tickets: "maxTickets",
+      }[metric];
+      const inheritedLimit = planField
+        ? Number(company?.plan?.[planField] || 0)
+        : 0;
+      if (inheritedLimit > 0)
+        limitDoc = {
+          limit: inheritedLimit,
+          hardBlock: true,
+          warnAtPct: 80,
+          inheritedFromPlan: true,
+        };
     }
     if (!limitDoc) {
       meter(tenantId, metric);
@@ -54,24 +71,42 @@ const usageGuard = (metric) => async (req, res, next) => {
     if (limitDoc.hardBlock && used >= limitDoc.limit) {
       // audit the block
       try {
-        require('../services/audit.service').audit({
-          company: tenantId,
-          actorType: 'system',
-          actor: null,
-          action: 'usage.hard_block',
-          entityType: 'usage_limit',
-          entityId: limitDoc._id,
-          after: { metric, used, limit: limitDoc.limit, path: req.originalUrl },
-          source: 'usage-middleware',
-          req,
-        }).catch(() => {});
-      } catch (_) { /* audit must not block */ }
-      throw new ApiError(429, `Usage limit reached for ${metric} (${used}/${limitDoc.limit}). Upgrade plan or contact admin.`);
+        require("../services/audit.service")
+          .audit({
+            company: tenantId,
+            actorType: "system",
+            actor: null,
+            action: "usage.hard_block",
+            entityType: "usage_limit",
+            entityId: limitDoc._id,
+            after: {
+              metric,
+              used,
+              limit: limitDoc.limit,
+              path: req.originalUrl,
+            },
+            source: "usage-middleware",
+            req,
+          })
+          .catch(() => {});
+      } catch (_) {
+        /* audit must not block */
+      }
+      throw new ApiError(
+        429,
+        `Usage limit reached for ${metric} (${used}/${limitDoc.limit}). Upgrade plan or contact admin.`,
+      );
     }
 
     // warn-at threshold → attach response header
-    if (limitDoc.warnAtPct && used / limitDoc.limit >= limitDoc.warnAtPct / 100) {
-      res.setHeader('X-Usage-Warning', `${metric} ${used}/${limitDoc.limit} (limit reached ${limitDoc.warnAtPct}% threshold)`);
+    if (
+      limitDoc.warnAtPct &&
+      used / limitDoc.limit >= limitDoc.warnAtPct / 100
+    ) {
+      res.setHeader(
+        "X-Usage-Warning",
+        `${metric} ${used}/${limitDoc.limit} (limit reached ${limitDoc.warnAtPct}% threshold)`,
+      );
     }
 
     meter(tenantId, metric);
@@ -88,7 +123,7 @@ async function ensurePeriod(tenantId) {
   await UsageMeter.findOneAndUpdate(
     { tenantId, period: currentPeriod() },
     { $setOnInsert: { tenantId, period: currentPeriod() } },
-    { upsert: true }
+    { upsert: true },
   );
 }
 

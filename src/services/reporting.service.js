@@ -1,12 +1,15 @@
-const Ticket = require('../models/helpdesk/tickets/Ticket');
-const Agent = require('../models/Agent');
-const User = require('../models/User');
-const Department = require('../models/Department');
-const Team = require('../models/Team');
+const Ticket = require("../models/helpdesk/tickets/Ticket");
+const Agent = require("../models/Agent");
+const User = require("../models/User");
+const Department = require("../models/Department");
+const Team = require("../models/Team");
 
 const sinceDays = (days) => new Date(Date.now() - days * 86400000);
 
-const avg = (arr) => (arr.length ? Math.round((arr.reduce((a, b) => a + b, 0) / arr.length) * 100) / 100 : 0);
+const avg = (arr) =>
+  arr.length
+    ? Math.round((arr.reduce((a, b) => a + b, 0) / arr.length) * 100) / 100
+    : 0;
 
 /**
  * Agent metrics: first response time, avg response time, avg resolution time,
@@ -19,7 +22,7 @@ async function agentMetrics({ company, fromDays = 30 }) {
     company,
     agent: { $in: agents.map((a) => a._id) },
     createdAt: { $gte: from },
-  }).populate('user', 'name');
+  }).populate("user", "name");
 
   const byAgent = {};
   for (const t of tickets) {
@@ -37,23 +40,33 @@ async function agentMetrics({ company, fromDays = 30 }) {
       assigned: 0,
     });
     m.assigned += 1;
-    const first = t.stats?.firstResponseAt ? new Date(t.stats.firstResponseAt) - new Date(t.createdAt) : null;
+    const first = t.stats?.firstResponseAt
+      ? new Date(t.stats.firstResponseAt) - new Date(t.createdAt)
+      : null;
     if (first) m.firstResponseTimes.push(first / 60000);
     if (t.stats?.responses) m.responseTimes.push(t.stats.responses);
-    if (t.closedAt && t.createdAt) m.resolutionTimes.push((new Date(t.closedAt) - new Date(t.createdAt)) / 3600000);
+    if (t.closedAt && t.createdAt)
+      m.resolutionTimes.push(
+        (new Date(t.closedAt) - new Date(t.createdAt)) / 3600000,
+      );
     if (t.stats?.reopened) m.reopened += t.stats.reopened;
-    if (['resolved', 'closed', 'archived'].includes(t.status)) {
+    if (["resolved", "closed", "archived"].includes(t.status)) {
       m.resolved += 1;
       m.closed += 1;
     }
     if (t.dueDate) {
       m.slaTotal += 1;
-      if (new Date(t.dueDate) >= t.closedAt || !t.isOverdue) m.slaCompliant += 1;
+      if (new Date(t.dueDate) >= t.closedAt || !t.isOverdue)
+        m.slaCompliant += 1;
     }
   }
 
-  const SurveyResponse = require('../models/SurveyResponse');
-  const responses = await SurveyResponse.find({ company, agent: { $in: agents.map((a) => a._id) }, respondedAt: { $gte: from } });
+  const SurveyResponse = require("../models/SurveyResponse");
+  const responses = await SurveyResponse.find({
+    company,
+    agent: { $in: agents.map((a) => a._id) },
+    respondedAt: { $gte: from },
+  });
   const csatByAgent = {};
   for (const r of responses) {
     const id = String(r.agent);
@@ -84,8 +97,13 @@ async function agentMetrics({ company, fromDays = 30 }) {
         avgFirstResponseMin: avg(m.firstResponseTimes || []),
         avgResolutionHours: avg(m.resolutionTimes || []),
         reopenRate: m.closed ? Math.round((m.reopened / m.closed) * 100) : 0,
-        slaCompliance: m.slaTotal ? Math.round((m.slaCompliant / m.slaTotal) * 100) : null,
-        csat: csat && csat.count ? Math.round((csat.total / csat.count) * 100) / 100 : null,
+        slaCompliance: m.slaTotal
+          ? Math.round((m.slaCompliant / m.slaTotal) * 100)
+          : null,
+        csat:
+          csat && csat.count
+            ? Math.round((csat.total / csat.count) * 100) / 100
+            : null,
         utilization: (m.assigned || 0) / Math.max(a.capacity || 10, 1),
       };
     }),
@@ -97,19 +115,36 @@ async function agentMetrics({ company, fromDays = 30 }) {
  */
 async function departmentMetrics({ company, fromDays = 30 }) {
   const from = sinceDays(fromDays);
-  const depts = await Department.find({ company, status: 'active' }).lean();
-  const tickets = await Ticket.find({ company, dept: { $in: depts.map((d) => d._id) }, createdAt: { $gte: from } });
+  const depts = await Department.find({ company, status: "active" }).lean();
+  const tickets = await Ticket.find({
+    company,
+    dept: { $in: depts.map((d) => d._id) },
+    createdAt: { $gte: from },
+  });
 
   const byDept = {};
   for (const t of tickets) {
     const id = String(t.dept);
-    const m = (byDept[id] = byDept[id] || { deptId: id, incoming: 0, resolved: 0, slaBreaches: 0, escalations: 0, avgResolutionHours: [], avgResponseMin: [] });
+    const m = (byDept[id] = byDept[id] || {
+      deptId: id,
+      incoming: 0,
+      resolved: 0,
+      slaBreaches: 0,
+      escalations: 0,
+      avgResolutionHours: [],
+      avgResponseMin: [],
+    });
     m.incoming += 1;
-    if (['resolved', 'closed', 'archived'].includes(t.status)) m.resolved += 1;
+    if (["resolved", "closed", "archived"].includes(t.status)) m.resolved += 1;
     if (t.isOverdue) m.slaBreaches += 1;
     if (t.escalatedBy?.length) m.escalations += 1;
-    if (t.closedAt && t.createdAt) m.avgResolutionHours.push((new Date(t.closedAt) - new Date(t.createdAt)) / 3600000);
-    const first = t.stats?.firstResponseAt ? new Date(t.stats.firstResponseAt) - new Date(t.createdAt) : null;
+    if (t.closedAt && t.createdAt)
+      m.avgResolutionHours.push(
+        (new Date(t.closedAt) - new Date(t.createdAt)) / 3600000,
+      );
+    const first = t.stats?.firstResponseAt
+      ? new Date(t.stats.firstResponseAt) - new Date(t.createdAt)
+      : null;
     if (first) m.avgResponseMin.push(first / 60000);
   }
 
@@ -144,18 +179,34 @@ async function teamMetrics({ company, fromDays = 30 }) {
   let unassigned = 0;
   for (const t of tickets) {
     if (!t.team) {
-      if (!['closed', 'archived', 'deleted', 'resolved'].includes(t.status)) unassigned += 1;
+      if (!["closed", "archived", "deleted", "resolved"].includes(t.status))
+        unassigned += 1;
       continue;
     }
     const id = String(t.team);
-    const m = (byTeam[id] = byTeam[id] || { teamId: id, incoming: 0, open: 0, resolved: 0, slaBreaches: 0, escalations: 0, avgResolutionHours: [], avgResponseMin: [] });
+    const m = (byTeam[id] = byTeam[id] || {
+      teamId: id,
+      incoming: 0,
+      open: 0,
+      resolved: 0,
+      slaBreaches: 0,
+      escalations: 0,
+      avgResolutionHours: [],
+      avgResponseMin: [],
+    });
     m.incoming += 1;
-    if (['resolved', 'closed', 'archived'].includes(t.status)) m.resolved += 1;
+    if (["resolved", "closed", "archived"].includes(t.status)) m.resolved += 1;
     else m.open += 1;
     if (t.isOverdue) m.slaBreaches += 1;
     if (t.escalatedBy?.length) m.escalations += 1;
-    if (t.closedAt && t.createdAt) m.avgResolutionHours.push((new Date(t.closedAt) - new Date(t.createdAt)) / 3600000);
-    if (t.stats?.firstResponseAt) m.avgResponseMin.push((new Date(t.stats.firstResponseAt) - new Date(t.createdAt)) / 60000);
+    if (t.closedAt && t.createdAt)
+      m.avgResolutionHours.push(
+        (new Date(t.closedAt) - new Date(t.createdAt)) / 3600000,
+      );
+    if (t.stats?.firstResponseAt)
+      m.avgResponseMin.push(
+        (new Date(t.stats.firstResponseAt) - new Date(t.createdAt)) / 60000,
+      );
   }
   return {
     from: from.toISOString(),
@@ -183,26 +234,70 @@ async function teamMetrics({ company, fromDays = 30 }) {
  */
 async function customerMetrics({ company, fromDays = 30, limit = 25 }) {
   const from = sinceDays(fromDays);
-  const users = await User.find({ company, isRegistered: true }).sort({ createdAt: -1 }).limit(500).lean();
-  const tickets = await Ticket.find({ company, createdAt: { $gte: from }, user: { $in: users.map((u) => u._id) } });
+  const users = await User.find({ company, isRegistered: true })
+    .sort({ createdAt: -1 })
+    .limit(500)
+    .lean();
+  const tickets = await Ticket.find({
+    company,
+    createdAt: { $gte: from },
+    user: { $in: users.map((u) => u._id) },
+  });
 
-  const SurveyResponse = require('../models/SurveyResponse');
-  const responses = await SurveyResponse.find({ company, user: { $in: users.map((u) => u._id) }, respondedAt: { $gte: from } }).populate('survey', 'type').lean();
+  const SurveyResponse = require("../models/SurveyResponse");
+  const responses = await SurveyResponse.find({
+    company,
+    user: { $in: users.map((u) => u._id) },
+    respondedAt: { $gte: from },
+  })
+    .populate("survey", "type")
+    .lean();
 
   const byUser = {};
   for (const t of tickets) {
     const id = String(t.user);
-    const m = (byUser[id] = byUser[id] || { userId: id, tickets: 0, open: 0, overdue: 0, slaBreaches: 0, escalations: 0, csatTotal: 0, csatCount: 0, npsTotal: 0, npsCount: 0 });
+    const m = (byUser[id] = byUser[id] || {
+      userId: id,
+      tickets: 0,
+      open: 0,
+      overdue: 0,
+      slaBreaches: 0,
+      escalations: 0,
+      csatTotal: 0,
+      csatCount: 0,
+      npsTotal: 0,
+      npsCount: 0,
+    });
     m.tickets += 1;
-    if (['open', 'assigned'].includes(t.status)) m.open += 1;
-    if (t.isOverdue) { m.overdue += 1; m.slaBreaches += 1; }
+    if (["open", "assigned"].includes(t.status)) m.open += 1;
+    if (t.isOverdue) {
+      m.overdue += 1;
+      m.slaBreaches += 1;
+    }
     if (t.escalatedBy?.length) m.escalations += 1;
   }
   for (const r of responses) {
     const id = String(r.user);
-    const m = (byUser[id] = byUser[id] || { userId: id, tickets: 0, open: 0, overdue: 0, slaBreaches: 0, escalations: 0, csatTotal: 0, csatCount: 0, npsTotal: 0, npsCount: 0 });
-    if (r.survey?.type === 'csat') { m.csatTotal += r.rating; m.csatCount += 1; }
-    if (r.survey?.type === 'nps') { m.npsTotal += r.rating; m.npsCount += 1; }
+    const m = (byUser[id] = byUser[id] || {
+      userId: id,
+      tickets: 0,
+      open: 0,
+      overdue: 0,
+      slaBreaches: 0,
+      escalations: 0,
+      csatTotal: 0,
+      csatCount: 0,
+      npsTotal: 0,
+      npsCount: 0,
+    });
+    if (r.survey?.type === "csat") {
+      m.csatTotal += r.rating;
+      m.csatCount += 1;
+    }
+    if (r.survey?.type === "nps") {
+      m.npsTotal += r.rating;
+      m.npsCount += 1;
+    }
   }
 
   return {
@@ -221,8 +316,12 @@ async function customerMetrics({ company, fromDays = 30, limit = 25 }) {
           overdue: m.overdue || 0,
           slaBreaches: m.slaBreaches || 0,
           escalations: m.escalations || 0,
-          csat: m.csatCount ? Math.round((m.csatTotal / m.csatCount) * 100) / 100 : null,
-          nps: m.npsCount ? Math.round((m.npsTotal / m.npsCount) * 100) / 100 : null,
+          csat: m.csatCount
+            ? Math.round((m.csatTotal / m.csatCount) * 100) / 100
+            : null,
+          nps: m.npsCount
+            ? Math.round((m.npsTotal / m.npsCount) * 100) / 100
+            : null,
           health: u.health?.score ?? null,
         };
       })
@@ -237,11 +336,18 @@ async function customerMetrics({ company, fromDays = 30, limit = 25 }) {
  */
 async function volumeTrend({ company, days = 30 }) {
   const from = sinceDays(days);
-  const tickets = await Ticket.find({ company, createdAt: { $gte: from } }).lean();
+  const tickets = await Ticket.find({
+    company,
+    createdAt: { $gte: from },
+  }).lean();
   const map = {};
   for (let i = days - 1; i >= 0; i--) {
     const d = new Date(Date.now() - i * 86400000);
-    map[d.toISOString().slice(0, 10)] = { date: d.toISOString().slice(0, 10), created: 0, resolved: 0 };
+    map[d.toISOString().slice(0, 10)] = {
+      date: d.toISOString().slice(0, 10),
+      created: 0,
+      resolved: 0,
+    };
   }
   for (const t of tickets) {
     const key = new Date(t.createdAt).toISOString().slice(0, 10);
@@ -254,4 +360,10 @@ async function volumeTrend({ company, days = 30 }) {
   return Object.values(map);
 }
 
-module.exports = { agentMetrics, departmentMetrics, teamMetrics, customerMetrics, volumeTrend };
+module.exports = {
+  agentMetrics,
+  departmentMetrics,
+  teamMetrics,
+  customerMetrics,
+  volumeTrend,
+};

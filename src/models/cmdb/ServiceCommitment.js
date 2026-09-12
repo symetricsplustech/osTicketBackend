@@ -1,0 +1,102 @@
+const { Schema, model } = require("mongoose");
+const ServiceCommitmentSchema = new Schema(
+  {
+    tenantId: {
+      type: Schema.Types.ObjectId,
+      ref: "Tenant",
+      required: true,
+      index: true,
+    },
+    serviceId: {
+      type: Schema.Types.ObjectId,
+      ref: "BusinessService",
+      required: true,
+      index: true,
+    },
+    offeringId: { type: Schema.Types.ObjectId, ref: "ServiceOffering" },
+    name: { type: String, required: true, trim: true },
+    description: { type: String, trim: true, default: "" },
+    type: {
+      type: String,
+      enum: [
+        "availability",
+        "performance",
+        "capacity",
+        "security",
+        "compliance",
+        "support",
+        "recovery",
+        "custom",
+      ],
+      required: true,
+      index: true,
+    },
+    targetValue: { type: Number, required: true },
+    targetUnit: {
+      type: String,
+      required: true,
+      enum: [
+        "percent",
+        "minutes",
+        "hours",
+        "seconds",
+        "ms",
+        "count",
+        "mbps",
+        "gbps",
+        "iops",
+        "custom",
+      ],
+    },
+    measurementWindow: {
+      type: String,
+      enum: ["daily", "weekly", "monthly", "quarterly", "annual"],
+      default: "monthly",
+    },
+    calculationMethod: {
+      type: String,
+      enum: [
+        "average",
+        "minimum",
+        "maximum",
+        "percentile_95",
+        "percentile_99",
+        "custom",
+      ],
+      default: "average",
+    },
+    threshold: {
+      warning: { type: Number },
+      critical: { type: Number },
+      breach: { type: Number },
+    },
+    reportingFrequency: {
+      type: String,
+      enum: ["real_time", "hourly", "daily", "weekly", "monthly"],
+      default: "monthly",
+    },
+    status: {
+      type: String,
+      enum: ["draft", "active", "suspended", "retired"],
+      default: "draft",
+      index: true,
+    },
+    startDate: { type: Date, default: Date.now },
+    endDate: { type: Date },
+    penalty: { type: String, trim: true, default: "" },
+    metadata: { type: Schema.Types.Mixed, default: {} },
+    createdBy: { type: Schema.Types.ObjectId, ref: "User" },
+    isDeleted: { type: Boolean, default: false },
+    deletedAt: { type: Date },
+    deletedBy: { type: Schema.Types.ObjectId, ref: "User" },
+  },
+  { timestamps: true },
+);
+ServiceCommitmentSchema.index({
+  tenantId: 1,
+  serviceId: 1,
+  type: 1,
+  status: 1,
+  isDeleted: 1,
+});
+module.exports = model("ServiceCommitment", ServiceCommitmentSchema);
