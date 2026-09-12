@@ -1,5 +1,6 @@
 const mongoose = require("mongoose");
 const bcrypt = require("bcryptjs");
+const { DEFAULT_HELPDESK_PERMISSIONS } = require("../config/defaultHelpdeskPermissions");
 
 const userSchema = new mongoose.Schema(
   {
@@ -55,7 +56,10 @@ const userSchema = new mongoose.Schema(
       default: null,
       index: true,
     },
-    permissions: { type: [String], default: [] },
+    permissions: {
+      type: [String],
+      default: () => [...DEFAULT_HELPDESK_PERMISSIONS],
+    },
     lastLogin: { type: Date },
     lastSeenAt: { type: Date, default: null },
     sessionVersion: { type: Number, default: 0, select: false },

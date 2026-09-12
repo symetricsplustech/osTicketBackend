@@ -9,6 +9,7 @@ const EmailTemplate = require("../../models/EmailTemplate");
 const SystemSetting = require("../../models/SystemSetting");
 const Ticket = require("../../models/helpdesk/tickets/Ticket");
 const User = require("../../models/User");
+const { DEFAULT_HELPDESK_PERMISSIONS } = require("../../config/defaultHelpdeskPermissions");
 const Organization = require("../../models/Organization");
 const CannedResponse = require("../../models/helpdesk/knowledge/CannedResponse");
 const FaqCategory = require("../../models/helpdesk/knowledge/FaqCategory");
@@ -336,12 +337,15 @@ exports.createUser = asyncHandler(async (req, res) => {
     status,
     userType,
     orgRole,
+    permissions,
   } = req.body;
   if (!name || !email) throw new ApiError(422, "Name and email are required");
   if (userType && !["employee", "external"].includes(userType))
     throw new ApiError(422, "Invalid user type");
   if (orgRole && !["member", "manager"].includes(orgRole))
     throw new ApiError(422, "Invalid organization role");
+  if (permissions !== undefined && !Array.isArray(permissions))
+    throw new ApiError(422, "permissions must be an array");
   const exists = await User.findOne({
     email: String(email).toLowerCase().trim(),
     ...(req.companyId ? { company: req.companyId } : {}),
@@ -370,6 +374,10 @@ exports.createUser = asyncHandler(async (req, res) => {
     emailConfirmed: !!password,
     userType: userType || "employee",
     orgRole: orgRole || "member",
+    permissions:
+      permissions !== undefined
+        ? permissions
+        : [...DEFAULT_HELPDESK_PERMISSIONS],
   });
   res.status(201).json({ success: true, user });
 });
@@ -378,10 +386,16 @@ exports.updateUser = asyncHandler(async (req, res) => {
   if (!user) throw new ApiError(404, "User not found");
   if (req.companyId && String(user.company) !== String(req.companyId))
     throw new ApiError(403, "Access denied");
-  const { name, email, phone, organization, status, notes } = req.body;
+  const { name, email, phone, organization, status, notes, permissions } =
+    req.body;
   if (name) user.name = name;
   if (email) user.email = email;
   if (phone !== undefined) user.phone = phone;
+  if (permissions !== undefined) {
+    if (!Array.isArray(permissions))
+      throw new ApiError(422, "permissions must be an array");
+    user.permissions = permissions;
+  }
   if (organization !== undefined) {
     if (!organization) {
       user.organization = null;

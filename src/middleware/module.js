@@ -143,6 +143,8 @@ function moduleAnyRequired(moduleKeys) {
  */
 async function getTenantModules(req, res, next) {
   try {
+    // Only Helpdesk (default) and Settings (owner-owned) are enabled for now.
+    const allModules = ["helpdesk", "settings"];
     // Super admin has access to all modules
     if (
       req.user &&
@@ -150,34 +152,14 @@ async function getTenantModules(req, res, next) {
         req.user.role === "super_admin" ||
         req.superAdmin)
     ) {
-      const allModules = [
-        "helpdesk",
-        "crm",
-        "csm",
-        "itam",
-        "itom",
-        "projects",
-        "hr",
-        "field-service",
-        "workflow",
-        "analytics",
-        "ai",
-        "settings",
-        "cmdb",
-        "secops",
-        "grc",
-        "workplace",
-        "legal",
-        "procurement",
-        "finance",
-        "esg",
-        "fsm",
-      ];
       return res.json({ modules: allModules });
     }
     const tenantId = resolveTenantId(req);
     if (!tenantId) {
-      return res.json({ modules: [] });
+      // No tenant context: still default to the HelpDesk module so a newly
+      // registered user can actually use the product instead of bouncing to
+      // the dashboard from every sidebar click.
+      return res.json({ modules: allModules });
     }
 
     const mongoose = require("mongoose");
@@ -191,7 +173,11 @@ async function getTenantModules(req, res, next) {
       })
       .toArray();
 
-    res.json({ modules });
+    const active = modules
+      .map((m) => m.moduleKey)
+      .filter((m) => allModules.includes(m));
+
+    res.json({ modules: active.length ? active : allModules });
   } catch (error) {
     next(error);
   }
@@ -216,30 +202,8 @@ async function activateModules(req, res, next) {
     const mongoose = require("mongoose");
     const db = mongoose.connection.db;
 
-    // Valid module keys (must match frontend Layout + superadmin branch below)
-    const validModules = [
-      "helpdesk",
-      "crm",
-      "csm",
-      "itam",
-      "itom",
-      "projects",
-      "hr",
-      "field-service",
-      "workflow",
-      "analytics",
-      "ai",
-      "settings",
-      "cmdb",
-      "secops",
-      "grc",
-      "workplace",
-      "legal",
-      "procurement",
-      "finance",
-      "esg",
-      "fsm",
-    ];
+    // Valid module keys (only Helpdesk + owner Settings for now)
+    const validModules = ["helpdesk", "settings"];
 
     const now = new Date();
 

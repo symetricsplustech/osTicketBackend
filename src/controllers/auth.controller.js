@@ -1,4 +1,5 @@
 const User = require("../models/User");
+const { DEFAULT_HELPDESK_PERMISSIONS } = require("../config/defaultHelpdeskPermissions");
 const Agent = require("../models/Agent");
 const SuperAdmin = require("../models/SuperAdmin");
 const Ticket = require("../models/helpdesk/tickets/Ticket");
@@ -119,6 +120,10 @@ exports.register = asyncHandler(async (req, res) => {
   user.status = "active";
   if (userType === "external" || userType === "employee")
     user.userType = userType;
+  // Every account gets HelpDesk access by default; the owner can restrict
+  // these granular permissions per user from Settings -> Access Control.
+  if (!user.permissions || user.permissions.length === 0)
+    user.permissions = [...DEFAULT_HELPDESK_PERMISSIONS];
   await user.save();
 
   const companyCtx = await emailService.getCompanyContext();
@@ -321,6 +326,12 @@ exports.portalLogin = asyncHandler(async (req, res) => {
   ) {
     await verifySecondFactor(user, totpCode);
     user.lastLogin = new Date();
+    // Backfill the default HelpDesk access once for accounts that were created
+    // before defaults existed (or were claimed without any permission yet).
+    // The owner can still restrict per user afterwards — defaults are only
+    // applied again while the account holds no HelpDesk key at all.
+    if (!user.permissions?.some((p) => String(p).startsWith("itsm.")))
+      user.permissions = [...DEFAULT_HELPDESK_PERMISSIONS];
     await user.save();
     const token = signToken({
       id: user._id,
