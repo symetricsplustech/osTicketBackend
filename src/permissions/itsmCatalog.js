@@ -1,11 +1,11 @@
 /**
- * Canonical ITSM Permission Catalog (Modules 1–8)
+ * Canonical ITSM Permission Catalog (Modules 1–10)
  *
  * Single source of truth for the granular `itsm.*` permission model
- * (SERVICENOW_ITSM_GRANULAR_PERMISSIONS_FROM_TECHNICAL_MASTER.md §Modules 1–8).
+ * (SERVICENOW_ITSM_GRANULAR_PERMISSIONS_FROM_TECHNICAL_MASTER.md §Modules 1–10).
  *
  * Layout: Layer('itsm') → Module → Group → Resource → Action. Every action is a
- * flat key like `itsm.incident.incident.update`. Keys are authoritative (1632
+ * flat key like `itsm.incident.incident.update`. Keys are authoritative (1908
  * total); the structural grouping is derived so the tree, the picker UI and the
  * high-risk audit all share one definition.
  *
@@ -26,6 +26,8 @@ const MODULES = [
   { key: 'knowledge', namespace: 'itsm.knowledge.*', label: 'Knowledge Management', moduleKey: 'helpdesk', scope: 'tenant' },
   { key: 'sla', namespace: 'itsm.sla.*', label: 'Service Level Management', moduleKey: 'helpdesk', scope: 'tenant' },
   { key: 'assignment', namespace: 'itsm.assignment.*', label: 'Assignment / Routing', moduleKey: 'helpdesk', scope: 'tenant' },
+  { key: 'approval', namespace: 'itsm.approval.*', label: 'Approval Engine', moduleKey: 'helpdesk', scope: 'tenant' },
+  { key: 'major_incident', namespace: 'itsm.major_incident.*', label: 'Major Incident + Communications', moduleKey: 'helpdesk', scope: 'tenant' },
 ];
 
 const GROUPS = [

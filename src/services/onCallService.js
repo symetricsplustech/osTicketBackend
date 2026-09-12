@@ -7,6 +7,18 @@ const numberingService = require('./numbering.service');
 const auditEventService = require('./auditEventService');
 const { emitEvent } = require('../realtime/socketManager');
 
+// Register on-call schemas before retrieving the models from Mongoose.
+require('../models/oncall/OnCallSchedule');
+require('../models/oncall/Shift');
+require('../models/oncall/Roster');
+require('../models/oncall/RosterMember');
+require('../models/oncall/Rotation');
+require('../models/oncall/CoverageRequest');
+require('../models/oncall/TimeOffRequest');
+require('../models/oncall/EscalationPolicy');
+require('../models/oncall/EscalationLevel');
+require('../models/oncall/ContactPreference');
+
 const requireTenant = (ctx) => { if (!ctx.tenantId) throw Object.assign(new Error('Tenant context required'), { statusCode: 400 }); return ctx.tenantId; };
 const pick = (obj, keys) => Object.fromEntries(keys.filter(k => obj[k] !== undefined).map(k => [k, obj[k]]));
 

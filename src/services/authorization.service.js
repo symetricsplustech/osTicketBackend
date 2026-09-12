@@ -36,11 +36,22 @@ const DENY = 'DENY';
 // Scopes from the ITSM spec (MD §19) mapped to the record fields we evaluate.
 const SCOPES = [
   'TENANT',
+  'ORGANIZATION',
+  'BUSINESS_UNIT',
+  'DEPARTMENT',
+  'BRANCH',
+  'LOCATION',
+  'TEAM',
+  'GROUP',
+  'ASSIGNMENT_GROUP',
+  'MANAGED_USERS',
   'OWN',
   'ASSIGNED_TO_ME',
-  'TEAM',
-  'DEPARTMENT',
   'REQUESTED_BY_ME',
+  'REQUESTED_FOR_ME',
+  'CREATED_BY_ME',
+  'WATCHING',
+  'CUSTOM',
 ];
 
 // ---------------------------------------------------------------------------
@@ -134,11 +145,14 @@ function checkPermission(principal, permission, extraRoles) {
   if (!principal || !permission) return { granted: false, via: 'none' };
   if (isAggregateAdmin(principal)) return { granted: true, via: 'admin_aggregate' };
   const { directAllow, deny, roleAllow } = collectPermissions(principal, extraRoles);
+  const matches = (set, key) => set.has(key) || [...set].some((grant) =>
+    grant === '*' || (grant.endsWith('.*') && key.startsWith(grant.slice(0, -1)))
+  );
   if (directAllow.has('*') || roleAllow.has('*')) return { granted: true, via: 'wildcard' };
   const effectiveDeny = expandGrants([...deny]);
-  if (effectiveDeny.has(permission) || deny.has('*')) return { granted: false, via: 'deny' };
-  if (expandGrants([...directAllow]).has(permission)) return { granted: true, via: 'direct' };
-  if (expandGrants([...roleAllow]).has(permission)) return { granted: true, via: 'role' };
+  if (matches(effectiveDeny, permission) || deny.has('*')) return { granted: false, via: 'deny' };
+  if (matches(expandGrants([...directAllow]), permission)) return { granted: true, via: 'direct' };
+  if (matches(expandGrants([...roleAllow]), permission)) return { granted: true, via: 'role' };
   return { granted: false, via: 'none' };
 }
 

@@ -1,0 +1,30 @@
+const { Schema, model } = require('mongoose');
+const KioskSchema = new Schema({
+  tenantId: { type: Schema.Types.ObjectId, ref: 'Tenant', required: true, index: true },
+  locationId: { type: Schema.Types.ObjectId, ref: 'WalkupLocation', required: true, index: true },
+  name: { type: String, required: true, trim: true },
+  description: { type: String, trim: true, default: '' },
+  number: { type: String, required: true, unique: true },
+  serialNumber: { type: String, trim: true, default: '' },
+  ipAddress: { type: String, trim: true, default: '' },
+  macAddress: { type: String, trim: true, default: '' },
+  status: { type: String, enum: ['online', 'offline', 'maintenance', 'error'], default: 'offline', index: true },
+  lastHeartbeat: { type: Date },
+  hardwareInfo: { type: Schema.Types.Mixed, default: {} },
+  softwareVersion: { type: String, trim: true, default: '' },
+  configuredServices: [{ type: Schema.Types.ObjectId, ref: 'WalkupService' }],
+  uiTheme: { type: Schema.Types.Mixed, default: {} },
+  printerEnabled: { type: Boolean, default: false },
+  printerConfig: { type: Schema.Types.Mixed, default: {} },
+  scannerEnabled: { type: Boolean, default: false },
+  cameraEnabled: { type: Boolean, default: false },
+  cardReaderEnabled: { type: Boolean, default: false },
+  lastConfigUpdate: { type: Date },
+  metadata: { type: Schema.Types.Mixed, default: {} },
+  createdBy: { type: Schema.Types.ObjectId, ref: 'User' },
+  isDeleted: { type: Boolean, default: false },
+  deletedAt: { type: Date },
+  deletedBy: { type: Schema.Types.ObjectId, ref: 'User' },
+}, { timestamps: true });
+KioskSchema.index({ tenantId: 1, locationId: 1, status: 1, isDeleted: 1 });
+module.exports = model('Kiosk', KioskSchema);

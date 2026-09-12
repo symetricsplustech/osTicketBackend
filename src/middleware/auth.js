@@ -287,6 +287,15 @@ const requirePermission = (perm, opts = {}) =>
     next();
   });
 
+// Resolve the canonical permission from request data for endpoints that carry
+// multiple business actions (for example approve/reject in one decision API).
+const requireResolvedPermission = (resolvePermission, opts = {}) =>
+  asyncHandler(async (req, res, next) => {
+    const permission = resolvePermission(req);
+    if (!permission) throw new ApiError(400, 'A supported action is required');
+    return requirePermission(permission, opts)(req, res, next);
+  });
+
 /**
  * requirePlatformRole(...roles) — SaaS platform RBAC (§1). platform_owner
  * bypasses everything; platform_auditor is globally read-only; legacy
@@ -345,4 +354,4 @@ const protectTenantAgent = [protectAgent, (req, res, next) => {
   next();
 }];
 
-module.exports = { signToken, verifyToken, protectUser, protectAgent, protectAdmin, protectSuperAdmin, protectTenantAgent, protectTenantPrincipal, optionalUser, requirePermission, requireSuperAdminPermission, requirePlatformRole, requirePlatformPermission, attachActiveCompany };
+module.exports = { signToken, verifyToken, protectUser, protectAgent, protectAdmin, protectSuperAdmin, protectTenantAgent, protectTenantPrincipal, optionalUser, requirePermission, requireResolvedPermission, requireSuperAdminPermission, requirePlatformRole, requirePlatformPermission, attachActiveCompany };
