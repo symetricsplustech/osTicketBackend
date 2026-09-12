@@ -76,19 +76,12 @@ const auditLogin = ({ actorType, actor, actorName, company, req, action }) => {
 };
 
 exports.register = asyncHandler(async (req, res) => {
-  const { name, email, password, phone, company, userType } = req.body;
-  const companyId = company || req.companyId;
-  if (!companyId || !mongoose.isValidObjectId(companyId))
-    throw new ApiError(
-      422,
-      "A valid tenant invitation or company identifier is required",
-    );
-  const activeCompany = await Company.findById(companyId).select("_id status");
-  if (!activeCompany || !activeCompany.isActive())
-    throw new ApiError(422, "The selected tenant is not active");
+  const { name, email, password, phone, company, userType, instanceId } = req.body;
+  const companyId = company || instanceId || req.companyId;
   const normalizedEmail = String(email || "")
     .toLowerCase()
     .trim();
+
   // Claim flow: an email-to-ticket sender already has an unregistered User
   // record (same address, maybe different/null tenant). Adopt THAT record so
   // mailed tickets stay linked in the portal instead of throwing E11000.
@@ -99,6 +92,7 @@ exports.register = asyncHandler(async (req, res) => {
       "An account with this email already exists. Please login.",
     );
   }
+
   let user;
   if (globalExisting && !globalExisting.isRegistered) {
     user = globalExisting;

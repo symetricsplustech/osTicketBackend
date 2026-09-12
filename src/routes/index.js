@@ -23,6 +23,8 @@ const coreAssignmentRoutes = require("./core/assignments");
 const coreOncallRoutes = require("./core/oncall");
 const coreWalkupRoutes = require("./core/walkup");
 const coreCmdbRoutes = require("./core/cmdb");
+const coreReleaseRoutes = require("./core/release");
+const instanceRoutes = require("./instance.routes");
 const searchRoutes = require("./search.routes");
 const correlationId = require("../middleware/correlationId");
 
@@ -63,6 +65,8 @@ router.use("/core/assignments", coreAssignmentRoutes);
 router.use("/core/oncall", coreOncallRoutes);
 router.use("/core/walkup", coreWalkupRoutes);
 router.use("/core/cmdb", coreCmdbRoutes);
+router.use("/core/release", coreReleaseRoutes);
+router.use("/instances", instanceRoutes);
 router.use("/search", searchRoutes);
 
 module.exports = router;

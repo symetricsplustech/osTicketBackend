@@ -19,16 +19,16 @@ const documented = new Set();
 let active = false;
 for (const line of source.split(/\r?\n/)) {
   const heading = line.match(/^# MODULE (\d{2}) —/);
-  if (heading) active = Number(heading[1]) >= 1 && Number(heading[1]) <= 10;
+  if (heading) active = Number(heading[1]) >= 1 && Number(heading[1]) <= 12;
   if (!active) continue;
   const match = line.match(/^- \[[ xX]\] `(itsm\.[a-z0-9_.]+)`/);
   if (match) documented.add(match[1]);
 }
 
-assert.strictEqual(MODULES.length, 10, "catalog must expose Modules 1-10");
+assert.strictEqual(MODULES.length, 12, "catalog must expose Modules 1-12");
 assert.strictEqual(
   allItsmKeys().length,
-  1908,
+  2190,
   "catalog must contain all documented keys",
 );
 assert.deepStrictEqual(
@@ -70,5 +70,5 @@ assert.strictEqual(
 );
 
 console.log(
-  "PASS ITSM Modules 1-10 permission catalog and wildcard authorization",
+  "PASS ITSM Modules 1-12 permission catalog and wildcard authorization",
 );

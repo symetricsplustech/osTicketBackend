@@ -131,9 +131,11 @@ const attachActiveCompany = async (principal, req) => {
       /* audit must never block authentication */
     }
   };
+  // Platform users (no company) are allowed - they can create instances
   if (!principal.company) {
-    auditDenied("missing_tenant_membership");
-    throw new ApiError(403, "A tenant membership is required for this account");
+    req.companyId = null;
+    req.company = null;
+    return;
   }
   const company = await Company.findById(principal.company).select(
     "_id status",
@@ -173,6 +175,7 @@ const protectUser = asyncHandler(async (req, res, next) => {
   req.user = user;
   await attachActiveCompany(user, req);
   await touchSession(user, req);
+  // Platform users (no company) don't need tenant scope
   runWithTenant(req.companyId, next);
 });
 
@@ -185,7 +188,7 @@ const optionalUser = asyncHandler(async (req, res, next) => {
         const user = await User.findById(decoded.id);
         if (user && user.status === "active") {
           req.user = user;
-          if (user.company) await attachActiveCompany(user, req);
+          await attachActiveCompany(user, req);
         }
       }
     } catch (err) {
