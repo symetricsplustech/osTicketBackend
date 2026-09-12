@@ -20,6 +20,7 @@ const coreRequestRoutes = require('./core/request');
 const coreKnowledgeRoutes = require('./core/knowledge');
 const coreSlmRoutes = require('./core/slm');
 const coreAssignmentRoutes = require('./core/assignments');
+const coreOncallRoutes = require('./core/oncall');
 const searchRoutes = require('./search.routes');
 const correlationId = require('../middleware/correlationId');
 
@@ -52,6 +53,7 @@ router.use('/core/requests', coreRequestRoutes);
 router.use('/core/knowledge', coreKnowledgeRoutes);
 router.use('/core/slm', coreSlmRoutes);
 router.use('/core/assignments', coreAssignmentRoutes);
+router.use('/core/oncall', coreOncallRoutes);
 router.use('/search', searchRoutes);
 
 module.exports = router;
