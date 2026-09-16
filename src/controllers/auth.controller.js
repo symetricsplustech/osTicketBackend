@@ -77,7 +77,9 @@ const auditLogin = ({ actorType, actor, actorName, company, req, action }) => {
 };
 
 exports.register = asyncHandler(async (req, res) => {
-  const { name, email, password, phone, company, userType, instanceId } = req.body;
+  const { name, email, password, phone, company, userType, instanceId, policyConsent } = req.body;
+  if (policyConsent !== true)
+    throw new ApiError(422, "Accept the privacy policy and terms to register");
   const companyId = company || instanceId || req.companyId;
   const normalizedEmail = String(email || "")
     .toLowerCase()
@@ -116,8 +118,11 @@ exports.register = asyncHandler(async (req, res) => {
     });
   }
   user.isRegistered = true;
-  user.emailConfirmed = true;
-  user.status = "active";
+  user.emailConfirmed = false;
+  user.status = "pending_verification";
+  user.policyConsentAt = new Date();
+  user.confirmationToken = generateConfirmationToken();
+  user.confirmationExpires = new Date(Date.now() + 24 * 60 * 60 * 1000);
   if (userType === "external" || userType === "employee")
     user.userType = userType;
   // Every account gets HelpDesk access by default; the owner can restrict
@@ -126,29 +131,20 @@ exports.register = asyncHandler(async (req, res) => {
     user.permissions = [...DEFAULT_HELPDESK_PERMISSIONS];
   await user.save();
 
-  const companyCtx = await emailService.getCompanyContext();
-  const ctx = {
-    user: {
-      name: user.name,
-      email: user.email,
-      first: user.name?.split(" ")[0],
-    },
-    urls: { home: config.urls.client },
-    ...companyCtx,
-  };
-  try {
-    await emailService.sendFromTemplate({
-      key: "welcome_user",
-      to: user.email,
-      data: ctx,
-      event: "welcome",
-      user: user._id,
-      company: user.company || companyId,
-    });
-  } catch (err) {
-    // non-blocking
-  }
-  sendTokenResponse(user, "user", res, 201);
+  const confirmationUrl = `${config.urls.client}/confirm-email?token=${encodeURIComponent(user.confirmationToken)}`;
+  const delivery = await emailService.sendMail({
+    to: user.email,
+    subject: "Confirm your platform account",
+    body: `Confirm your account within 24 hours: ${confirmationUrl}`,
+    event: "registration_confirmation",
+    user: user._id,
+    company: user.company || companyId,
+  });
+  res.status(201).json({
+    success: true,
+    message: "Account created. Confirm your email before signing in.",
+    ...(config.env !== "production" && delivery?.dev ? { confirmationUrl } : {}),
+  });
 });
 
 exports.login = asyncHandler(async (req, res) => {
@@ -413,16 +409,21 @@ exports.adminLogin = asyncHandler(async (req, res) => {
 
 exports.confirmEmail = asyncHandler(async (req, res) => {
   const { token } = req.query;
+  if (!token || typeof token !== "string")
+    throw new ApiError(422, "Confirmation token is required");
   const user = await User.findOne({
     confirmationToken: token,
     confirmationExpires: { $gt: new Date() },
+    isRegistered: true,
+    status: "pending_verification",
   });
   if (!user) throw new ApiError(400, "Invalid or expired confirmation token");
   user.emailConfirmed = true;
+  user.status = "active";
   user.confirmationToken = null;
   user.confirmationExpires = null;
   await user.save();
-  sendTokenResponse(user, "user", res);
+  res.json({ success: true, message: "Email confirmed. You can now sign in." });
 });
 
 exports.forgotPassword = asyncHandler(async (req, res) => {

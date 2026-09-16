@@ -20,7 +20,7 @@ const QUERY_HOOKS = [
 
 const getTenantId = () => tenantContext.getStore()?.tenantId || null;
 const runWithTenant = (tenantId, callback) =>
-  tenantContext.run({ tenantId: String(tenantId) }, callback);
+  tenantContext.run({ tenantId: tenantId ? String(tenantId) : null }, callback);
 
 const tenantScopePlugin = (schema) => {
   // Models which do not contain a tenant key are global reference data and are

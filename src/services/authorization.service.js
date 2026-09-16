@@ -89,7 +89,8 @@ const isAggregateAdmin = (principal) =>
   !!principal &&
   (!!principal.isSuperAdmin ||
     !!principal.isAdmin ||
-    !!(principal.role && principal.role.isAdmin));
+    !!(principal.role && principal.role.isAdmin) ||
+    principal.platformRole === "platform_owner");
 
 // ---------------------------------------------------------------------------
 // Permission resolution (pure, no DB)
@@ -539,10 +540,20 @@ async function authorize({
   }
   // 3. tenant resolved?
   const tenantId = principalTenant(principal, tenant);
-  if (!tenantId) return fail("TENANT_UNRESOLVED");
+  const isPlatformOwner =
+    principal.isSuperAdmin === true ||
+    (principal.permissions || []).includes("*") ||
+    principal.platformRole === "platform_owner";
+  if (!tenantId) {
+    if (isPlatformOwner) {
+      // platform aggregate — no tenant required
+    } else {
+      return fail("TENANT_UNRESOLVED");
+    }
+  }
   // 4. membership valid? (principal must belong to the target tenant)
   const membership = principalTenant(principal);
-  if (membership && String(membership) !== String(tenantId))
+  if (tenantId && membership && String(membership) !== String(tenantId))
     return fail("MEMBERSHIP_MISMATCH");
 
   // 5. module entitlement? (in-memory keys only; DB-backed tenant_modules

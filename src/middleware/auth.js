@@ -20,6 +20,12 @@ const assertSessionVersion = (decoded, principal) => {
     throw new ApiError(401, "Session has been revoked, please login again");
 };
 
+const assertSelectedMembership = (decoded, user) => {
+  if (decoded.tid && !(user.instanceMemberships || []).some(
+    (membership) => String(membership.instance) === String(decoded.tid) && membership.status === "active",
+  )) throw new ApiError(403, "Active instance membership required");
+};
+
 const attachPrivilegedSession = async (decoded, req) => {
   if (!decoded.sid) return;
   const PrivilegedSession = require("../models/PrivilegedSession");
@@ -110,7 +116,7 @@ const extractToken = (req) => {
   return null;
 };
 
-const attachActiveCompany = async (principal, req) => {
+const attachActiveCompany = async (principal, req, selectedCompany = principal.company) => {
   const auditDenied = (reason) => {
     try {
       require("../services/audit.service")
@@ -132,19 +138,19 @@ const attachActiveCompany = async (principal, req) => {
     }
   };
   // Platform users (no company) are allowed - they can create instances
-  if (!principal.company) {
+  if (!selectedCompany) {
     req.companyId = null;
     req.company = null;
     return;
   }
-  const company = await Company.findById(principal.company).select(
+  const company = await Company.findById(selectedCompany).select(
     "_id status",
   );
   if (!company) {
     auditDenied("inactive_or_missing_tenant");
     throw new ApiError(
       403,
-      `This tenant is not active (company ${principal.company} not found)`,
+      `This tenant is not active (company ${selectedCompany} not found)`,
     );
   }
   if (!company.isActive()) {
@@ -172,8 +178,10 @@ const protectUser = asyncHandler(async (req, res, next) => {
   if (!user || user.status !== "active")
     throw new ApiError(401, "Account not found or disabled");
   assertSessionVersion(decoded, user);
+  assertSelectedMembership(decoded, user);
   req.user = user;
-  await attachActiveCompany(user, req);
+  await attachActiveCompany(user, req, decoded.tid || user.company);
+  if (!req.companyId) throw new ApiError(403, "Select an instance before accessing tenant data");
   await touchSession(user, req);
   // Platform users (no company) don't need tenant scope
   runWithTenant(req.companyId, next);
@@ -187,8 +195,9 @@ const optionalUser = asyncHandler(async (req, res, next) => {
       if (decoded.type === "user") {
         const user = await User.findById(decoded.id);
         if (user && user.status === "active") {
+          assertSelectedMembership(decoded, user);
           req.user = user;
-          await attachActiveCompany(user, req);
+          await attachActiveCompany(user, req, decoded.tid || user.company);
         }
       }
     } catch (err) {
@@ -268,8 +277,9 @@ const protectTenantPrincipal = asyncHandler(async (req, res, next) => {
     if (!user || user.status !== "active")
       throw new ApiError(401, "Account not found or disabled");
     assertSessionVersion(decoded, user);
+    assertSelectedMembership(decoded, user);
     req.user = user;
-    await attachActiveCompany(user, req);
+    await attachActiveCompany(user, req, decoded.tid || user.company);
     await touchSession(user, req);
     req.user.tenantId = req.companyId;
   } else if (decoded.type === "agent") {
@@ -298,6 +308,9 @@ const protectTenantPrincipal = asyncHandler(async (req, res, next) => {
   } else {
     throw new ApiError(403, "Tenant account access only");
   }
+  const platformRoute = /^\/(?:api\/v1\/)?(?:auth|instances)(?:\/|$)/.test(req.originalUrl);
+  if (!req.companyId && !platformRoute)
+    throw new ApiError(403, "Select an instance before accessing tenant data");
   runWithTenant(req.companyId, next);
 });
 

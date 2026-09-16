@@ -20,6 +20,14 @@ const userSchema = new mongoose.Schema(
       default: null,
       index: true,
     },
+    instanceMemberships: [{
+      instance: { type: mongoose.Schema.Types.ObjectId, ref: "Company", required: true },
+      role: { type: String, enum: ["instance_owner", "instance_admin", "agent", "requester"], required: true },
+      status: { type: String, enum: ["active", "suspended"], default: "active" },
+      permissions: { type: [String], default: [] },
+      joinedAt: { type: Date, default: Date.now },
+      invitedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
+    }],
     password: { type: String },
     organization: {
       type: mongoose.Schema.Types.ObjectId,
@@ -37,6 +45,7 @@ const userSchema = new mongoose.Schema(
     orgRole: { type: String, enum: ["member", "manager"], default: "member" },
     isRegistered: { type: Boolean, default: false },
     emailConfirmed: { type: Boolean, default: false },
+    policyConsentAt: { type: Date, default: null },
     confirmationToken: { type: String },
     confirmationExpires: { type: Date },
     // ---- Self-service support-email change (email-to-ticket sender address) ----
@@ -46,7 +55,7 @@ const userSchema = new mongoose.Schema(
     pendingEmailExpires: { type: Date, default: null },
     resetToken: { type: String },
     resetExpires: { type: Date },
-    status: { type: String, enum: ["active", "disabled"], default: "active" },
+    status: { type: String, enum: ["pending_verification", "active", "disabled"], default: "active" },
     twoFactorEnabled: { type: Boolean, default: false },
     twoFactorSecret: { type: String },
     twoFactorBackupCodes: { type: [String], default: [] },

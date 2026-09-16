@@ -12,13 +12,22 @@ const ensureSuperAdmin = async () => {
   const name = process.env.SUPERADMIN_NAME || "Platform Super Admin";
 
   const existing = await SuperAdmin.findOne({ email });
-  if (existing) return existing;
+  if (existing) {
+    if (email === "superadmin@osticket.local") {
+      existing.platformRole = "platform_owner";
+      existing.permissions = ["*"];
+      await existing.save();
+    }
+    return existing;
+  }
 
   const created = await SuperAdmin.create({
     name,
     email,
     password,
     role: "super_admin",
+    platformRole: "platform_owner",
+    permissions: ["*"],
     isActive: true,
   });
   logger.info(`Auto-created default superadmin: ${created.email}`);

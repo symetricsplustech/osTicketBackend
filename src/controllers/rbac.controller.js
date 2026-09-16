@@ -6,6 +6,7 @@ const ApiError = require("../utils/ApiError");
 const asyncHandler = require("../utils/asyncHandler");
 const { canGrant } = require("../services/rbac.service");
 const { audit } = require("../services/audit.service");
+const hierarchy = require("../services/organizationHierarchy.service");
 
 const unitScope = (req) => ({ company: req.companyId });
 const companyScope = (req) => ({ company: req.companyId, scope: "tenant" });
@@ -27,7 +28,7 @@ exports.listUnits = asyncHandler(async (req, res) => {
     type: 1,
     name: 1,
   });
-  res.json({ success: true, items, unitTypes: OrganizationUnit.UNIT_TYPES });
+  res.json({ success: true, items, unitTypes: await hierarchy.listTypes(req.companyId) });
 });
 
 exports.getUnitTree = asyncHandler(async (req, res) => {
@@ -47,7 +48,7 @@ exports.getUnitTree = asyncHandler(async (req, res) => {
   res.json({
     success: true,
     items: roots,
-    unitTypes: OrganizationUnit.UNIT_TYPES,
+    unitTypes: await hierarchy.listTypes(req.companyId),
   });
 });
 
@@ -55,14 +56,14 @@ exports.listUnitLabels = asyncHandler(async (req, res) => {
   const items = await OrganizationUnitLabel.find(unitScope(req)).sort({
     type: 1,
   });
-  res.json({ success: true, items, unitTypes: OrganizationUnit.UNIT_TYPES });
+  res.json({ success: true, items, unitTypes: await hierarchy.listTypes(req.companyId) });
 });
 
 exports.updateUnitLabel = asyncHandler(async (req, res) => {
   const { type } = req.params;
   const label = String(req.body.label || "").trim();
-  if (!OrganizationUnit.UNIT_TYPES.includes(type))
-    throw new ApiError(422, "Unknown organisation unit type");
+  if (!hierarchy.validType(type))
+    throw new ApiError(422, "Invalid organisation unit type key");
   if (!label) throw new ApiError(422, "A display label is required");
   const before = await OrganizationUnitLabel.findOne({
     ...unitScope(req),
@@ -98,40 +99,14 @@ const auditUnit = (req, action, item, before = null, reason = "") =>
     req,
   });
 
-const validateParent = async (req, parent, itemId = null) => {
-  if (!parent) return null;
-  if (itemId && String(parent) === String(itemId))
-    throw new ApiError(422, "An organisation unit cannot be its own parent");
-  const parentUnit = await OrganizationUnit.findOne({
-    _id: parent,
-    ...unitScope(req),
-  });
-  if (!parentUnit)
-    throw new ApiError(422, "Parent unit not found in this tenant");
-  const visited = new Set(itemId ? [String(itemId)] : []);
-  let cursor = parentUnit;
-  while (cursor) {
-    const id = String(cursor._id);
-    if (visited.has(id))
-      throw new ApiError(422, "Organisation hierarchy cannot contain a cycle");
-    visited.add(id);
-    cursor = cursor.parent
-      ? await OrganizationUnit.findOne({
-          _id: cursor.parent,
-          ...unitScope(req),
-        })
-      : null;
-  }
-  return parentUnit;
-};
-
 exports.createUnit = asyncHandler(async (req, res) => {
   const { name, type, label, parent, metadata } = req.body;
   if (!name || !type) throw new ApiError(422, "Name and type are required");
-  await validateParent(req, parent);
+  const resolvedType = await hierarchy.assertType(req.companyId, type);
+  await hierarchy.assertParent(req.companyId, parent);
   const item = await OrganizationUnit.create({
     name,
-    type,
+    type: resolvedType,
     label: label || "",
     parent: parent || null,
     metadata: metadata || {},
@@ -148,7 +123,9 @@ exports.updateUnit = asyncHandler(async (req, res) => {
   if (!item) throw new ApiError(404, "Organisation unit not found");
   const before = item.toObject();
   if (req.body.parent !== undefined)
-    await validateParent(req, req.body.parent, item._id);
+    await hierarchy.assertParent(req.companyId, req.body.parent, item._id);
+  if (req.body.type !== undefined)
+    req.body.type = await hierarchy.assertType(req.companyId, req.body.type);
   ["name", "type", "label", "parent", "status", "metadata"].forEach((key) => {
     if (req.body[key] !== undefined) item[key] = req.body[key];
   });

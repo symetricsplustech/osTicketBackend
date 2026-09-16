@@ -98,7 +98,8 @@ const sendMail = async ({
   const enabled = st ? true : config.email.enabled;
   if (!enabled) {
     logger.info(`[EMAIL ${event}] To: ${to} | Subject: ${subject}`);
-    logger.info(`[EMAIL BODY]\n${body}`);
+    if (!["registration_confirmation", "instance_invitation"].includes(event))
+      logger.info(`[EMAIL BODY]\n${body}`);
     await logEmail({
       to,
       subject,

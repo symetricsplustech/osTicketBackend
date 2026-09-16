@@ -32,11 +32,15 @@ const seedSuperAdmin = async () => {
       email: "superadmin@osticket.local",
       password: "SuperAdmin@123",
       role: "super_admin",
+      platformRole: "platform_owner",
+      permissions: ["*"],
       isActive: true,
       moduleKeys: allModules,
     });
     console.log("Super admin seeded with all modules");
   } else {
+    superAdmin.platformRole = "platform_owner";
+    superAdmin.permissions = ["*"];
     superAdmin.moduleKeys = allModules;
     await superAdmin.save();
     console.log("Super admin moduleKeys updated to all modules");

@@ -28,6 +28,9 @@ const companySchema = new mongoose.Schema(
       default: "trial",
       index: true,
     },
+    isInstance: { type: Boolean, default: false, index: true },
+    instanceCode: { type: String, default: null, trim: true },
+    instanceOwner: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
     // Company owner (tenant owner agent) + self-registration verification.
     ownerId: {
       type: mongoose.Schema.Types.ObjectId,

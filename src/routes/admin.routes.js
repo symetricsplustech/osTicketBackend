@@ -1,6 +1,7 @@
 const express = require("express");
 const { protectAdmin } = require("../middleware/auth");
 const ctrl = require("../controllers/admin.controller");
+const organizationUnits = require("../controllers/admin/organizationUnits");
 const { upload } = require("../config/multer");
 
 const router = express.Router();
@@ -102,6 +103,15 @@ router.get("/orgs", ctrl.listOrgs);
 router.post("/orgs", ctrl.createOrg);
 router.put("/orgs/:id", ctrl.updateOrg);
 router.delete("/orgs/:id", ctrl.deleteOrg);
+
+// Instance organization hierarchy: business units, departments, teams, sites.
+router.get("/organization-unit-types", organizationUnits.listTypes);
+router.post("/organization-unit-types", organizationUnits.createType);
+router.delete("/organization-unit-types/:type", organizationUnits.removeType);
+router.get("/organization-units", organizationUnits.list);
+router.post("/organization-units", organizationUnits.create);
+router.put("/organization-units/:id", organizationUnits.update);
+router.delete("/organization-units/:id", organizationUnits.remove);
 
 // Canned responses
 router.get("/canned", ctrl.listCanned);

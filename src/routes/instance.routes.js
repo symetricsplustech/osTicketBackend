@@ -4,6 +4,7 @@ const validate = require("../middleware/validate");
 const { protectTenantPrincipal } = require("../middleware/auth");
 const { getTenantModules, activateModules, deactivateModule } = require("../middleware/module");
 const ctrl = require("../controllers/instance.controller");
+const organizationUnits = require("../controllers/admin/organizationUnits");
 
 const router = express.Router();
 
@@ -25,15 +26,47 @@ router.post(
 
 // Get current user's instances
 router.get("/my-instances", ctrl.getMyInstances);
+router.post("/:instanceId/select", ctrl.selectInstance);
+
+const requireOrganizationAdmin = (req, res, next) => {
+  const membership = req.user?.instanceMemberships?.find(
+    (item) => String(item.instance) === req.params.instanceId && item.status === "active",
+  );
+  if (String(req.companyId) !== req.params.instanceId ||
+      !["instance_owner", "instance_admin"].includes(membership?.role)) {
+    return res.status(403).json({ success: false, message: "Instance admin membership required" });
+  }
+  next();
+};
+
+router.use("/:instanceId/organization-unit-types", requireOrganizationAdmin);
+router.get("/:instanceId/organization-unit-types", organizationUnits.listTypes);
+router.post("/:instanceId/organization-unit-types", organizationUnits.createType);
+router.delete("/:instanceId/organization-unit-types/:type", organizationUnits.removeType);
+router.use("/:instanceId/organization-units", requireOrganizationAdmin);
+router.get("/:instanceId/organization-units", organizationUnits.list);
+router.post("/:instanceId/organization-units", organizationUnits.create);
+router.put("/:instanceId/organization-units/:id", organizationUnits.update);
+router.delete("/:instanceId/organization-units/:id", organizationUnits.remove);
 
 // Get instance details
 router.get("/:instanceId", ctrl.getInstance);
 
 // Accept instance invitation
 router.post(
+  "/:instanceId/invitations",
+  [
+    body("email").isEmail().withMessage("Valid email is required"),
+    body("role").isIn(["instance_admin", "agent", "requester"]),
+  ],
+  validate,
+  ctrl.createInvitation,
+);
+
+router.post(
   "/:instanceId/accept-invitation",
   [
-    body("role").optional().isString(),
+    body("token").isHexadecimal().isLength({ min: 64, max: 64 }),
   ],
   validate,
   ctrl.acceptInvitation

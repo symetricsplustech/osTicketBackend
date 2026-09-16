@@ -44,14 +44,14 @@ const config = {
       process.env.EMAIL_TO_TICKET_ADDRESS || process.env.EMAIL_USER || "",
   },
   urls: {
-    client: process.env.CLIENT_URL || "http://localhost:5173",
+    client: process.env.CLIENT_URL || "http://localhost:3000",
     agent: process.env.AGENT_URL || "http://localhost:5174",
     admin: process.env.ADMIN_URL || "http://localhost:5175",
     superadmin: process.env.SUPERADMIN_URL || "http://localhost:5176",
   },
   corsOrigins: (
     process.env.CORS_ORIGINS ||
-    "http://localhost:5173,http://localhost:5174,http://localhost:5175,http://localhost:5176,http://localhost:3001"
+    "http://localhost:3000,http://localhost:5173,http://localhost:5174,http://localhost:5175,http://localhost:5176,http://localhost:3001"
   )
     .split(",")
     .map((s) => s.trim()),

@@ -16,6 +16,20 @@ const asyncHandler = require("../utils/asyncHandler");
 const { signToken } = require("../middleware/auth");
 const mongoose = require("mongoose");
 const crypto = require("crypto");
+const config = require("../config/config");
+const InstanceInvitation = require("../models/InstanceInvitation");
+const { runWithTenant } = require("../middleware/tenantScope");
+
+const membershipFor = (user, instanceId) =>
+  (user.instanceMemberships || []).find(
+    (membership) => String(membership.instance) === String(instanceId) && membership.status === "active",
+  );
+const requireInstanceAdmin = (user, instanceId) => {
+  const membership = membershipFor(user, instanceId);
+  if (!membership || !["instance_owner", "instance_admin"].includes(membership.role))
+    throw new ApiError(403, "Active instance admin membership required");
+  return membership;
+};
 
 const DEFAULT_TENANT_MODULES = ["helpdesk", "settings"];
 
@@ -105,14 +119,11 @@ const DEFAULT_SLA_PLANS = [
   { name: "Critical Response", gracePeriod: 4, schedule: "24/7", notes: "Emergency response within 4 hours" },
 ];
 
-exports.createInstance = asyncHandler(async (req, res) => {
+exports.createInstance = asyncHandler(async (req, res) => runWithTenant(null, async () => {
   const { name, domain, companyName, companyEmail } = req.body;
   const user = req.user;
 
   // Check if user is a platform user (no company) or has platform permissions
-  const isPlatformUser = !user.company;
-  const isPlatformAdmin = user.role === "superadmin";
-
   // Validate domain format
   if (!domain.includes(".")) {
     throw new ApiError(422, "Domain must be a valid domain (e.g., company.example.com)");
@@ -132,10 +143,11 @@ exports.createInstance = asyncHandler(async (req, res) => {
     throw new ApiError(409, "An instance with a similar name already exists");
   }
 
-  const session = await mongoose.startSession();
-  session.startTransaction();
-
-  try {
+  let instance;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const session = await mongoose.startSession();
+    try {
+      await session.withTransaction(async () => {
     // Create the instance (Company with instance flag)
     const company = await Company.create([{
       name,
@@ -152,11 +164,10 @@ exports.createInstance = asyncHandler(async (req, res) => {
       instanceOwner: user._id,
     }], { session });
 
-    const instance = company[0];
+    instance = company[0];
 
     // Create instance membership for the creator (Instance Owner/Admin)
     const membership = {
-      user: user._id,
       instance: instance._id,
       role: "instance_owner",
       status: "active",
@@ -169,17 +180,13 @@ exports.createInstance = asyncHandler(async (req, res) => {
       { session }
     );
 
-    // Add instance to user's instanceMemberships
-    user.instanceMemberships = user.instanceMemberships || [];
-    user.instanceMemberships.push(membership);
-
     // Create default roles
     const roles = [];
     for (const r of DEFAULT_ROLES) {
       const role = await Role.create([{
         ...r,
         company: instance._id,
-        scope: "instance",
+        scope: "tenant",
       }], { session });
       roles.push(role[0]);
     }
@@ -209,16 +216,16 @@ exports.createInstance = asyncHandler(async (req, res) => {
       name: "Support Team",
       notes: "Front-line support",
       company: instance._id,
-      members: [user._id],
-      lead: user._id,
+      members: [],
+      lead: null,
     }], { session });
 
     const techTeam = await Team.create([{
       name: "Technical Team",
       notes: "Escalation team",
       company: instance._id,
-      members: [user._id],
-      lead: user._id,
+      members: [],
+      lead: null,
     }], { session });
 
     // Create default help topics
@@ -233,30 +240,17 @@ exports.createInstance = asyncHandler(async (req, res) => {
       company: instance._id,
     }], { session });
 
-    // Create system settings
-    await SystemSetting.setSetting("company.name", name);
-    await SystemSetting.setSetting("company.email", companyEmail || user.email);
-    await SystemSetting.setSetting("company.url", `https://${domain}`);
-    await SystemSetting.setSetting("system.defaultDept", String(departments.find(d => d.name === "Support")?._id));
-    await SystemSetting.setSetting("system.defaultSla", String(slaPlans.find(s => s.name === "Business Hours")?._id));
-    await SystemSetting.setSetting("system.defaultPriority", "Normal");
-    await SystemSetting.setSetting("system.autoLockTickets", true);
-    await SystemSetting.setSetting("system.ticketLockMinutes", 5);
-    await SystemSetting.setSetting("system.allowTicketReopen", true);
-    await SystemSetting.setSetting("system.emailToTicket", config.email.user);
-    await SystemSetting.setSetting("tickets.autoResponder", true);
-    await SystemSetting.setSetting("tickets.autoAssign", true);
-    await SystemSetting.setSetting("tickets.notifyNewTicketToDept", true);
-    await SystemSetting.setSetting("autoresponder.enabled", true);
-    await SystemSetting.setSetting("autoresponder.subject", "Ticket received - [ticket.number]");
-    await SystemSetting.setSetting("alerts.notifyNewTicket", true);
-    await SystemSetting.setSetting("alerts.notifyAssignment", true);
-    await SystemSetting.setSetting("auth.registrationEnabled", true);
-    await SystemSetting.setSetting("auth.allowGuestTickets", true);
-    await SystemSetting.setSetting("auth.passwordMinLength", 8);
-    await SystemSetting.setSetting("schedules.timezone", "UTC");
-    await SystemSetting.setSetting("routing.algorithm", "skill_based");
-    await SystemSetting.setSetting("csat.enabled", true);
+    // Instance defaults must not overwrite the global SystemSetting document.
+    instance.settings = {
+      system: {
+        defaultDept: String(departments.find(d => d.name === "Support")?._id || ""),
+        defaultSla: String(slaPlans.find(s => s.name === "Business Hours")?._id || ""),
+        defaultPriority: "Normal",
+      },
+      auth: { passwordMinLength: 8 },
+      schedules: { timezone: "UTC" },
+    };
+    await instance.save({ session });
 
     // Activate default modules for this instance
     const db = mongoose.connection.db;
@@ -272,10 +266,16 @@ exports.createInstance = asyncHandler(async (req, res) => {
       );
     }
 
-    await session.commitTransaction();
+      });
+      break;
+    } catch (err) {
+      if (!err.hasErrorLabel?.("TransientTransactionError") || attempt === 2) throw err;
+    } finally {
+      await session.endSession();
+    }
+  }
 
-    // Return instance info
-    res.status(201).json({
+  res.status(201).json({
       success: true,
       instance: {
         _id: instance._id,
@@ -287,14 +287,8 @@ exports.createInstance = asyncHandler(async (req, res) => {
         role: "instance_owner",
       },
       message: "Instance created successfully. You are now the Instance Owner.",
-    });
-  } catch (err) {
-    await session.abortTransaction();
-    throw err;
-  } finally {
-    session.endSession();
-  }
-});
+  });
+}));
 
 exports.getMyInstances = asyncHandler(async (req, res) => {
   const user = req.user;
@@ -305,8 +299,10 @@ exports.getMyInstances = asyncHandler(async (req, res) => {
   }
 
   const instanceIds = memberships.map(m => m.instance);
-  const instances = await Company.find({ _id: { $in: instanceIds }, isInstance: true })
-    .select("name domain instanceCode status createdAt");
+  const instances = await runWithTenant(null, async () =>
+    Company.find({ _id: { $in: instanceIds }, isInstance: true })
+      .select("name domain instanceCode status createdAt").exec(),
+  );
 
   const result = memberships.map(m => {
     const inst = instances.find(i => String(i._id) === String(m.instance));
@@ -315,10 +311,10 @@ exports.getMyInstances = asyncHandler(async (req, res) => {
       name: inst.name,
       domain: inst.domain,
       instanceCode: inst.instanceCode,
-      status: inst.status,
-      createdAt: inst.createdAt,
-      role: m.role,
-      status: m.status,
+        instanceStatus: inst.status,
+        createdAt: inst.createdAt,
+        role: m.role,
+        membershipStatus: m.status,
       joinedAt: m.joinedAt,
     } : null;
   }).filter(Boolean);
@@ -326,14 +322,36 @@ exports.getMyInstances = asyncHandler(async (req, res) => {
   res.json({ success: true, instances: result });
 });
 
+exports.selectInstance = asyncHandler(async (req, res) => {
+  if (!req.user || req.agent || req.superAdmin)
+    throw new ApiError(403, "Platform user membership required");
+  const membership = membershipFor(req.user, req.params.instanceId);
+  if (!membership) throw new ApiError(403, "Active instance membership required");
+  const instance = await runWithTenant(null, async () =>
+    Company.findOne({ _id: req.params.instanceId, isInstance: true }).exec(),
+  );
+  if (!instance || !instance.isActive())
+    throw new ApiError(403, "Instance is not active");
+  const token = signToken({
+    id: req.user._id, type: "user", tid: instance._id,
+    sv: Number(req.user.sessionVersion || 0),
+  });
+  const moduleDocs = await mongoose.connection.db.collection("tenant_modules")
+    .find({ tenantId: instance._id, status: "active" }).toArray();
+  res.json({
+    success: true, token,
+    instance: { _id: instance._id, name: instance.name, status: instance.status },
+    role: membership.role,
+    moduleKeys: moduleDocs.map((item) => item.moduleKey),
+  });
+});
+
 exports.getInstance = asyncHandler(async (req, res) => {
   const { instanceId } = req.params;
   const user = req.user;
 
   // Check if user has membership in this instance
-  const membership = (user.instanceMemberships || []).find(
-    m => String(m.instance) === instanceId
-  );
+  const membership = membershipFor(user, instanceId);
   if (!membership) {
     throw new ApiError(403, "You are not a member of this instance");
   }
@@ -377,15 +395,39 @@ exports.getInstance = asyncHandler(async (req, res) => {
   });
 });
 
-exports.acceptInvitation = asyncHandler(async (req, res) => {
+exports.createInvitation = asyncHandler(async (req, res) => {
   const { instanceId } = req.params;
-  const { role = "agent" } = req.body;
-  const user = req.user;
+  requireInstanceAdmin(req.user, instanceId);
+  const instance = await Company.findOne({ _id: instanceId, isInstance: true });
+  if (!instance || !instance.isActive()) throw new ApiError(404, "Active instance not found");
+  const email = String(req.body.email || "").trim().toLowerCase();
+  const role = req.body.role;
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ||
+      !["instance_admin", "agent", "requester"].includes(role))
+    throw new ApiError(422, "Valid email and assignable role are required");
+  const token = crypto.randomBytes(32).toString("hex");
+  const invitation = await InstanceInvitation.create({
+    instance: instance._id, email, role,
+    tokenHash: crypto.createHash("sha256").update(token).digest("hex"),
+    expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+    invitedBy: req.user._id,
+  });
+  const invitationUrl = `${config.urls.client}/platform/invitations/${instanceId}?token=${token}`;
+  const delivery = await require("../services/email.service").sendMail({
+    to: email, subject: `Invitation to ${instance.name}`,
+    body: `Accept your invitation within 7 days: ${invitationUrl}`,
+    event: "instance_invitation", user: req.user._id, company: instance._id,
+  });
+  res.status(201).json({
+    success: true, invitationId: invitation._id,
+    ...(config.env !== "production" && delivery?.dev ? { invitationUrl } : {}),
+  });
+});
 
-  // Check if already a member
-  const existing = (user.instanceMemberships || []).find(
-    m => String(m.instance) === instanceId
-  );
+exports.acceptInvitation = asyncHandler(async (req, res) => runWithTenant(null, async () => {
+  const { instanceId } = req.params;
+  const user = req.user;
+  const existing = membershipFor(user, instanceId);
   if (existing) {
     throw new ApiError(409, "You are already a member of this instance");
   }
@@ -395,22 +437,29 @@ exports.acceptInvitation = asyncHandler(async (req, res) => {
     throw new ApiError(404, "Instance not found");
   }
 
-  // Check if invitation exists (could be by email match or explicit invitation)
-  // For now, allow any authenticated user to join if they have the link
-  // In production, you'd check an explicit invitation token
-
+  const token = String(req.body.token || "");
+  if (!/^[a-f0-9]{64}$/.test(token)) throw new ApiError(422, "Invitation token is required");
+  const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
+  const invitation = await InstanceInvitation.findOne({
+    instance: instanceId, email: user.email, tokenHash,
+    acceptedAt: null, expiresAt: { $gt: new Date() },
+  });
+  if (!invitation) throw new ApiError(403, "Invitation is invalid or expired");
   const membership = {
-    user: user._id,
     instance: instanceId,
-    role,
+    role: invitation.role,
+    permissions: invitation.permissions,
     status: "active",
     joinedAt: new Date(),
+    invitedBy: invitation.invitedBy,
   };
-
-  await User.updateOne(
-    { _id: user._id },
-    { $addToSet: { instanceMemberships: membership } }
+  const updated = await User.updateOne(
+    { _id: user._id, "instanceMemberships.instance": { $ne: instance._id } },
+    { $push: { instanceMemberships: membership } },
   );
+  if (!updated.modifiedCount) throw new ApiError(409, "You are already a member of this instance");
+  invitation.acceptedAt = new Date();
+  await invitation.save();
 
   res.json({
     success: true,
@@ -419,10 +468,10 @@ exports.acceptInvitation = asyncHandler(async (req, res) => {
       _id: instance._id,
       name: instance.name,
       domain: instance.domain,
-      role,
+      role: invitation.role,
     },
   });
-});
+}));
 
 exports.updateMember = asyncHandler(async (req, res) => {
   const { instanceId, userId } = req.params;
@@ -430,12 +479,9 @@ exports.updateMember = asyncHandler(async (req, res) => {
   const currentUser = req.user;
 
   // Check if current user is instance admin/owner
-  const currentMembership = (currentUser.instanceMemberships || []).find(
-    m => String(m.instance) === instanceId
-  );
-  if (!currentMembership || !["instance_owner", "instance_admin"].includes(currentMembership.role)) {
-    throw new ApiError(403, "Only instance admins can update members");
-  }
+  requireInstanceAdmin(currentUser, instanceId);
+  if (!["instance_admin", "agent", "requester"].includes(role))
+    throw new ApiError(422, "Invalid assignable role");
 
   // Can't change own role
   if (String(currentUser._id) === userId) {
@@ -468,12 +514,7 @@ exports.removeMember = asyncHandler(async (req, res) => {
   const currentUser = req.user;
 
   // Check if current user is instance admin/owner
-  const currentMembership = (currentUser.instanceMemberships || []).find(
-    m => String(m.instance) === instanceId
-  );
-  if (!currentMembership || !["instance_owner", "instance_admin"].includes(currentMembership.role)) {
-    throw new ApiError(403, "Only instance admins can remove members");
-  }
+  const currentMembership = requireInstanceAdmin(currentUser, instanceId);
 
   // Can't remove yourself if you're the owner
   if (String(currentUser._id) === userId && currentMembership.role === "instance_owner") {
@@ -500,9 +541,7 @@ exports.updateInstance = asyncHandler(async (req, res) => {
   const currentUser = req.user;
 
   // Check if current user is instance owner
-  const currentMembership = (currentUser.instanceMemberships || []).find(
-    m => String(m.instance) === instanceId
-  );
+  const currentMembership = membershipFor(currentUser, instanceId);
   if (!currentMembership || currentMembership.role !== "instance_owner") {
     throw new ApiError(403, "Only instance owner can update instance settings");
   }

@@ -1,5 +1,4 @@
 const mongoose = require("mongoose");
-const UNIT_TYPES = ["division", "department", "team", "location"];
 const schema = new mongoose.Schema(
   {
     company: {
@@ -13,12 +12,16 @@ const schema = new mongoose.Schema(
       ref: "OrganizationUnit",
       default: null,
     },
-    type: { type: String, enum: UNIT_TYPES, required: true },
+    // Types are tenant-owned records in OrganizationUnitLabel, not an enum.
+    type: { type: String, required: true, trim: true },
     name: { type: String, required: true, trim: true },
+    label: { type: String, default: "", trim: true },
     description: { type: String, default: "" },
+    metadata: { type: mongoose.Schema.Types.Mixed, default: {} },
     active: { type: Boolean, default: true },
+    status: { type: String, enum: ["active", "disabled"], default: "active" },
   },
   { timestamps: true },
 );
-schema.statics.UNIT_TYPES = UNIT_TYPES;
+schema.index({ company: 1, parent: 1 });
 module.exports = mongoose.model("OrganizationUnit", schema);
