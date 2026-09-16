@@ -1,6 +1,6 @@
 const mongoose = require("mongoose");
 const bcrypt = require("bcryptjs");
-const { DEFAULT_HELPDESK_PERMISSIONS } = require("../config/defaultHelpdeskPermissions");
+const { DEFAULT_REQUESTER_PERMISSIONS } = require("../config/defaultRequesterPermissions");
 
 const userSchema = new mongoose.Schema(
   {
@@ -67,7 +67,7 @@ const userSchema = new mongoose.Schema(
     },
     permissions: {
       type: [String],
-      default: () => [...DEFAULT_HELPDESK_PERMISSIONS],
+      default: () => [...DEFAULT_REQUESTER_PERMISSIONS],
     },
     lastLogin: { type: Date },
     lastSeenAt: { type: Date, default: null },

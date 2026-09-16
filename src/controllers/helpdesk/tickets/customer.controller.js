@@ -139,6 +139,28 @@ exports.getMyTickets = asyncHandler(async (req, res) => {
   });
 });
 
+exports.dashboard = asyncHandler(async (req, res) => {
+  if (!hasPermission(req.user, USER_PERMISSIONS.TICKET_VIEW))
+    throw new ApiError(403, "You do not have permission to view tickets");
+  const scope = {
+    company: req.companyId,
+    user: getOrgOwner(req.user),
+    status: { $ne: Ticket.STATUSES.DELETED },
+  };
+  const closedStatuses = [Ticket.STATUSES.CLOSED, Ticket.STATUSES.CANCELLED,
+    Ticket.STATUSES.REJECTED, Ticket.STATUSES.DUPLICATE, Ticket.STATUSES.SPAM,
+    Ticket.STATUSES.ARCHIVED];
+  const [open, assigned, overdue, closed, recent] = await Promise.all([
+    Ticket.countDocuments({ ...scope, status: { $nin: [...closedStatuses, Ticket.STATUSES.RESOLVED] } }),
+    Ticket.countDocuments({ ...scope, agent: { $ne: null } }),
+    Ticket.countDocuments({ ...scope, isOverdue: true }),
+    Ticket.countDocuments({ ...scope, status: Ticket.STATUSES.CLOSED }),
+    Ticket.find(scope).sort({ updatedAt: -1 }).limit(5)
+      .select("number subject status priority createdAt").lean(),
+  ]);
+  res.json({ success: true, stats: { open, assigned, overdue, closed }, recent });
+});
+
 exports.create = asyncHandler(async (req, res) => {
   const { subject, details, topic, priority, impact, urgency, customData } =
     req.body;

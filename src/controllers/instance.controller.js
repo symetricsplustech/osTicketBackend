@@ -19,6 +19,7 @@ const crypto = require("crypto");
 const config = require("../config/config");
 const InstanceInvitation = require("../models/InstanceInvitation");
 const { runWithTenant } = require("../middleware/tenantScope");
+const { isInstancePermission, permissionsForMembership } = require("../services/instanceAccess.service");
 
 const membershipFor = (user, instanceId) =>
   (user.instanceMemberships || []).find(
@@ -342,6 +343,7 @@ exports.selectInstance = asyncHandler(async (req, res) => {
     success: true, token,
     instance: { _id: instance._id, name: instance.name, status: instance.status },
     role: membership.role,
+    permissions: permissionsForMembership(membership),
     moduleKeys: moduleDocs.map((item) => item.moduleKey),
   });
 });
@@ -482,6 +484,8 @@ exports.updateMember = asyncHandler(async (req, res) => {
   requireInstanceAdmin(currentUser, instanceId);
   if (!["instance_admin", "agent", "requester"].includes(role))
     throw new ApiError(422, "Invalid assignable role");
+  if (permissions && (!Array.isArray(permissions) || !permissions.every(isInstancePermission)))
+    throw new ApiError(422, "Only instance-scoped permissions can be assigned");
 
   // Can't change own role
   if (String(currentUser._id) === userId) {

@@ -36,6 +36,7 @@ const Agent = require("../models/Agent");
 const SuperAdmin = require("../models/SuperAdmin");
 const searchRoutes = require("./search.routes");
 const correlationId = require("../middleware/correlationId");
+const { protectTenantPrincipal } = require("../middleware/auth");
 
 const router = express.Router();
 
@@ -63,7 +64,7 @@ router.use("/core/approvals", coreApprovalRoutes);
 router.use("/core/approval-engine", coreApprovalEngineRoutes);
 router.use("/core/attachments", coreAttachmentRoutes);
 router.use("/core/audit", coreAuditRoutes);
-router.use("/core/incidents", coreIncidentRoutes);
+router.use("/core/incidents", protectTenantPrincipal, coreIncidentRoutes);
 router.use("/core/problems", coreProblemRoutes);
 router.use("/core/changes", coreChangeRoutes);
 router.use("/core/requests", coreRequestRoutes);

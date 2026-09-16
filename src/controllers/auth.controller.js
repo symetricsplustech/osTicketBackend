@@ -1,5 +1,5 @@
 const User = require("../models/User");
-const { DEFAULT_HELPDESK_PERMISSIONS } = require("../config/defaultHelpdeskPermissions");
+const { DEFAULT_REQUESTER_PERMISSIONS } = require("../config/defaultRequesterPermissions");
 const Agent = require("../models/Agent");
 const SuperAdmin = require("../models/SuperAdmin");
 const Ticket = require("../models/helpdesk/tickets/Ticket");
@@ -77,10 +77,9 @@ const auditLogin = ({ actorType, actor, actorName, company, req, action }) => {
 };
 
 exports.register = asyncHandler(async (req, res) => {
-  const { name, email, password, phone, company, userType, instanceId, policyConsent } = req.body;
+  const { name, email, password, phone, userType, policyConsent } = req.body;
   if (policyConsent !== true)
     throw new ApiError(422, "Accept the privacy policy and terms to register");
-  const companyId = company || instanceId || req.companyId;
   const normalizedEmail = String(email || "")
     .toLowerCase()
     .trim();
@@ -102,19 +101,18 @@ exports.register = asyncHandler(async (req, res) => {
     if (name) user.name = name;
     if (phone && !user.phone) user.phone = phone;
     if (password) {
-      await assertPasswordPolicy(password, user.company || companyId);
+      await assertPasswordPolicy(password, user.company || null);
       user.password = password;
     }
-    // Keep the original tenant that owns the mailed tickets; only backfill
-    // when the email-created account had none.
-    if (!user.company) user.company = companyId;
+    // Keep any tenant already associated with mailed tickets. Public signup
+    // cannot choose or claim a tenant by supplying a company/instance ID.
   } else {
     user = await findOrCreateUser({
       name,
       email,
       phone,
       registerPassword: password,
-      company: companyId,
+      company: null,
     });
   }
   user.isRegistered = true;
@@ -125,20 +123,25 @@ exports.register = asyncHandler(async (req, res) => {
   user.confirmationExpires = new Date(Date.now() + 24 * 60 * 60 * 1000);
   if (userType === "external" || userType === "employee")
     user.userType = userType;
-  // Every account gets HelpDesk access by default; the owner can restrict
-  // these granular permissions per user from Settings -> Access Control.
+  // Public registration grants self-service only. Operational grants are
+  // resolved from the selected instance membership.
   if (!user.permissions || user.permissions.length === 0)
-    user.permissions = [...DEFAULT_HELPDESK_PERMISSIONS];
+    user.permissions = [...DEFAULT_REQUESTER_PERMISSIONS];
   await user.save();
 
-  const confirmationUrl = `${config.urls.client}/confirm-email?token=${encodeURIComponent(user.confirmationToken)}`;
+  const returnTo = String(req.body.returnTo || "");
+  const inviteReturnTo = /^\/platform\/invitations\/[a-f0-9]{24}\?token=[a-f0-9]{64}$/.test(returnTo)
+    ? returnTo : "";
+  const confirmationParams = new URLSearchParams({ token: user.confirmationToken });
+  if (inviteReturnTo) confirmationParams.set("next", inviteReturnTo);
+  const confirmationUrl = `${config.urls.client}/confirm-email?${confirmationParams}`;
   const delivery = await emailService.sendMail({
     to: user.email,
     subject: "Confirm your platform account",
     body: `Confirm your account within 24 hours: ${confirmationUrl}`,
     event: "registration_confirmation",
     user: user._id,
-    company: user.company || companyId,
+    company: user.company || null,
   });
   res.status(201).json({
     success: true,
@@ -322,12 +325,8 @@ exports.portalLogin = asyncHandler(async (req, res) => {
   ) {
     await verifySecondFactor(user, totpCode);
     user.lastLogin = new Date();
-    // Backfill the default HelpDesk access once for accounts that were created
-    // before defaults existed (or were claimed without any permission yet).
-    // The owner can still restrict per user afterwards — defaults are only
-    // applied again while the account holds no HelpDesk key at all.
-    if (!user.permissions?.some((p) => String(p).startsWith("itsm.")))
-      user.permissions = [...DEFAULT_HELPDESK_PERMISSIONS];
+    if (!user.permissions?.length)
+      user.permissions = [...DEFAULT_REQUESTER_PERMISSIONS];
     await user.save();
     const token = signToken({
       id: user._id,

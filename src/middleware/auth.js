@@ -7,6 +7,7 @@ const SuperAdmin = require("../models/SuperAdmin");
 const Company = require("../models/Company");
 const asyncHandler = require("../utils/asyncHandler");
 const { runWithTenant } = require("./tenantScope");
+const { activeMembership, permissionsForMembership } = require("../services/instanceAccess.service");
 
 const signToken = (payload) =>
   jwt.sign(payload, config.jwt.secret, { expiresIn: config.jwt.expiresIn });
@@ -21,9 +22,10 @@ const assertSessionVersion = (decoded, principal) => {
 };
 
 const assertSelectedMembership = (decoded, user) => {
-  if (decoded.tid && !(user.instanceMemberships || []).some(
-    (membership) => String(membership.instance) === String(decoded.tid) && membership.status === "active",
-  )) throw new ApiError(403, "Active instance membership required");
+  if (!decoded.tid) return;
+  const membership = activeMembership(user, decoded.tid);
+  if (!membership) throw new ApiError(403, "Active instance membership required");
+  user._effectivePermissions = permissionsForMembership(membership);
 };
 
 const attachPrivilegedSession = async (decoded, req) => {

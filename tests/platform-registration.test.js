@@ -25,11 +25,16 @@ async function run() {
 
     const created = await post("/register", {
       name: "Registration Test", email, password: "StrongPassword@123", policyConsent: true,
+      company: new mongoose.Types.ObjectId().toString(),
+      instanceId: new mongoose.Types.ObjectId().toString(),
     });
     assert.equal(created.status, 201);
     const registration = await created.json();
     assert.equal(registration.token, undefined);
     assert.match(registration.confirmationUrl, /\/confirm-email\?token=/);
+    assert.equal(new URL(registration.confirmationUrl).searchParams.has("next"), false);
+    const registeredUser = await require("../src/models/User").findOne({ email });
+    assert.equal(registeredUser.company, null);
 
     const before = await post("/portal-login", { email, password: "StrongPassword@123" });
     assert.equal(before.status, 401);
@@ -42,6 +47,9 @@ async function run() {
     assert.equal(after.status, 200);
     const ownerLogin = await after.json();
     assert.equal(ownerLogin.role, "customer");
+    await require("../src/models/User").updateOne(
+      { email }, { $addToSet: { permissions: "itsm.incident.incident.read" } },
+    );
 
     const instanceRequest = (route, tokenValue, body) => fetch(`${address.replace(/\/auth$/, "/instances")}${route}`, {
       method: "POST",
@@ -60,6 +68,16 @@ async function run() {
     assert.equal(ownerSelection.status, 200);
     const ownerSelected = await ownerSelection.json();
     assert.equal(ownerSelected.instance._id, instance._id);
+    assert.equal(ownerSelected.permissions.includes("itsm.incident.incident.read"), false);
+    assert.equal(ownerSelected.permissions.includes("itsm.knowledge.knowledge_article.read"), true);
+    const deniedIncident = await fetch(`${address.replace(/\/auth$/, "/core/incidents")}`, {
+      headers: { authorization: `Bearer ${ownerSelected.token}` },
+    });
+    assert.equal(deniedIncident.status, 403);
+    const dashboard = await fetch(`${address.replace(/\/auth$/, "/tickets")}/dashboard`, {
+      headers: { authorization: `Bearer ${ownerSelected.token}` },
+    });
+    assert.equal(dashboard.status, 200, JSON.stringify(await dashboard.json()));
     const hierarchyBase = `${address.replace(/\/auth$/, "/instances")}/${instance._id}`;
     const hierarchyHeaders = { "content-type": "application/json", authorization: `Bearer ${ownerSelected.token}` };
     const addedType = await fetch(`${hierarchyBase}/organization-unit-types`, {
@@ -118,6 +136,28 @@ async function run() {
     });
     assert.equal(memberships.status, 200);
     assert.equal((await memberships.json()).instances.length, 1);
+
+    const newEmail = `new-invitee-${process.pid}@example.invalid`;
+    const newInvitation = await instanceRequest(`/${instance._id}/invitations`, ownerLogin.token, {
+      email: newEmail, role: "requester",
+    });
+    assert.equal(newInvitation.status, 201);
+    const newInvitationUrl = (await newInvitation.json()).invitationUrl;
+    const returnTo = new URL(newInvitationUrl).pathname + new URL(newInvitationUrl).search;
+    const newRegistration = await post("/register", {
+      name: "New Invitee", email: newEmail, password: "StrongPassword@123",
+      policyConsent: true, returnTo,
+    });
+    assert.equal(newRegistration.status, 201);
+    const newConfirmationUrl = (await newRegistration.json()).confirmationUrl;
+    assert.equal(new URL(newConfirmationUrl).searchParams.get("next"), returnTo);
+    await fetch(`${address}/confirm?token=${new URL(newConfirmationUrl).searchParams.get("token")}`);
+    const newLogin = await post("/portal-login", { email: newEmail, password: "StrongPassword@123" });
+    const newToken = (await newLogin.json()).token;
+    const newAcceptance = await instanceRequest(`/${instance._id}/accept-invitation`, newToken, {
+      token: new URL(newInvitationUrl).searchParams.get("token"),
+    });
+    assert.equal(newAcceptance.status, 200);
   } finally {
     await new Promise((resolve) => server.close(resolve));
     await mongoose.connection.dropDatabase();

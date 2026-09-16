@@ -7,6 +7,13 @@ const ctrl = require("../../../controllers/helpdesk/tickets/customer.controller"
 const router = express.Router();
 
 router.get(
+  "/dashboard",
+  protectTenantPrincipal,
+  moduleRequired("helpdesk"),
+  ctrl.dashboard,
+);
+
+router.get(
   "/open-form",
   protectTenantPrincipal,
   moduleRequired("helpdesk"),

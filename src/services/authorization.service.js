@@ -91,6 +91,8 @@ const isAggregateAdmin = (principal) =>
     !!principal.isAdmin ||
     !!(principal.role && principal.role.isAdmin) ||
     principal.platformRole === "platform_owner");
+const directPermissions = (principal) =>
+  principal?._effectivePermissions || principal?.permissions || [];
 
 // ---------------------------------------------------------------------------
 // Permission resolution (pure, no DB)
@@ -129,7 +131,7 @@ function splitPermissions(list) {
  * happens in checkPermission via expandGrants (never in controllers).
  */
 function collectPermissions(principal, extraRoles) {
-  const direct = splitPermissions(principal && principal.permissions);
+  const direct = splitPermissions(directPermissions(principal));
   const roleAllow = new Set();
   const roleDeny = new Set();
   for (const role of roleListOf(principal, extraRoles)) {
@@ -429,7 +431,7 @@ function filterFields(principal, fields, extraRoles) {
   for (const role of roleListOf(principal, extraRoles)) {
     for (const f of role.fieldAccess || []) grants.add(String(f));
   }
-  for (const p of (principal && principal.permissions) || []) {
+  for (const p of directPermissions(principal)) {
     if (typeof p === "string" && p.startsWith("field:"))
       grants.add(p.slice("field:".length));
   }
@@ -542,7 +544,7 @@ async function authorize({
   const tenantId = principalTenant(principal, tenant);
   const isPlatformOwner =
     principal.isSuperAdmin === true ||
-    (principal.permissions || []).includes("*") ||
+    directPermissions(principal).includes("*") ||
     principal.platformRole === "platform_owner";
   if (!tenantId) {
     if (isPlatformOwner) {
@@ -564,7 +566,7 @@ async function authorize({
       ...((principal && principal.moduleKeys) || []),
       ...roleListOf(principal, extraRoles).flatMap((r) => r.moduleKeys || []),
     ]);
-    if (principal.isSuperAdmin || (principal.permissions || []).includes("*")) {
+    if (principal.isSuperAdmin || directPermissions(principal).includes("*")) {
       // platform aggregate — allowed
     } else if (!keys.has(module)) {
       return fail("MODULE_NOT_ENTITLED");
