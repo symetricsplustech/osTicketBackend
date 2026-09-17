@@ -18,6 +18,7 @@ const Department = require("../src/models/Department");
 const Team = require("../src/models/Team");
 const Organization = require("../src/models/Organization");
 const OrganizationUnit = require("../src/models/OrganizationUnit");
+const OrganizationUnitLabel = require("../src/models/OrganizationUnitLabel");
 const User = require("../src/models/User");
 const HelpTopic = require("../src/models/HelpTopic");
 
@@ -717,7 +718,7 @@ const findOrCreate = async (Model, query, data) => {
 
 const run = async () => {
   await mongoose.connect(config.mongoUri, { serverSelectionTimeoutMS: 15000 });
-  console.log(`Connected to MongoDB: ${config.mongoUri}`);
+  console.log("Connected to MongoDB");
 
   const results = {
     superAdmins: [],
@@ -848,11 +849,16 @@ const run = async () => {
     );
   }
 
-  // Org tree: Division -> Departments (OrganizationUnit hierarchy)
+  // Org tree: Business Unit -> Departments (OrganizationUnit hierarchy)
+  await OrganizationUnitLabel.updateOne(
+    { company: company._id, type: "business_unit" },
+    { $setOnInsert: { company: company._id, type: "business_unit", label: "Business Unit" } },
+    { upsert: true },
+  );
   const divCore = await findOrCreate(
     OrganizationUnit,
     { company: company._id, name: "Core Operations" },
-    { company: company._id, type: "division", name: "Core Operations" },
+    { company: company._id, type: "business_unit", name: "Core Operations" },
   );
   for (const [name, type] of [
     ["Support", "department"],
@@ -864,7 +870,7 @@ const run = async () => {
       { company: company._id, parent: divCore._id, name },
       { company: company._id, parent: divCore._id, type, name },
     );
-    results.orgStructure.push(`${type}:${name} -> division:Core Operations`);
+    results.orgStructure.push(`${type}:${name} -> business_unit:Core Operations`);
   }
 
   // ---------------- Level 1-3: company agents ----------------

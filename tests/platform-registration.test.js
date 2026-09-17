@@ -157,6 +157,8 @@ async function run() {
 
     const Company = require("../src/models/Company");
     const OrganizationUnit = require("../src/models/OrganizationUnit");
+    const OrganizationUnitLabel = require("../src/models/OrganizationUnitLabel");
+    const { migrateDivisionToBusinessUnit } = require("../src/services/organizationTypeMigration.service");
     const User = require("../src/models/User");
     const legacy = await Company.create({
       name: `Legacy Test ${process.pid}`, domain: `legacy-${process.pid}.example.invalid`,
@@ -168,6 +170,7 @@ async function run() {
     const legacyUnit = await OrganizationUnit.create({
       company: legacy._id, name: "Legacy Operations", type: "division",
     });
+    await OrganizationUnitLabel.create({ company: legacy._id, type: "division", label: "Division" });
     const migratedCompanies = await fetch(
       `${address.replace(/\/auth$/, "/instances")}/${legacy._id}/companies`,
       { headers: { authorization: `Bearer ${ownerLogin.token}` } },
@@ -187,6 +190,16 @@ async function run() {
       String((await OrganizationUnit.findById(legacyUnit._id)).instanceCompany),
       legacyPrimary._id,
     );
+    const previewMigration = await migrateDivisionToBusinessUnit(legacy._id);
+    assert.equal(previewMigration.units, 1);
+    assert.equal(previewMigration.applied, false);
+    assert.equal((await OrganizationUnit.findById(legacyUnit._id)).type, "division");
+    const completedMigration = await migrateDivisionToBusinessUnit(legacy._id, { apply: true });
+    assert.equal(completedMigration.applied, true);
+    assert.equal((await OrganizationUnit.findById(legacyUnit._id)).type, "business_unit");
+    assert.equal(await OrganizationUnitLabel.exists({ company: legacy._id, type: "division" }), null);
+    assert.ok(await OrganizationUnitLabel.exists({ company: legacy._id, type: "business_unit" }));
+    assert.equal((await migrateDivisionToBusinessUnit(legacy._id, { apply: true })).units, 0);
 
     const inviteeEmail = `invitee-${process.pid}@example.invalid`;
     const inviteeRegistration = await post("/register", {
