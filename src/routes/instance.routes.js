@@ -7,6 +7,7 @@ const ctrl = require("../controllers/instance.controller");
 const companies = require("../controllers/instance/companies");
 const departments = require("../controllers/instance/departments");
 const teams = require("../controllers/instance/teams");
+const members = require("../controllers/instance/members");
 const organizationUnits = require("../controllers/admin/organizationUnits");
 
 const router = express.Router();
@@ -79,6 +80,11 @@ router.get("/:instanceId/organization-units", organizationUnits.list);
 router.post("/:instanceId/organization-units", organizationUnits.create);
 router.put("/:instanceId/organization-units/:id", organizationUnits.update);
 router.delete("/:instanceId/organization-units/:id", organizationUnits.remove);
+router.use("/:instanceId/members", requireOrganizationAdmin);
+router.get("/:instanceId/members", members.list);
+router.put("/:instanceId/members/:userId/organization-unit", [
+  body("organizationUnit").optional({ nullable: true }).isMongoId(),
+], validate, members.place);
 
 // Get instance details
 router.get("/:instanceId", ctrl.getInstance);

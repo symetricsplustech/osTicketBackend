@@ -27,6 +27,7 @@ const userSchema = new mongoose.Schema(
       permissions: { type: [String], default: [] },
       joinedAt: { type: Date, default: Date.now },
       invitedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
+      organizationUnit: { type: mongoose.Schema.Types.ObjectId, ref: "OrganizationUnit", default: null },
     }],
     password: { type: String },
     organization: {

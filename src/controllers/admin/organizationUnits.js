@@ -1,4 +1,6 @@
 const OrganizationUnit = require("../../models/OrganizationUnit");
+const User = require("../../models/User");
+const { runWithTenant } = require("../../middleware/tenantScope");
 const OrganizationUnitLabel = require("../../models/OrganizationUnitLabel");
 const ApiError = require("../../utils/ApiError");
 const asyncHandler = require("../../utils/asyncHandler");
@@ -113,6 +115,8 @@ exports.remove = asyncHandler(async (req, res) => {
   if (children)
     throw new ApiError(409, "Move child units before deleting this unit");
   await recordLinks.assertUnitUnlinked(company, item._id);
+  if (await runWithTenant(null, async () => User.exists({ instanceMemberships: { $elemMatch: { instance: company, organizationUnit: item._id } } })))
+    throw new ApiError(409, "Move members before deleting this unit");
   await item.deleteOne();
   res.json({ success: true, message: "Organization unit deleted" });
 });

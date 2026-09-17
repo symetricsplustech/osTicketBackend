@@ -345,6 +345,35 @@ async function run() {
     const selected = await instanceRequest(`/${instance._id}/select`, inviteeToken, {});
     assert.equal(selected.status, 200);
     const selectedToken = (await selected.json()).token;
+    const memberUrl = `${hierarchyBase}/members`;
+    const inviteeUser = await require("../src/models/User").findOne({ email: inviteeEmail });
+    const deniedMemberList = await fetch(memberUrl, { headers: { authorization: `Bearer ${selectedToken}` } });
+    assert.equal(deniedMemberList.status, 403);
+    const membersBefore = await fetch(memberUrl, { headers: hierarchyHeaders });
+    assert.equal(membersBefore.status, 200);
+    assert.equal((await membersBefore.json()).items.length, 2);
+    const crossInstancePlacement = await fetch(`${memberUrl}/${inviteeUser._id}/organization-unit`, {
+      method: "PUT", headers: hierarchyHeaders,
+      body: JSON.stringify({ organizationUnit: new mongoose.Types.ObjectId().toString() }),
+    });
+    assert.equal(crossInstancePlacement.status, 422);
+    const placed = await fetch(`${memberUrl}/${inviteeUser._id}/organization-unit`, {
+      method: "PUT", headers: hierarchyHeaders,
+      body: JSON.stringify({ organizationUnit: secondUnitBody.item._id }),
+    });
+    assert.equal(placed.status, 200, JSON.stringify(await placed.json()));
+    const placedUser = await require("../src/models/User").findById(inviteeUser._id);
+    assert.equal(String(placedUser.instanceMemberships.find((item) => String(item.instance) === instance._id).organizationUnit), secondUnitBody.item._id);
+    const blockedDelete = await fetch(`${hierarchyBase}/organization-units/${secondUnitBody.item._id}`, {
+      method: "DELETE", headers: hierarchyHeaders,
+    });
+    assert.equal(blockedDelete.status, 409);
+    assert.match((await blockedDelete.json()).message, /members/i);
+    const cleared = await fetch(`${memberUrl}/${inviteeUser._id}/organization-unit`, {
+      method: "PUT", headers: hierarchyHeaders,
+      body: JSON.stringify({ organizationUnit: null }),
+    });
+    assert.equal(cleared.status, 200);
     const memberships = await fetch(`${address.replace(/\/auth$/, "/instances")}/my-instances`, {
       headers: { authorization: `Bearer ${selectedToken}` },
     });
