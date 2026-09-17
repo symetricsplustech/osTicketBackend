@@ -1,6 +1,8 @@
 const Company = require("../models/Company");
 const InstanceCompany = require("../models/InstanceCompany");
+const OrganizationUnit = require("../models/OrganizationUnit");
 const { runWithTenant } = require("../middleware/tenantScope");
+const ApiError = require("../utils/ApiError");
 
 const nameKey = (name) => String(name || "").trim().replace(/\s+/g, " ").toLowerCase();
 
@@ -37,4 +39,24 @@ async function ensurePrimaryCompany(instance) {
   });
 }
 
-module.exports = { nameKey, ensurePrimaryCompany };
+async function companyContext(company) {
+  const instance = await Company.findOne({ _id: company, isInstance: true });
+  if (!instance) return { company, primary: null };
+  const primary = await ensurePrimaryCompany(instance);
+  await OrganizationUnit.updateMany(
+    { company, instanceCompany: null },
+    { $set: { instanceCompany: primary._id } },
+  );
+  return { company, primary };
+}
+
+async function selectedCompany(context, requestedId) {
+  if (!context.primary) return null;
+  const id = requestedId || context.primary._id;
+  const item = await InstanceCompany.findOne({ _id: id, tenantId: context.company });
+  if (!item || item.status !== "active")
+    throw new ApiError(422, "Choose an active company in this instance");
+  return item._id;
+}
+
+module.exports = { nameKey, ensurePrimaryCompany, companyContext, selectedCompany };

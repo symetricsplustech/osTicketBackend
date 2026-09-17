@@ -14,8 +14,8 @@ async function run() {
   const labelExists = OrganizationUnitLabel.exists;
   try {
     const units = new Map([
-      ["root", { _id: "root", parent: null }],
-      ["child", { _id: "child", parent: "root" }],
+      ["root", { _id: "root", parent: null, instanceCompany: "primary" }],
+      ["child", { _id: "child", parent: "root", instanceCompany: "primary" }],
     ]);
     OrganizationUnit.findOne = async ({ _id, company }) =>
       company === "tenant-a" ? units.get(String(_id)) || null : null;
@@ -28,6 +28,11 @@ async function run() {
     await assert.rejects(hierarchy.assertParent("tenant-b", "root"), /outside this company/);
     await assert.rejects(hierarchy.assertParent("tenant-a", "child", "root"), /cycle/);
     assert.equal((await hierarchy.assertParent("tenant-a", "root"))._id, "root");
+    await assert.rejects(
+      hierarchy.assertParent("tenant-a", "root", null, "regional"),
+      /same instance company/,
+    );
+    assert.equal((await hierarchy.assertParent("tenant-a", "root", null, "primary"))._id, "root");
   } finally {
     OrganizationUnit.findOne = findOne;
     OrganizationUnit.exists = exists;

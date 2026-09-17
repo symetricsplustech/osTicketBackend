@@ -118,9 +118,37 @@ async function run() {
       method: "POST", headers: hierarchyHeaders,
       body: JSON.stringify({ name: "Operations", type: "business_unit" }),
     });
-    assert.equal(addedUnit.status, 201, JSON.stringify(await addedUnit.json()));
+    const primaryUnitBody = await addedUnit.json();
+    assert.equal(addedUnit.status, 201, JSON.stringify(primaryUnitBody));
+    const primaryUnit = primaryUnitBody.item;
+    assert.equal(primaryUnit.instanceCompany, primaryItems[0]._id);
+    await fetch(`${companiesUrl}/${extraBody.item._id}`, {
+      method: "PUT", headers: companyHeaders, body: JSON.stringify({ status: "active" }),
+    });
+    const secondUnit = await fetch(`${hierarchyBase}/organization-units`, {
+      method: "POST", headers: hierarchyHeaders,
+      body: JSON.stringify({ name: "Regional", type: "business_unit", instanceCompany: extraBody.item._id }),
+    });
+    const secondUnitBody = await secondUnit.json();
+    assert.equal(secondUnit.status, 201, JSON.stringify(secondUnitBody));
+    assert.equal(secondUnitBody.item.instanceCompany, extraBody.item._id);
+    const crossCompanyParent = await fetch(`${hierarchyBase}/organization-units`, {
+      method: "POST", headers: hierarchyHeaders,
+      body: JSON.stringify({ name: "Invalid", type: "business_unit", instanceCompany: extraBody.item._id, parent: primaryUnit._id }),
+    });
+    assert.equal(crossCompanyParent.status, 422);
+    const movedUnit = await fetch(`${hierarchyBase}/organization-units/${secondUnitBody.item._id}`, {
+      method: "PUT", headers: hierarchyHeaders,
+      body: JSON.stringify({ instanceCompany: primaryItems[0]._id, parent: primaryUnit._id }),
+    });
+    assert.equal(movedUnit.status, 200, JSON.stringify(await movedUnit.json()));
+    const moveParentWithChild = await fetch(`${hierarchyBase}/organization-units/${primaryUnit._id}`, {
+      method: "PUT", headers: hierarchyHeaders,
+      body: JSON.stringify({ instanceCompany: extraBody.item._id }),
+    });
+    assert.equal(moveParentWithChild.status, 409);
     const listedUnits = await fetch(`${hierarchyBase}/organization-units`, { headers: hierarchyHeaders });
-    assert.equal((await listedUnits.json()).items.length, 1);
+    assert.equal((await listedUnits.json()).items.length, 2);
     const secondInstance = await instanceRequest("/", ownerSelected.token, {
       name: `Second Test ${process.pid}`,
       domain: `second-${process.pid}.example.invalid`,
@@ -128,6 +156,7 @@ async function run() {
     assert.equal(secondInstance.status, 201, JSON.stringify(await secondInstance.json()));
 
     const Company = require("../src/models/Company");
+    const OrganizationUnit = require("../src/models/OrganizationUnit");
     const User = require("../src/models/User");
     const legacy = await Company.create({
       name: `Legacy Test ${process.pid}`, domain: `legacy-${process.pid}.example.invalid`,
@@ -136,12 +165,28 @@ async function run() {
     await User.updateOne({ _id: registeredUser._id }, { $push: { instanceMemberships: {
       instance: legacy._id, role: "instance_owner", status: "active",
     } } });
+    const legacyUnit = await OrganizationUnit.create({
+      company: legacy._id, name: "Legacy Operations", type: "division",
+    });
     const migratedCompanies = await fetch(
       `${address.replace(/\/auth$/, "/instances")}/${legacy._id}/companies`,
       { headers: { authorization: `Bearer ${ownerLogin.token}` } },
     );
     assert.equal(migratedCompanies.status, 200);
-    assert.equal((await migratedCompanies.json()).items.length, 1);
+    const legacyPrimary = (await migratedCompanies.json()).items[0];
+    const legacySelection = await instanceRequest(`/${legacy._id}/select`, ownerLogin.token, {});
+    assert.equal(legacySelection.status, 200);
+    const legacyToken = (await legacySelection.json()).token;
+    const migratedUnits = await fetch(
+      `${address.replace(/\/auth$/, "/instances")}/${legacy._id}/organization-units`,
+      { headers: { authorization: `Bearer ${legacyToken}` } },
+    );
+    assert.equal(migratedUnits.status, 200);
+    assert.equal((await migratedUnits.json()).items[0].instanceCompany._id, legacyPrimary._id);
+    assert.equal(
+      String((await OrganizationUnit.findById(legacyUnit._id)).instanceCompany),
+      legacyPrimary._id,
+    );
 
     const inviteeEmail = `invitee-${process.pid}@example.invalid`;
     const inviteeRegistration = await post("/register", {

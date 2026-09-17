@@ -27,13 +27,15 @@ async function assertType(company, value) {
   return type;
 }
 
-async function assertParent(company, parentId, itemId) {
+async function assertParent(company, parentId, itemId, instanceCompany) {
   if (!parentId) return null;
   const visited = new Set(itemId ? [String(itemId)] : []);
   let cursor = await OrganizationUnit.findOne({ _id: parentId, company });
   if (!cursor) throw new ApiError(422, "Parent unit is outside this company");
   const parent = cursor;
   while (cursor) {
+    if (instanceCompany && String(cursor.instanceCompany || "") !== String(instanceCompany))
+      throw new ApiError(422, "Parent unit must belong to the same instance company");
     const id = String(cursor._id);
     if (visited.has(id)) throw new ApiError(422, "Organization hierarchy cannot contain a cycle");
     visited.add(id);

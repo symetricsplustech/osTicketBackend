@@ -7,6 +7,12 @@ const schema = new mongoose.Schema(
       required: true,
       index: true,
     },
+    instanceCompany: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "InstanceCompany",
+      default: null,
+      index: true,
+    },
     parent: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "OrganizationUnit",
@@ -24,4 +30,5 @@ const schema = new mongoose.Schema(
   { timestamps: true },
 );
 schema.index({ company: 1, parent: 1 });
+schema.index({ company: 1, instanceCompany: 1, parent: 1 });
 module.exports = mongoose.model("OrganizationUnit", schema);

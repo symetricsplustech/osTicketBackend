@@ -7,6 +7,7 @@ const asyncHandler = require("../utils/asyncHandler");
 const { canGrant } = require("../services/rbac.service");
 const { audit } = require("../services/audit.service");
 const hierarchy = require("../services/organizationHierarchy.service");
+const { companyContext, selectedCompany } = require("../services/companyHierarchy.service");
 
 const unitScope = (req) => ({ company: req.companyId });
 const companyScope = (req) => ({ company: req.companyId, scope: "tenant" });
@@ -24,6 +25,7 @@ const scopedRoles = async (ids, req) => {
 };
 
 exports.listUnits = asyncHandler(async (req, res) => {
+  await companyContext(req.companyId);
   const items = await OrganizationUnit.find(unitScope(req)).sort({
     type: 1,
     name: 1,
@@ -32,6 +34,7 @@ exports.listUnits = asyncHandler(async (req, res) => {
 });
 
 exports.getUnitTree = asyncHandler(async (req, res) => {
+  await companyContext(req.companyId);
   const items = await OrganizationUnit.find(unitScope(req)).sort({ name: 1 });
   const byId = new Map(
     items.map((item) => [
@@ -102,8 +105,10 @@ const auditUnit = (req, action, item, before = null, reason = "") =>
 exports.createUnit = asyncHandler(async (req, res) => {
   const { name, type, label, parent, metadata } = req.body;
   if (!name || !type) throw new ApiError(422, "Name and type are required");
+  const context = await companyContext(req.companyId);
+  const instanceCompany = await selectedCompany(context, req.body.instanceCompany);
   const resolvedType = await hierarchy.assertType(req.companyId, type);
-  await hierarchy.assertParent(req.companyId, parent);
+  await hierarchy.assertParent(req.companyId, parent, null, instanceCompany);
   const item = await OrganizationUnit.create({
     name,
     type: resolvedType,
@@ -111,19 +116,31 @@ exports.createUnit = asyncHandler(async (req, res) => {
     parent: parent || null,
     metadata: metadata || {},
     company: req.companyId,
+    instanceCompany,
   });
   auditUnit(req, "organization_unit.created", item);
   res.status(201).json({ success: true, item });
 });
 exports.updateUnit = asyncHandler(async (req, res) => {
+  const context = await companyContext(req.companyId);
   const item = await OrganizationUnit.findOne({
     _id: req.params.id,
     ...unitScope(req),
   });
   if (!item) throw new ApiError(404, "Organisation unit not found");
   const before = item.toObject();
+  const instanceCompany = req.body.instanceCompany !== undefined
+    ? await selectedCompany(context, req.body.instanceCompany)
+    : item.instanceCompany;
+  if (req.body.instanceCompany !== undefined && String(instanceCompany || "") !== String(item.instanceCompany || "")) {
+    if (await OrganizationUnit.exists({ company: req.companyId, parent: item._id }))
+      throw new ApiError(409, "Move child units before changing company");
+    item.instanceCompany = instanceCompany;
+  }
   if (req.body.parent !== undefined)
-    await hierarchy.assertParent(req.companyId, req.body.parent, item._id);
+    await hierarchy.assertParent(req.companyId, req.body.parent, item._id, instanceCompany);
+  else if (item.parent && req.body.instanceCompany !== undefined)
+    await hierarchy.assertParent(req.companyId, item.parent, item._id, instanceCompany);
   if (req.body.type !== undefined)
     req.body.type = await hierarchy.assertType(req.companyId, req.body.type);
   ["name", "type", "label", "parent", "status", "metadata"].forEach((key) => {
