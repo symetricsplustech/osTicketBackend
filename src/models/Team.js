@@ -9,6 +9,11 @@ const teamSchema = new mongoose.Schema(
       default: null,
       index: true,
     },
+    organizationUnit: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "OrganizationUnit",
+      default: null,
+    },
     lead: { type: mongoose.Schema.Types.ObjectId, ref: "Agent", default: null },
     leadTitle: { type: String, default: "Team Lead", trim: true },
     members: [{ type: mongoose.Schema.Types.ObjectId, ref: "Agent" }],
@@ -19,5 +24,9 @@ const teamSchema = new mongoose.Schema(
 );
 
 teamSchema.index({ company: 1, name: 1 }, { unique: true });
+teamSchema.index(
+  { organizationUnit: 1 },
+  { unique: true, partialFilterExpression: { organizationUnit: { $type: "objectId" } } },
+);
 
 module.exports = mongoose.model("Team", teamSchema);

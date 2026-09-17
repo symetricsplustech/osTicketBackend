@@ -6,6 +6,7 @@ const { getTenantModules, activateModules, deactivateModule } = require("../midd
 const ctrl = require("../controllers/instance.controller");
 const companies = require("../controllers/instance/companies");
 const departments = require("../controllers/instance/departments");
+const teams = require("../controllers/instance/teams");
 const organizationUnits = require("../controllers/admin/organizationUnits");
 
 const router = express.Router();
@@ -62,6 +63,12 @@ router.get("/:instanceId/departments", departments.list);
 router.put("/:instanceId/departments/:departmentId/organization-unit", [
   body("organizationUnit").optional({ nullable: true }).isMongoId(),
 ], validate, departments.linkUnit);
+
+router.use("/:instanceId/teams", requireOrganizationAdmin);
+router.get("/:instanceId/teams", teams.list);
+router.put("/:instanceId/teams/:teamId/organization-unit", [
+  body("organizationUnit").optional({ nullable: true }).isMongoId(),
+], validate, teams.linkUnit);
 
 router.use("/:instanceId/organization-unit-types", requireOrganizationAdmin);
 router.get("/:instanceId/organization-unit-types", organizationUnits.listTypes);

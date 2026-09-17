@@ -16,6 +16,7 @@ async function run() {
   await Promise.all([
     require("../src/models/InstanceCompany").createIndexes(),
     require("../src/models/Department").createIndexes(),
+    require("../src/models/Team").createIndexes(),
   ]);
   const server = app.listen(0);
   const address = `http://127.0.0.1:${server.address().port}/api/v1/auth`;
@@ -206,6 +207,47 @@ async function run() {
       method: "DELETE", headers: hierarchyHeaders,
     });
     assert.equal(deletedUnlinkedUnit.status, 200);
+    const teamType = await fetch(`${hierarchyBase}/organization-unit-types`, {
+      method: "POST", headers: hierarchyHeaders,
+      body: JSON.stringify({ type: "team", label: "Team" }),
+    });
+    assert.equal(teamType.status, 201);
+    const teamUnitResponse = await fetch(`${hierarchyBase}/organization-units`, {
+      method: "POST", headers: hierarchyHeaders,
+      body: JSON.stringify({ name: "Support Team Node", type: "team", parent: primaryUnit._id }),
+    });
+    const teamUnit = (await teamUnitResponse.json()).item;
+    assert.equal(teamUnitResponse.status, 201);
+    const teamsUrl = `${hierarchyBase}/teams`;
+    const teamList = await fetch(teamsUrl, { headers: hierarchyHeaders });
+    const teamItems = (await teamList.json()).items;
+    const supportTeam = teamItems.find((item) => item.name === "Support Team");
+    const technicalTeam = teamItems.find((item) => item.name === "Technical Team");
+    assert.ok(supportTeam && technicalTeam);
+    const linkedTeam = await fetch(`${teamsUrl}/${supportTeam._id}/organization-unit`, {
+      method: "PUT", headers: hierarchyHeaders,
+      body: JSON.stringify({ organizationUnit: teamUnit._id }),
+    });
+    assert.equal(linkedTeam.status, 200);
+    const duplicateTeamLink = await fetch(`${teamsUrl}/${technicalTeam._id}/organization-unit`, {
+      method: "PUT", headers: hierarchyHeaders,
+      body: JSON.stringify({ organizationUnit: teamUnit._id }),
+    });
+    assert.equal(duplicateTeamLink.status, 409);
+    const wrongTeamType = await fetch(`${teamsUrl}/${technicalTeam._id}/organization-unit`, {
+      method: "PUT", headers: hierarchyHeaders,
+      body: JSON.stringify({ organizationUnit: primaryUnit._id }),
+    });
+    assert.equal(wrongTeamType.status, 422);
+    const deleteLinkedTeamUnit = await fetch(`${hierarchyBase}/organization-units/${teamUnit._id}`, {
+      method: "DELETE", headers: hierarchyHeaders,
+    });
+    assert.equal(deleteLinkedTeamUnit.status, 409);
+    const changeLinkedTeamUnit = await fetch(`${hierarchyBase}/organization-units/${teamUnit._id}`, {
+      method: "PUT", headers: hierarchyHeaders,
+      body: JSON.stringify({ type: "department" }),
+    });
+    assert.equal(changeLinkedTeamUnit.status, 409);
     const secondInstance = await instanceRequest("/", ownerSelected.token, {
       name: `Second Test ${process.pid}`,
       domain: `second-${process.pid}.example.invalid`,
@@ -275,6 +317,10 @@ async function run() {
       headers: { authorization: `Bearer ${inviteeToken}` },
     });
     assert.equal(deniedDepartments.status, 403);
+    const deniedTeams = await fetch(teamsUrl, {
+      headers: { authorization: `Bearer ${inviteeToken}` },
+    });
+    assert.equal(deniedTeams.status, 403);
     const deniedCompanies = await fetch(companiesUrl, {
       headers: { authorization: `Bearer ${inviteeToken}` },
     });
