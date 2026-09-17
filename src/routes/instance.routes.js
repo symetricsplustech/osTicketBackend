@@ -4,6 +4,7 @@ const validate = require("../middleware/validate");
 const { protectTenantPrincipal } = require("../middleware/auth");
 const { getTenantModules, activateModules, deactivateModule } = require("../middleware/module");
 const ctrl = require("../controllers/instance.controller");
+const companies = require("../controllers/instance/companies");
 const organizationUnits = require("../controllers/admin/organizationUnits");
 
 const router = express.Router();
@@ -27,6 +28,22 @@ router.post(
 // Get current user's instances
 router.get("/my-instances", ctrl.getMyInstances);
 router.post("/:instanceId/select", ctrl.selectInstance);
+router.get("/:instanceId/companies", companies.list);
+router.post("/:instanceId/companies", [
+  body("name").isString().trim().notEmpty(),
+  body("email").optional({ values: "falsy" }).isEmail(),
+  body("domain").optional().isString(),
+  body("phone").optional().isString(),
+  body("address").optional().isString(),
+], validate, companies.create);
+router.put("/:instanceId/companies/:companyId", [
+  body("name").optional().isString().trim().notEmpty(),
+  body("email").optional({ values: "falsy" }).isEmail(),
+  body("domain").optional().isString(),
+  body("phone").optional().isString(),
+  body("address").optional().isString(),
+  body("status").optional().isIn(["active", "inactive"]),
+], validate, companies.update);
 
 const requireOrganizationAdmin = (req, res, next) => {
   const membership = req.user?.instanceMemberships?.find(

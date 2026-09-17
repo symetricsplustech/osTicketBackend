@@ -64,12 +64,41 @@ async function run() {
     assert.equal(createdInstance.status, 201, JSON.stringify(instanceBody));
     const { instance } = instanceBody;
     assert.equal(instance.role, "instance_owner");
+    assert.ok(instance.primaryCompany);
     const ownerSelection = await instanceRequest(`/${instance._id}/select`, ownerLogin.token, {});
     assert.equal(ownerSelection.status, 200);
     const ownerSelected = await ownerSelection.json();
     assert.equal(ownerSelected.instance._id, instance._id);
     assert.equal(ownerSelected.permissions.includes("itsm.incident.incident.read"), false);
     assert.equal(ownerSelected.permissions.includes("itsm.knowledge.knowledge_article.read"), true);
+    const companiesUrl = `${address.replace(/\/auth$/, "/instances")}/${instance._id}/companies`;
+    const companyHeaders = { "content-type": "application/json", authorization: `Bearer ${ownerSelected.token}` };
+    const primaryCompanies = await fetch(companiesUrl, { headers: companyHeaders });
+    const primaryItems = (await primaryCompanies.json()).items;
+    assert.equal(primaryCompanies.status, 200);
+    assert.equal(primaryItems.length, 1);
+    assert.equal(primaryItems[0].isPrimary, true);
+    const extraCompany = await fetch(companiesUrl, {
+      method: "POST", headers: companyHeaders,
+      body: JSON.stringify({ name: "Regional Company", email: "regional@example.invalid" }),
+    });
+    const extraBody = await extraCompany.json();
+    assert.equal(extraCompany.status, 201, JSON.stringify(extraBody));
+    const duplicateCompany = await fetch(companiesUrl, {
+      method: "POST", headers: companyHeaders,
+      body: JSON.stringify({ name: " regional   company " }),
+    });
+    assert.equal(duplicateCompany.status, 409);
+    const disablePrimary = await fetch(`${companiesUrl}/${primaryItems[0]._id}`, {
+      method: "PUT", headers: companyHeaders,
+      body: JSON.stringify({ status: "inactive" }),
+    });
+    assert.equal(disablePrimary.status, 409);
+    const updatedCompany = await fetch(`${companiesUrl}/${extraBody.item._id}`, {
+      method: "PUT", headers: companyHeaders,
+      body: JSON.stringify({ phone: "+1 555 0100", status: "inactive" }),
+    });
+    assert.equal(updatedCompany.status, 200);
     const deniedIncident = await fetch(`${address.replace(/\/auth$/, "/core/incidents")}`, {
       headers: { authorization: `Bearer ${ownerSelected.token}` },
     });
@@ -98,6 +127,22 @@ async function run() {
     });
     assert.equal(secondInstance.status, 201, JSON.stringify(await secondInstance.json()));
 
+    const Company = require("../src/models/Company");
+    const User = require("../src/models/User");
+    const legacy = await Company.create({
+      name: `Legacy Test ${process.pid}`, domain: `legacy-${process.pid}.example.invalid`,
+      status: "active", isInstance: true, instanceOwner: registeredUser._id,
+    });
+    await User.updateOne({ _id: registeredUser._id }, { $push: { instanceMemberships: {
+      instance: legacy._id, role: "instance_owner", status: "active",
+    } } });
+    const migratedCompanies = await fetch(
+      `${address.replace(/\/auth$/, "/instances")}/${legacy._id}/companies`,
+      { headers: { authorization: `Bearer ${ownerLogin.token}` } },
+    );
+    assert.equal(migratedCompanies.status, 200);
+    assert.equal((await migratedCompanies.json()).items.length, 1);
+
     const inviteeEmail = `invitee-${process.pid}@example.invalid`;
     const inviteeRegistration = await post("/register", {
       name: "Invitee", email: inviteeEmail, password: "StrongPassword@123", policyConsent: true,
@@ -111,6 +156,10 @@ async function run() {
       headers: { authorization: `Bearer ${inviteeToken}` },
     });
     assert.equal(deniedHierarchy.status, 403);
+    const deniedCompanies = await fetch(companiesUrl, {
+      headers: { authorization: `Bearer ${inviteeToken}` },
+    });
+    assert.equal(deniedCompanies.status, 403);
 
     const unselected = await instanceRequest(`/${instance._id}/select`, inviteeToken, {});
     assert.equal(unselected.status, 403);

@@ -18,7 +18,9 @@ const mongoose = require("mongoose");
 const crypto = require("crypto");
 const config = require("../config/config");
 const InstanceInvitation = require("../models/InstanceInvitation");
+const InstanceCompany = require("../models/InstanceCompany");
 const { runWithTenant } = require("../middleware/tenantScope");
+const { nameKey } = require("../services/companyHierarchy.service");
 const { isInstancePermission, permissionsForMembership } = require("../services/instanceAccess.service");
 
 const membershipFor = (user, instanceId) =>
@@ -160,12 +162,23 @@ exports.createInstance = asyncHandler(async (req, res) => runWithTenant(null, as
       billingCycle: "monthly",
       planStartedAt: new Date(),
       planExpiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-      createdBy: user._id,
+      createdByUser: user._id,
       isInstance: true,
       instanceOwner: user._id,
     }], { session });
 
     instance = company[0];
+
+    const [primaryCompany] = await InstanceCompany.create([{
+      tenantId: instance._id,
+      name: String(companyName || name).trim(),
+      nameKey: nameKey(companyName || name),
+      domain: domain.toLowerCase(),
+      email: companyEmail || user.email,
+      isPrimary: true,
+      ownerUser: user._id,
+    }], { session });
+    instance.primaryCompany = primaryCompany._id;
 
     // Create instance membership for the creator (Instance Owner/Admin)
     const membership = {
@@ -286,6 +299,7 @@ exports.createInstance = asyncHandler(async (req, res) => runWithTenant(null, as
         status: instance.status,
         createdAt: instance.createdAt,
         role: "instance_owner",
+        primaryCompany: instance.primaryCompany,
       },
       message: "Instance created successfully. You are now the Instance Owner.",
   });
