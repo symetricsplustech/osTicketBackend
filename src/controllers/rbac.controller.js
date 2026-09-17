@@ -1,5 +1,6 @@
 const OrganizationUnit = require("../models/OrganizationUnit");
 const OrganizationUnitLabel = require("../models/OrganizationUnitLabel");
+const Department = require("../models/Department");
 const AccessAssignment = require("../models/AccessAssignment");
 const Role = require("../models/Role");
 const ApiError = require("../utils/ApiError");
@@ -141,8 +142,12 @@ exports.updateUnit = asyncHandler(async (req, res) => {
     await hierarchy.assertParent(req.companyId, req.body.parent, item._id, instanceCompany);
   else if (item.parent && req.body.instanceCompany !== undefined)
     await hierarchy.assertParent(req.companyId, item.parent, item._id, instanceCompany);
-  if (req.body.type !== undefined)
+  if (req.body.type !== undefined) {
     req.body.type = await hierarchy.assertType(req.companyId, req.body.type);
+    if (req.body.type !== "department" && await Department.exists({
+      company: req.companyId, organizationUnit: item._id,
+    })) throw new ApiError(409, "Unlink the operational department before changing this unit's type");
+  }
   ["name", "type", "label", "parent", "status", "metadata"].forEach((key) => {
     if (req.body[key] !== undefined) item[key] = req.body[key];
   });

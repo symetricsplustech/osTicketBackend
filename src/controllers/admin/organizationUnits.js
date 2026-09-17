@@ -1,5 +1,6 @@
 const OrganizationUnit = require("../../models/OrganizationUnit");
 const OrganizationUnitLabel = require("../../models/OrganizationUnitLabel");
+const Department = require("../../models/Department");
 const ApiError = require("../../utils/ApiError");
 const asyncHandler = require("../../utils/asyncHandler");
 const hierarchy = require("../../services/organizationHierarchy.service");
@@ -92,8 +93,12 @@ exports.update = asyncHandler(async (req, res) => {
   } else if (item.parent && req.body.instanceCompany !== undefined) {
     await hierarchy.assertParent(company, item.parent, item._id, instanceCompany);
   }
-  if (req.body.type !== undefined)
-    item.type = await hierarchy.assertType(company, req.body.type);
+  if (req.body.type !== undefined) {
+    const nextType = await hierarchy.assertType(company, req.body.type);
+    if (nextType !== "department" && await Department.exists({ company, organizationUnit: item._id }))
+      throw new ApiError(409, "Unlink the operational department before changing this unit's type");
+    item.type = nextType;
+  }
   await item.save();
   res.json({ success: true, item });
 });
@@ -108,6 +113,8 @@ exports.remove = asyncHandler(async (req, res) => {
   });
   if (children)
     throw new ApiError(409, "Move child units before deleting this unit");
+  if (await Department.exists({ company, organizationUnit: item._id }))
+    throw new ApiError(409, "Unlink the operational department before deleting this unit");
   await item.deleteOne();
   res.json({ success: true, message: "Organization unit deleted" });
 });

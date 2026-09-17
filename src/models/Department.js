@@ -14,6 +14,11 @@ const departmentSchema = new mongoose.Schema(
       ref: "Department",
       default: null,
     },
+    organizationUnit: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "OrganizationUnit",
+      default: null,
+    },
     email: { type: String, default: "" },
     isPublic: { type: Boolean, default: true },
     sla: {
@@ -49,6 +54,11 @@ const departmentSchema = new mongoose.Schema(
     notes: { type: String, default: "" },
   },
   { timestamps: true },
+);
+
+departmentSchema.index(
+  { organizationUnit: 1 },
+  { unique: true, partialFilterExpression: { organizationUnit: { $type: "objectId" } } },
 );
 
 module.exports = mongoose.model("Department", departmentSchema);

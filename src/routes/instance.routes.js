@@ -5,6 +5,7 @@ const { protectTenantPrincipal } = require("../middleware/auth");
 const { getTenantModules, activateModules, deactivateModule } = require("../middleware/module");
 const ctrl = require("../controllers/instance.controller");
 const companies = require("../controllers/instance/companies");
+const departments = require("../controllers/instance/departments");
 const organizationUnits = require("../controllers/admin/organizationUnits");
 
 const router = express.Router();
@@ -55,6 +56,12 @@ const requireOrganizationAdmin = (req, res, next) => {
   }
   next();
 };
+
+router.use("/:instanceId/departments", requireOrganizationAdmin);
+router.get("/:instanceId/departments", departments.list);
+router.put("/:instanceId/departments/:departmentId/organization-unit", [
+  body("organizationUnit").optional({ nullable: true }).isMongoId(),
+], validate, departments.linkUnit);
 
 router.use("/:instanceId/organization-unit-types", requireOrganizationAdmin);
 router.get("/:instanceId/organization-unit-types", organizationUnits.listTypes);

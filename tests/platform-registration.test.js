@@ -1,5 +1,7 @@
 const assert = require("node:assert/strict");
 const mongoose = require("mongoose");
+mongoose.set("autoIndex", false);
+mongoose.set("autoCreate", false);
 
 const database = `osticket_platform_registration_test_${process.pid}`;
 const uri = `mongodb://127.0.0.1:27017/${database}`;
@@ -11,6 +13,10 @@ process.env.EMAIL_USER = "";
 async function run() {
   await mongoose.connect(uri);
   const app = require("../src/app");
+  await Promise.all([
+    require("../src/models/InstanceCompany").createIndexes(),
+    require("../src/models/Department").createIndexes(),
+  ]);
   const server = app.listen(0);
   const address = `http://127.0.0.1:${server.address().port}/api/v1/auth`;
   const email = `registration-${process.pid}@example.invalid`;
@@ -149,6 +155,57 @@ async function run() {
     assert.equal(moveParentWithChild.status, 409);
     const listedUnits = await fetch(`${hierarchyBase}/organization-units`, { headers: hierarchyHeaders });
     assert.equal((await listedUnits.json()).items.length, 2);
+    const departmentType = await fetch(`${hierarchyBase}/organization-unit-types`, {
+      method: "POST", headers: hierarchyHeaders,
+      body: JSON.stringify({ type: "department", label: "Department" }),
+    });
+    assert.equal(departmentType.status, 201);
+    const departmentUnitResponse = await fetch(`${hierarchyBase}/organization-units`, {
+      method: "POST", headers: hierarchyHeaders,
+      body: JSON.stringify({ name: "Support", type: "department", parent: primaryUnit._id }),
+    });
+    const departmentUnit = (await departmentUnitResponse.json()).item;
+    assert.equal(departmentUnitResponse.status, 201);
+    const departmentsUrl = `${hierarchyBase}/departments`;
+    const departmentList = await fetch(departmentsUrl, { headers: hierarchyHeaders });
+    const supportDepartment = (await departmentList.json()).items.find((item) => item.name === "Support");
+    assert.ok(supportDepartment);
+    const linkedDepartment = await fetch(`${departmentsUrl}/${supportDepartment._id}/organization-unit`, {
+      method: "PUT", headers: hierarchyHeaders,
+      body: JSON.stringify({ organizationUnit: departmentUnit._id }),
+    });
+    assert.equal(linkedDepartment.status, 200);
+    const linkWrongType = await fetch(`${departmentsUrl}/${supportDepartment._id}/organization-unit`, {
+      method: "PUT", headers: hierarchyHeaders,
+      body: JSON.stringify({ organizationUnit: primaryUnit._id }),
+    });
+    assert.equal(linkWrongType.status, 422);
+    const changeLinkedType = await fetch(`${hierarchyBase}/organization-units/${departmentUnit._id}`, {
+      method: "PUT", headers: hierarchyHeaders,
+      body: JSON.stringify({ type: "business_unit" }),
+    });
+    assert.equal(changeLinkedType.status, 409);
+    const duplicateDepartment = (await (await fetch(departmentsUrl, { headers: hierarchyHeaders })).json())
+      .items.find((item) => item.name === "Billing");
+    const duplicateLink = await fetch(`${departmentsUrl}/${duplicateDepartment._id}/organization-unit`, {
+      method: "PUT", headers: hierarchyHeaders,
+      body: JSON.stringify({ organizationUnit: departmentUnit._id }),
+    });
+    assert.equal(duplicateLink.status, 409);
+    const deleteLinkedUnit = await fetch(`${hierarchyBase}/organization-units/${departmentUnit._id}`, {
+      method: "DELETE", headers: hierarchyHeaders,
+    });
+    assert.equal(deleteLinkedUnit.status, 409);
+    const unlinkedDepartment = await fetch(`${departmentsUrl}/${supportDepartment._id}/organization-unit`, {
+      method: "PUT", headers: hierarchyHeaders,
+      body: JSON.stringify({ organizationUnit: null }),
+    });
+    assert.equal(unlinkedDepartment.status, 200);
+    assert.equal((await unlinkedDepartment.json()).item.organizationUnit, null);
+    const deletedUnlinkedUnit = await fetch(`${hierarchyBase}/organization-units/${departmentUnit._id}`, {
+      method: "DELETE", headers: hierarchyHeaders,
+    });
+    assert.equal(deletedUnlinkedUnit.status, 200);
     const secondInstance = await instanceRequest("/", ownerSelected.token, {
       name: `Second Test ${process.pid}`,
       domain: `second-${process.pid}.example.invalid`,
@@ -214,6 +271,10 @@ async function run() {
       headers: { authorization: `Bearer ${inviteeToken}` },
     });
     assert.equal(deniedHierarchy.status, 403);
+    const deniedDepartments = await fetch(departmentsUrl, {
+      headers: { authorization: `Bearer ${inviteeToken}` },
+    });
+    assert.equal(deniedDepartments.status, 403);
     const deniedCompanies = await fetch(companiesUrl, {
       headers: { authorization: `Bearer ${inviteeToken}` },
     });
