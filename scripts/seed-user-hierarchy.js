@@ -8,8 +8,8 @@
 //   known value) so logins always work.
 //
 // Usage:  node scripts/seed-user-hierarchy.js
-const mongoose = require("mongoose");
-const config = require("../src/config/config");
+const connectDB = require("../src/config/db");
+const { getDB } = require("../src/config/db");
 const SuperAdmin = require("../src/models/SuperAdmin");
 const Company = require("../src/models/Company");
 const Agent = require("../src/models/Agent");
@@ -658,7 +658,6 @@ const upsertUser = async ({ name, email, password, company, extra = {} }) => {
     user = await User.create({ name, email, password, company, ...extra });
   } else {
     Object.assign(user, { name, password, company, ...extra });
-    user.markModified("password");
     await user.save();
   }
   return user;
@@ -705,7 +704,6 @@ const upsertSuperAdmin = async ({
       role: "super_admin",
       isActive: true,
     });
-    sa.markModified("password");
     await sa.save();
   }
   return sa;
@@ -717,8 +715,8 @@ const findOrCreate = async (Model, query, data) => {
 };
 
 const run = async () => {
-  await mongoose.connect(config.mongoUri, { serverSelectionTimeoutMS: 15000 });
-  console.log("Connected to MongoDB");
+  await connectDB();
+  console.log("Connected to PostgreSQL");
 
   const results = {
     superAdmins: [],
@@ -778,24 +776,14 @@ const run = async () => {
 
   // Activate default modules (helpdesk first) so every user of the tenant
   // sees helpdesk in the sidebar by default.
-  const db = mongoose.connection.db;
-  const tenantObjectId = company._id;
+  const db = getDB();
+  const tenantId = company._id;
   const now = new Date();
   for (const key of DEFAULT_TENANT_MODULES) {
-    await db
-      .collection("tenant_modules")
-      .updateOne(
-        { tenantId: tenantObjectId, moduleKey: key },
-        {
-          $set: { status: "active", activatedAt: now, updatedAt: now },
-          $setOnInsert: {
-            tenantId: tenantObjectId,
-            moduleKey: key,
-            createdAt: now,
-          },
-        },
-        { upsert: true },
-      );
+    await db("tenant_modules")
+      .insert({ tenant_id: tenantId, module_key: key, status: "active", activated_at: now, updated_at: now, created_at: now })
+      .onConflict(["tenant_id", "module_key"])
+      .merge({ status: "active", activated_at: now, updated_at: now });
   }
 
   // ---------------- Role / Department / Team catalog ----------------
@@ -910,7 +898,6 @@ const run = async () => {
         departments: [{ department: d ? d._id : null, isPrimary: true }],
         teams: teamIds,
       });
-      agent.markModified("password");
       await agent.save();
     }
     if (a.isOwner) company.ownerId = agent._id;
@@ -1132,7 +1119,7 @@ const run = async () => {
 
   console.log("\nTenant:", company.name, `(${company._id})`);
   console.log("============================================================");
-  await mongoose.disconnect();
+  await getDB().destroy();
 };
 
 run().catch((err) => {

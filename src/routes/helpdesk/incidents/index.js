@@ -8,17 +8,17 @@ router.get("/workload", ctrl.workload);
 router.get("/escalations", ctrl.listEscalations);
 router.post(
   "/escalations",
-  requirePermission("escalations.manage"),
+  requirePermission("itsm.incident.automation.sla_escalation.manage"),
   ctrl.createEscalation,
 );
 router.put(
   "/escalations/:id",
-  requirePermission("escalations.manage"),
+  requirePermission("itsm.incident.automation.sla_escalation.manage"),
   ctrl.updateEscalation,
 );
 router.delete(
   "/escalations/:id",
-  requirePermission("escalations.manage"),
+  requirePermission("itsm.incident.automation.sla_escalation.manage"),
   ctrl.deleteEscalation,
 );
 

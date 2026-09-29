@@ -3,7 +3,7 @@ const Team = require("../models/Team");
 const HelpTopic = require("../models/HelpTopic");
 const Department = require("../models/Department");
 const Ticket = require("../models/helpdesk/tickets/Ticket");
-const Approval = require("../models/Approval");
+const Approval = require("../models/core/Approval");
 const {
   notifyAgent,
   notifyUser,

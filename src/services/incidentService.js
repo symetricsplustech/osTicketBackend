@@ -1,4 +1,3 @@
-const mongoose = require("mongoose");
 const Incident = require("../models/helpdesk/incidents/Incident");
 const IncidentTask = require("../models/helpdesk/incidents/IncidentTask");
 const IncidentCI = require("../models/helpdesk/incidents/IncidentCI");
@@ -6,28 +5,30 @@ const IncidentServiceOffering = require("../models/helpdesk/incidents/IncidentSe
 const IncidentRelationship = require("../models/helpdesk/incidents/IncidentRelationship");
 const IncidentAssignmentHistory = require("../models/helpdesk/incidents/IncidentAssignmentHistory");
 const IncidentResolution = require("../models/helpdesk/incidents/IncidentResolution");
+const ConfigurationItem = require("../models/cmdb/ConfigurationItem");
+const ServiceOffering = require("../models/cmdb/ServiceOffering");
 const ApiError = require("../utils/ApiError");
 const {
   assertTransition,
   INCIDENT_TRANSITIONS,
 } = require("./stateMachine.service");
+const { assertTenantOf } = require("./tenantGuard");
+const { getTenantId } = require("../middleware/tenantScope");
+const { nextNumber } = require("./numbering.service");
 const events = require("./events");
 const auditEventService = require("./auditEventService");
 
 class IncidentService {
   static async generateNumber(tenantId) {
-    const prefix = "INC";
-    const year = new Date().getFullYear();
-    const count = await Incident.countDocuments({ company: tenantId });
-    const seq = String(count + 1).padStart(4, "0");
-    return `${prefix}-${year}-${seq}`;
+    return nextNumber(tenantId, "INC");
   }
 
   static async create(data, actorId) {
+    data = { ...data, company: getTenantId() || data.company };
     const number = data.number || (await this.generateNumber(data.company));
-    const priority =
-      data.priority ||
-      Incident.calculatePriority(data.impact || "3", data.urgency || "3");
+    const priority = data.priority
+      ? String(data.priority).toLowerCase()
+      : Incident.calculatePriority(data.impact || "3", data.urgency || "3").toLowerCase();
 
     const incident = await Incident.create({
       ...data,
@@ -49,10 +50,10 @@ class IncidentService {
 
     await auditEventService.record({
       tenantId: incident.company,
-      actorId,
+      actor: actorId,
       action: "incident.created",
-      resourceType: "Incident",
-      resourceId: incident._id,
+      entityType: "Incident",
+      entityId: incident._id,
       after: incident.toObject(),
     });
 
@@ -278,6 +279,7 @@ class IncidentService {
   }
 
   static async linkCI(incidentId, ciId, role, tenantId, actorId) {
+    await assertTenantOf(ConfigurationItem, ciId, tenantId, "configuration item");
     const existing = await IncidentCI.findOne({
       incident: incidentId,
       ci: ciId,
@@ -321,6 +323,7 @@ class IncidentService {
     tenantId,
     actorId,
   ) {
+    await assertTenantOf(ServiceOffering, serviceOfferingId, tenantId, "service offering");
     const existing = await IncidentServiceOffering.findOne({
       incident: incidentId,
       serviceOffering: serviceOfferingId,
@@ -348,6 +351,7 @@ class IncidentService {
     tenantId,
     actorId,
   ) {
+    await assertTenantOf(Incident, targetId, tenantId, "incident");
     const existing = await IncidentRelationship.findOne({
       sourceIncident: sourceId,
       targetIncident: targetId,

@@ -9,6 +9,7 @@ const CommunicationTemplate = require("../models/helpdesk/incidents/Communicatio
 const CommunicationTask = require("../models/helpdesk/incidents/CommunicationTask");
 const BridgeSession = require("../models/helpdesk/incidents/BridgeSession");
 const Incident = require("../models/helpdesk/incidents/Incident");
+const ProblemIncident = require("../models/helpdesk/incidents/ProblemIncident");
 const ApiError = require("../utils/ApiError");
 const events = require("./events");
 const auditEventService = require("./auditEventService");
@@ -55,7 +56,7 @@ class MajorIncidentService {
     return candidate;
   }
 
-  static async approve(candidateId, tenantId, actorId) {
+  static async approve(candidateId, data, tenantId, actorId) {
     const candidate = await MajorIncidentCandidate.findOne({
       _id: candidateId,
       company: tenantId,
@@ -697,6 +698,80 @@ class MajorIncidentService {
   }
 
   // ─── Dashboard ───────────────────────────────────────────────────────
+
+  static async createRcaAndImprovements(incidentId, data, tenantId, actorId) {
+    let mi = await MajorIncident.findOne({
+      incident: incidentId,
+      company: tenantId,
+    });
+    if (!mi) {
+      mi = await MajorIncident.findOne({
+        _id: incidentId,
+        company: tenantId,
+      });
+    }
+    if (!mi) throw new ApiError(404, "Major incident not found");
+
+    const ProblemService = require("./problemService");
+    const improvementService = require("./improvementService");
+
+    const problem = await ProblemService.create(
+      {
+        company: tenantId,
+        title: data.title || `RCA — Major Incident ${mi.number || mi._id}`,
+        description: data.description || "",
+        rootCause: data.rootCause || "",
+        workaround: data.workaround || "",
+        assignmentGroup: data.assignmentGroup,
+        assignedTo: data.assignedTo,
+        status: "root_cause_analysis",
+      },
+      actorId,
+    );
+
+    await ProblemIncident.create({
+      problem: problem._id,
+      incident: mi.incident,
+      company: tenantId,
+      source: "major_incident_rca",
+      linkedBy: actorId,
+      isActive: true,
+    });
+
+    await auditEventService.record({
+      tenantId,
+      actorId,
+      action: "major_incident.rca_created",
+      resourceType: "Problem",
+      resourceId: problem._id,
+      after: problem.toObject(),
+    });
+
+    events.emit("problem.created", {
+      problemId: problem._id,
+      tenantId,
+      source: "major_incident_rca",
+    });
+
+    const opportunities = [];
+    for (const action of data.actions || []) {
+      const opp = await improvementService.createOpportunity(
+        { tenantId },
+        {
+          title: action.title,
+          description: action.description || "",
+          category: action.category || "process",
+          priority: action.priority || "medium",
+          source: "major_incident",
+          assignedTo: action.assignedTo,
+        },
+        { userId: actorId },
+      );
+      opportunities.push(opp);
+    }
+
+    return { problem, opportunities };
+  }
 
   static async getDashboard(tenantId) {
     const [majorIncidents, candidates, plans, templates, bridgeSessions] =

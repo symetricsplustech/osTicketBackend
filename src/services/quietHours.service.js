@@ -5,7 +5,8 @@
  * notification. If inside curfew → message is queued in NotificationQueue for
  * delivery when the curfew lifts. Urgent types always bypass.
  */
-const mongoose = require("mongoose");
+const QueuedNotification = require("../models/QueuedNotification");
+const Agent = require("../models/Agent");
 
 const URGENT_TYPES = new Set([
   "overdue",
@@ -15,36 +16,17 @@ const URGENT_TYPES = new Set([
   "security_alert",
 ]);
 
-// Local queue model (kept here to avoid cross-file circulars)
-const queuedSchema = new mongoose.Schema(
-  {
-    channel: {
-      type: String,
-      enum: ["email", "push", "sms", "whatsapp", "in_app"],
-      required: true,
-    },
-    recipientType: { type: String, enum: ["agent", "user"], required: true },
-    recipient: {
-      type: mongoose.Schema.Types.ObjectId,
-      required: true,
-      index: true,
-    },
-    payload: mongoose.Schema.Types.Mixed,
-    deliverAfter: { type: Date, index: true },
-    delivered: { type: Boolean, default: false, index: true },
-    deliveredAt: Date,
-    tenantId: { type: mongoose.Schema.Types.ObjectId, index: true },
-  },
-  { timestamps: true },
-);
-const NotificationQueue =
-  mongoose.models.QueuedNotification ||
-  mongoose.model("QueuedNotification", queuedSchema);
-
 async function getPref(recipientType, recipient) {
-  const P5 = require("../models/Platform5");
-  if (recipientType !== "user") return null; // agent prefs handled separately
-  return P5.NotificationPref.findOne({ user: recipient }).lean();
+  if (recipientType !== "agent" || !recipient) return null;
+  const agent = await Agent.findById(recipient).select(
+    "notification_prefs timezone",
+  );
+  if (!agent) return null;
+  const prefs = agent.notification_prefs || {};
+  return {
+    quietHours: prefs.quietHours || null,
+    tz: (prefs.quietHours && prefs.quietHours.tz) || agent.timezone || "UTC",
+  };
 }
 
 function inQuietHours(pref) {
@@ -95,7 +77,7 @@ async function sendOrDefer({
     const pref = await getPref(recipientType, recipient);
     const qh = inQuietHours(pref);
     if (qh) {
-      await NotificationQueue.create({
+      await QueuedNotification.create({
         channel,
         recipientType,
         recipient,
@@ -121,12 +103,12 @@ async function sendOrDefer({
 /** Drain the queue — call from a cron/scheduler every minute. */
 async function drainQueue() {
   const now = new Date();
-  const batch = await NotificationQueue.find({
+  const batch = await QueuedNotification.find({
     delivered: false,
-    deliverAfter: { $lte: now },
-  })
-    .sort({ deliverAfter: 1 })
-    .limit(200);
+    deliverAfter: now,
+    limit: 200,
+    sort: "deliver_after",
+  });
   const notificationService = require("./notification.service");
   let delivered = 0;
   for (const item of batch) {
@@ -149,11 +131,17 @@ async function drainQueue() {
       await item.save();
       delivered++;
     } catch (err) {
-      // leave undelivered; increment attempts via updatedAt touch
-      await item.save();
+      // leave undelivered; retried on next pass
     }
   }
   return { scanned: batch.length, delivered };
 }
 
-module.exports = { sendOrDefer, drainQueue, URGENT_TYPES, NotificationQueue };
+module.exports = {
+  sendOrDefer,
+  drainQueue,
+  URGENT_TYPES,
+  QueuedNotification,
+  inQuietHours,
+  nextWindowEnd,
+};

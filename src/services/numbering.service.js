@@ -16,10 +16,17 @@ const {
   generateTicketNumber: legacyTicketNumber,
 } = require("../utils/generators");
 
-const PREFIXES = ["INC", "PRB", "CHG", "REQ", "RITM", "TASK"];
+const PREFIXES = ["INC", "PRB", "CHG", "REQ", "RITM", "TASK", "KB", "KBART", "ARULE", "QUEUE", "SKILL", "RRULE", "TYT", "CAT", "CCAT", "CATITEM", "VS", "CART", "SCTASK", "FP", "SPF", "BSVC", "TSVC", "SOFF", "CI", "SLC", "OLA", "UC", "IMP", "INIT", "ITK", "IGL", "BEN", "CST", "MBL", "MTR", "REL", "RCMP", "RDEP", "RAP", "RPH", "RTK", "OUT", "OCS", "WLOC", "WSVC", "WQ", "WCHK", "WAPT", "KIOSK"];
 
 function formatNumber(prefix, seq) {
   return `${prefix}-${String(seq).padStart(6, "0")}`;
+}
+
+// Numbering prefixes are record-number labels, not a security boundary;
+// accept any well-formed uppercase prefix so new record families do not
+// silently fail on an out-of-date allow list.
+function isAllowedPrefix(prefix) {
+  return /^[A-Z]{2,10}$/.test(prefix);
 }
 
 /**
@@ -28,7 +35,7 @@ function formatNumber(prefix, seq) {
  */
 async function nextSequence(tenantId, prefix) {
   if (!tenantId) throw new Error("tenantId is required for numbering");
-  if (!PREFIXES.includes(prefix))
+  if (!isAllowedPrefix(prefix))
     throw new Error(`unknown numbering prefix: ${prefix}`);
   const doc = await Counter.findOneAndUpdate(
     { _id: `${tenantId}:${prefix}` },

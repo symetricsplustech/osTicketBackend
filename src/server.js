@@ -17,12 +17,9 @@ const { ensureDefaults } = require("./bootstrap/ensureDefaults");
 
 const DNS_SERVERS = config.dnsServers || ["8.8.8.8", "1.1.1.1"];
 dns.setServers(DNS_SERVERS);
+
 const start = async () => {
   await connectDB();
-  const { createIndexes } = require("./scripts/createIndexes");
-  await createIndexes().catch((err) =>
-    logger.error("Index creation failed:", err.message),
-  );
   await ensureDefaults().catch((err) =>
     logger.error(`ensureDefaults failed: ${err.message}`),
   );
@@ -48,15 +45,18 @@ const start = async () => {
   server.listen(config.port, () => {
     console.log(`Backend running on port ${config.port}`);
     logger.info(
-      `osTicket MERN API running on http://localhost:${config.port} (${config.env})`,
+      `osTicket API running on http://localhost:${config.port} (${config.env}) — PostgreSQL`,
     );
   });
 
   const shutdown = async (signal) => {
     logger.info(`${signal} received, shutting down gracefully...`);
     server.close(async () => {
-      const mongoose = require("mongoose");
-      await mongoose.connection.close();
+      const { getDB } = require("./config/db");
+      try {
+        const db = getDB();
+        await db.destroy();
+      } catch (_) {}
       process.exit(0);
     });
     setTimeout(() => process.exit(1), 10000).unref();

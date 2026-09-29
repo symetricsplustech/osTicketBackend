@@ -2,15 +2,14 @@
  * Outbox processor background job — picks up pending events and dispatches them.
  * Run via: node src/jobs/outboxProcessor.js
  */
-const mongoose = require("mongoose");
-const config = require("../config/config");
+const { getDB } = require("../config/db");
 const { processNext, getPendingCount } = require("../services/outbox.service");
 const { getIO } = require("../config/socket");
 const logger = require("../utils/logger");
 
 async function connect() {
-  await mongoose.connect(config.mongoUri);
-  logger.info("Outbox processor connected to MongoDB");
+  getDB();
+  logger.info("Outbox processor connected to database");
 }
 
 async function dispatchHandler(event) {

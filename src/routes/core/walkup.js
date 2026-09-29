@@ -1,6 +1,6 @@
 const router = require("express").Router();
 const ctrl = require("../../controllers/core/walkup.controller");
-const { protectTenantPrincipal } = require("../../middleware/auth");
+const { protectTenantPrincipal, requirePermission } = require("../../middleware/auth");
 
 // ─── Locations ──────────────────────────────────────────────────────────
 router.get("/locations", protectTenantPrincipal, ctrl.listLocations);
@@ -52,8 +52,12 @@ router.post(
 );
 
 // ─── Interactions ──────────────────────────────────────────────────────
-router.post("/interactions", protectTenantPrincipal, ctrl.createInteraction);
-router.get("/interactions/:id", protectTenantPrincipal, ctrl.getInteraction);
+router.get("/interactions", protectTenantPrincipal, requirePermission("itsm.walkup.interaction_read"), ctrl.listInteractions);
+router.post("/interactions", protectTenantPrincipal, requirePermission("itsm.walkup.interaction_create"), ctrl.createInteraction);
+router.get("/interactions/:id", protectTenantPrincipal, requirePermission("itsm.walkup.interaction_read"), ctrl.getInteraction);
+router.put("/interactions/:id", protectTenantPrincipal, requirePermission("itsm.walkup.interaction_update"), ctrl.updateInteraction);
+router.post("/interactions/:id/complete", protectTenantPrincipal, requirePermission("itsm.walkup.interaction_complete"), ctrl.completeInteraction);
+router.delete("/interactions/:id", protectTenantPrincipal, requirePermission("itsm.walkup.interaction_cancel"), ctrl.cancelInteraction);
 
 // ─── Kiosks ────────────────────────────────────────────────────────────
 router.get("/kiosks", protectTenantPrincipal, ctrl.listKiosks);

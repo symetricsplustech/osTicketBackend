@@ -206,6 +206,7 @@ const incidentController = {
   approveMajor: asyncHandler(async (req, res) => {
     const majorIncident = await MajorIncidentService.approve(
       req.params.id,
+      req.body,
       req.user.company,
       req.user._id,
     );
@@ -243,6 +244,16 @@ const incidentController = {
       req.user.company,
     );
     res.json({ success: true, data: mi });
+  }),
+
+  createMajorRca: asyncHandler(async (req, res) => {
+    const result = await MajorIncidentService.createRcaAndImprovements(
+      req.params.id,
+      req.body,
+      req.user.company,
+      req.user._id,
+    );
+    res.status(201).json({ success: true, data: result });
   }),
 
   listMajorCandidates: asyncHandler(async (req, res) => {

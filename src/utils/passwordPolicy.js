@@ -14,12 +14,10 @@ const DEFAULT_POLICY = {
 
 async function getPasswordPolicy(companyId) {
   try {
-    const mongoose = require("mongoose");
-    const coll = mongoose.connection.db.collection("retentionpolicies");
-    const docs = await coll
-      .find({ name: "__password_policy__" })
-      .limit(20)
-      .toArray();
+    const { getDB } = require("../config/db");
+    const docs = await getDB()("retentionpolicies")
+      .where({ name: "__password_policy__" })
+      .limit(20);
     const match = companyId
       ? docs.find((d) => String(d.tenantId || "") === String(companyId))
       : null;

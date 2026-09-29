@@ -2,23 +2,10 @@
  * Knowledge Management service — business logic for KB, articles, versions,
  * feedback, ratings, comments, criteria, approvals.
  */
-const mongoose = require("mongoose");
 const { emitEvent } = require("../realtime/socketManager");
 const auditEventService = require("./auditEventService");
 const numberingService = require("./numbering.service");
 const { assertTransition } = require("./stateMachine.service");
-
-// Register knowledge-domain models before retrieving them from Mongoose.
-require("../models/helpdesk/knowledge/Faq");
-require("../models/helpdesk/knowledge/FaqCategory");
-require("../models/helpdesk/knowledge/KnowledgeBase");
-require("../models/helpdesk/knowledge/KnowledgeVersion");
-require("../models/helpdesk/knowledge/KnowledgeFeedback");
-require("../models/helpdesk/knowledge/KnowledgeRating");
-require("../models/helpdesk/knowledge/KnowledgeComment");
-require("../models/helpdesk/knowledge/KnowledgeReaderCriteria");
-require("../models/helpdesk/knowledge/KnowledgeContributorCriteria");
-require("../models/helpdesk/knowledge/KnowledgeApproval");
 
 const requireTenant = (ctx) => {
   if (!ctx.tenantId)
@@ -33,18 +20,16 @@ const pick = (obj, keys) =>
     keys.filter((k) => obj[k] !== undefined).map((k) => [k, obj[k]]),
   );
 
-const Faq = mongoose.model("Faq");
-const FaqCategory = mongoose.model("FaqCategory");
-const KnowledgeBase = mongoose.model("KnowledgeBase");
-const KnowledgeVersion = mongoose.model("KnowledgeVersion");
-const KnowledgeFeedback = mongoose.model("KnowledgeFeedback");
-const KnowledgeRating = mongoose.model("KnowledgeRating");
-const KnowledgeComment = mongoose.model("KnowledgeComment");
-const KnowledgeReaderCriteria = mongoose.model("KnowledgeReaderCriteria");
-const KnowledgeContributorCriteria = mongoose.model(
-  "KnowledgeContributorCriteria",
-);
-const KnowledgeApproval = mongoose.model("KnowledgeApproval");
+const Faq = require("../models/helpdesk/knowledge/Faq");
+const FaqCategory = require("../models/helpdesk/knowledge/FaqCategory");
+const KnowledgeBase = require("../models/helpdesk/knowledge/KnowledgeBase");
+const KnowledgeVersion = require("../models/helpdesk/knowledge/KnowledgeVersion");
+const KnowledgeFeedback = require("../models/helpdesk/knowledge/KnowledgeFeedback");
+const KnowledgeRating = require("../models/helpdesk/knowledge/KnowledgeRating");
+const KnowledgeComment = require("../models/helpdesk/knowledge/KnowledgeComment");
+const KnowledgeReaderCriteria = require("../models/helpdesk/knowledge/KnowledgeReaderCriteria");
+const KnowledgeContributorCriteria = require("../models/helpdesk/knowledge/KnowledgeContributorCriteria");
+const KnowledgeApproval = require("../models/helpdesk/knowledge/KnowledgeApproval");
 
 // ─── Knowledge Base CRUD ────────────────────────────────────────────────
 

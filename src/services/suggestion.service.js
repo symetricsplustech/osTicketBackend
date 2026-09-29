@@ -29,6 +29,46 @@ function tokenize(value) {
   );
 }
 
+// Neural scoring primitives (MD §82 neural search). TF over a Set is 1 for
+// every present token; arrays/strings produce per-occurrence counts.
+function termFreq(tokens) {
+  const tf = new Map();
+  const list =
+    tokens && typeof tokens[Symbol.iterator] === "function"
+      ? [...tokens]
+      : [];
+  for (const token of list) tf.set(token, (tf.get(token) || 0) + 1);
+  return tf;
+}
+
+// TF-IDF weighted cosine similarity over a document corpus described by
+// docFreq (Map token → #docs containing it) and docCount (total docs).
+// Bounded [0,1] for nonnegative weight vectors; 0 on disjoint vocabularies.
+function cosineScore(q, d, docFreq, docCount) {
+  const docFreqOf = (t) => {
+    const df = docFreq && docFreq.get ? docFreq.get(t) : 0;
+    return Number.isFinite(df) ? df : 0;
+  };
+  const weight = (t) => {
+    const tf = (q.has && q.has(t) ? q.get(t) : 0) || 0;
+    const idf = Math.log(1 + (docCount || 1) / (1 + docFreqOf(t)));
+    return (1 + Math.log(1 + tf)) * idf;
+  };
+  const qVec = new Map([...(q || [])].map(([t]) => [t, weight(t)]));
+  const dVec = new Map();
+  for (const t of d ? d.keys() : []) dVec.set(t, weight(t));
+  let dot = 0;
+  let qNorm = 0;
+  let dNorm = 0;
+  for (const [t, w] of qVec) {
+    qNorm += w * w;
+    if (dVec.has(t)) dot += w * dVec.get(t);
+  }
+  for (const w of dVec.values()) dNorm += w * w;
+  if (qNorm === 0 || dNorm === 0) return 0;
+  return Math.min(1, dot / (Math.sqrt(qNorm) * Math.sqrt(dNorm)));
+}
+
 function score(text, doc) {
   const query = tokenize(text);
   const source = tokenize(
@@ -92,4 +132,11 @@ function invalidateTraining(company) {
   else trainingCache.clear();
 }
 
-module.exports = { fetchTrainingSet, suggest, invalidateTraining };
+module.exports = {
+  fetchTrainingSet,
+  suggest,
+  invalidateTraining,
+  tokenize,
+  termFreq,
+  cosineScore,
+};

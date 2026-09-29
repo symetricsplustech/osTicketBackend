@@ -1,7 +1,7 @@
 /* eslint-disable no-console */
-const mongoose = require("mongoose");
+const connectDB = require("../src/config/db");
+const { getDB } = require("../src/config/db");
 const app = require("../src/app");
-const config = require("../src/config/config");
 const Company = require("../src/models/Company");
 const Agent = require("../src/models/Agent");
 const User = require("../src/models/User");
@@ -41,9 +41,7 @@ const assert = (condition, message) => {
   let ticket;
   const suffix = Date.now();
   try {
-    await mongoose.connect(config.mongoUri, {
-      serverSelectionTimeoutMS: 15000,
-    });
+    await connectDB();
     server = app.listen(port);
     company = await Company.create({
       name: `Helpdesk Contract ${suffix}`,
@@ -52,11 +50,11 @@ const assert = (condition, message) => {
     [sourceDept, targetDept] = await Promise.all([
       Department.create({
         name: `Helpdesk Source ${suffix}`,
-        company: company._id,
+        company_id: company.id,
       }),
       Department.create({
         name: `Helpdesk Target ${suffix}`,
-        company: company._id,
+        company_id: company.id,
       }),
     ]);
     [admin, assignee, requester] = await Promise.all([
@@ -64,30 +62,30 @@ const assert = (condition, message) => {
         name: "Helpdesk admin",
         email: `helpdesk-admin-${suffix}@osticket.local`,
         password: "Pass@1234",
-        company: company._id,
-        isAdmin: true,
-        isActive: true,
-        departments: [{ department: sourceDept._id, isPrimary: true }],
+        company_id: company.id,
+        is_admin: true,
+        is_active: true,
+        departments: [{ department: sourceDept.id, isPrimary: true }],
       }),
       Agent.create({
         name: "Helpdesk assignee",
         email: `helpdesk-assignee-${suffix}@osticket.local`,
         password: "Pass@1234",
-        company: company._id,
-        isActive: true,
-        departments: [{ department: targetDept._id, isPrimary: true }],
+        company_id: company.id,
+        is_active: true,
+        departments: [{ department: targetDept.id, isPrimary: true }],
       }),
       User.create({
         name: "Helpdesk requester",
         email: `helpdesk-requester-${suffix}@osticket.local`,
-        company: company._id,
+        company_id: company.id,
       }),
     ]);
     ticket = await Ticket.create({
       number: `HD-${suffix}`,
-      company: company._id,
-      user: requester._id,
-      dept: sourceDept._id,
+      company_id: company.id,
+      user_id: requester.id,
+      dept_id: sourceDept.id,
       subject: "Contract test ticket",
       priority: "Normal",
     });
@@ -111,21 +109,21 @@ const assert = (condition, message) => {
     const assigned = await request(
       "POST",
       `/agent/tickets/${ticket.number}/assign`,
-      { token, body: { agentId: assignee._id.toString() } },
+      { token, body: { agentId: assignee.id } },
     );
     assert(
       assigned.status === 200 &&
-        String(assigned.data.ticket.agent) === String(assignee._id),
+        String(assigned.data.ticket.agent_id) === String(assignee.id),
       "agent assignment uses POST and persists the selected agent",
     );
     const transferred = await request(
       "POST",
       `/agent/tickets/${ticket.number}/transfer`,
-      { token, body: { deptId: targetDept._id.toString() } },
+      { token, body: { deptId: targetDept.id } },
     );
     assert(
       transferred.status === 200 &&
-        String(transferred.data.ticket.dept) === String(targetDept._id),
+        String(transferred.data.ticket.dept_id) === String(targetDept.id),
       "department transfer uses POST and deptId payload",
     );
     const status = await request(
@@ -158,14 +156,14 @@ const assert = (condition, message) => {
     process.exitCode = 1;
   } finally {
     if (server) await new Promise((resolve) => server.close(resolve));
-    if (ticket) await TicketThread.deleteMany({ ticket: ticket._id });
-    if (ticket) await Ticket.deleteOne({ _id: ticket._id });
-    if (admin) await Agent.deleteOne({ _id: admin._id });
-    if (assignee) await Agent.deleteOne({ _id: assignee._id });
-    if (requester) await User.deleteOne({ _id: requester._id });
-    if (sourceDept) await Department.deleteOne({ _id: sourceDept._id });
-    if (targetDept) await Department.deleteOne({ _id: targetDept._id });
-    if (company) await Company.deleteOne({ _id: company._id });
-    await mongoose.disconnect();
+    if (ticket) await TicketThread.deleteMany({ ticket_id: ticket.id });
+    if (ticket) await Ticket.deleteOne({ id: ticket.id });
+    if (admin) await Agent.deleteOne({ id: admin.id });
+    if (assignee) await Agent.deleteOne({ id: assignee.id });
+    if (requester) await User.deleteOne({ id: requester.id });
+    if (sourceDept) await Department.deleteOne({ id: sourceDept.id });
+    if (targetDept) await Department.deleteOne({ id: targetDept.id });
+    if (company) await Company.deleteOne({ id: company.id });
+    await getDB().destroy();
   }
 })();

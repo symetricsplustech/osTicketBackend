@@ -2,13 +2,21 @@ const dotenv = require("dotenv");
 const path = require("path");
 
 dotenv.config({ path: path.join(__dirname, "../../.env") });
-dotenv.config({ path: path.join(__dirname, "../../.env.local") });
+dotenv.config({ path: path.join(__dirname, "../../.env.local"), override: true });
 
 const config = {
   env: process.env.NODE_ENV || "development",
   port: parseInt(process.env.PORT, 10) || 5000,
-  mongoUri:
-    process.env.MONGODB_URI || "mongodb://127.0.0.1:27017/osticket_mern",
+  postgres: {
+    host: process.env.PG_HOST || "127.0.0.1",
+    port: parseInt(process.env.PG_PORT || "5432", 10),
+    user: process.env.PG_USER || "postgres",
+    password: process.env.PG_PASSWORD || "",
+    database: process.env.PG_DATABASE || "osticket_dev",
+    connectionString: process.env.DATABASE_URL || null,
+    ssl: process.env.PG_SSL === "true",
+    sslCA: process.env.PG_CA_CERT || "",
+  },
   jwt: {
     secret: process.env.JWT_SECRET || "dev-secret-change-me",
     expiresIn: process.env.JWT_EXPIRES_IN || "7d",

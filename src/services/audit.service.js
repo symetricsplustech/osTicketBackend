@@ -1,4 +1,42 @@
-const AuditEvent = require("../models/AuditEvent");
+const AuditEvent = require("../models/core/AuditEvent");
+const { getDB } = require("../config/db");
+
+async function auditRequired({
+  company,
+  actorType = "system",
+  actor = null,
+  actorName = "",
+  action,
+  entityType = "",
+  entityId,
+  before = null,
+  after = null,
+  reason = "",
+  req = null,
+  source = "",
+}) {
+  const tenantId = company?.id || company?._id || company;
+  const resourceId = entityId?.id || entityId?._id || entityId;
+  if (!tenantId || !resourceId || !action || !entityType) {
+    throw new Error(
+      "Required audit event is missing tenant, resource, or action",
+    );
+  }
+  await getDB()("audit_events").insert({
+    tenant_id: tenantId,
+    resource_type: entityType,
+    resource_id: resourceId,
+    actor_id: actorType === "user" ? actor?.id || actor?._id || actor : null,
+    action,
+    old_values: JSON.stringify(before || {}),
+    new_values: JSON.stringify({
+      ...(after || {}),
+      _audit: { actorType, actor, actorName, reason, source },
+    }),
+    ip: req?.ip || req?.socket?.remoteAddress || "",
+    user_agent: req?.get?.("user-agent") || "",
+  });
+}
 
 /**
  * audit({ company, actorType, actor, actorName, action, entityType, entityId,
@@ -20,41 +58,21 @@ async function audit({
   source = "",
 }) {
   try {
-    const changes = [];
-    if (
-      before &&
-      after &&
-      typeof before === "object" &&
-      typeof after === "object"
-    ) {
-      const keys = new Set([...Object.keys(before), ...Object.keys(after)]);
-      for (const k of keys) {
-        const b = before[k];
-        const a = after[k];
-        if (JSON.stringify(b) !== JSON.stringify(a)) {
-          changes.push({ field: k, from: b ?? null, to: a ?? null });
-        }
-      }
-    }
-    await AuditEvent.create({
-      company,
-      actorType,
-      actor,
-      actorName,
-      action,
-      entityType,
-      entityId,
-      before: before ?? null,
-      after: after ?? null,
-      changes: changes.slice(0, 50),
-      reason,
-      ip: req?.ip || req?.socket?.remoteAddress || "",
-      userAgent: req?.get?.("user-agent") || "",
-      source: source || (actorType === "api" ? "api" : ""),
-      privilegedSessionId: req?.privilegedSession?.sessionId || "",
-      realActor: req?.privilegedSession?.realActor || null,
-      realActorName: req?.privilegedSession?.realActorEmail || "",
-    });
+    if (company && entityId)
+      await auditRequired({
+        company,
+        actorType,
+        actor,
+        actorName,
+        action,
+        entityType,
+        entityId,
+        before,
+        after,
+        reason,
+        req,
+        source,
+      });
   } catch (err) {
     // audit must never break the business flow
   }
@@ -76,4 +94,4 @@ async function auditForEntity({
   return { items, total, page, pages: Math.ceil(total / limit) };
 }
 
-module.exports = { audit, auditForEntity };
+module.exports = { audit, auditRequired, auditForEntity };

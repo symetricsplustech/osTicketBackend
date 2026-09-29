@@ -30,8 +30,8 @@ exports.openForm = asyncHandler(async (req, res) => {
     (req.query.company && req.query.company !== "null"
       ? req.query.company
       : null);
-  const topicQuery = { status: "active", isPublic: true };
-  const deptQuery = { status: "active", isPublic: true };
+  const topicQuery = { isActive: true, isPublic: true };
+  const deptQuery = { isActive: true };
   if (companyId) {
     topicQuery.$or = [{ company: companyId }, { company: null }];
     deptQuery.$or = [{ company: companyId }, { company: null }];
@@ -45,7 +45,7 @@ exports.openForm = asyncHandler(async (req, res) => {
   const [topics, departments, settings, customFields, forms, priorities] =
     await Promise.all([
       HelpTopic.find(topicQuery)
-        .sort({ topic: 1 })
+        .sort({ name: 1 })
         .populate("department", "name"),
       Department.find(deptQuery).sort({ name: 1 }),
       SystemSetting.getSettings(),
@@ -183,7 +183,7 @@ exports.create = asyncHandler(async (req, res) => {
 
   const companyId = req.companyId;
   if (topic) {
-    const topicQuery = { _id: topic, status: "active", isPublic: true };
+    const topicQuery = { _id: topic, isActive: true, isPublic: true };
     if (companyId) topicQuery.$or = [{ company: companyId }, { company: null }];
     const selectedTopic = await HelpTopic.findOne(topicQuery).select("_id");
     if (!selectedTopic) throw new ApiError(422, "Invalid help topic");
@@ -219,6 +219,7 @@ exports.create = asyncHandler(async (req, res) => {
     user,
     orgOwner: ticketOwner,
     createdBy: user._id,
+    company: companyId,
     subject: subject.trim(),
     details: details.trim(),
     topicId: topic || null,

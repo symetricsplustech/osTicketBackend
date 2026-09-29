@@ -1,16 +1,5 @@
-const mongoose = require("mongoose");
-const schema = new mongoose.Schema(
-  {
-    company: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Company",
-      default: null,
-      index: true,
-    },
-    name: { type: String, required: true },
-    type: { type: String, default: "csat" },
-    isActive: { type: Boolean, default: true },
-  },
-  { timestamps: true },
-);
-module.exports = mongoose.model("Survey", schema);
+/**
+ * PostgreSQL-backed model — auto-generated compatibility shim.
+ */
+const { model } = require("./compat");
+module.exports = model("surveys", { company_id: "company_id" });

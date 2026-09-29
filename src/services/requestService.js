@@ -2,30 +2,12 @@
  * Request Management service — business logic for catalog, cart, REQ, RITM, SCTASK.
  * Handles the full lifecycle from browsing to checkout to fulfillment.
  */
-const mongoose = require("mongoose");
 const { emitEvent } = require("../realtime/socketManager");
 const auditEventService = require("./auditEventService");
 const numberingService = require("./numbering.service");
 const { assertTransition } = require("./stateMachine.service");
 
 // ─── Helpers ────────────────────────────────────────────────────────────
-// Register catalog models before retrieving them from Mongoose's registry.
-require("../models/helpdesk/catalog/Catalog");
-require("../models/helpdesk/catalog/CatalogCategory");
-require("../models/helpdesk/catalog/CatalogItem");
-require("../models/helpdesk/catalog/CatalogItemVariable");
-require("../models/helpdesk/catalog/VariableSet");
-require("../models/helpdesk/catalog/UserCriteria");
-require("../models/helpdesk/catalog/Cart");
-require("../models/helpdesk/catalog/CartItem");
-require("../models/helpdesk/catalog/Request");
-require("../models/helpdesk/catalog/RequestedItem");
-require("../models/helpdesk/catalog/CatalogTask");
-require("../models/helpdesk/catalog/RequestApproval");
-require("../models/helpdesk/catalog/ItemApproval");
-require("../models/helpdesk/catalog/FulfillmentPlan");
-require("../models/helpdesk/catalog/FulfillmentStep");
-require("../models/helpdesk/catalog/CatalogEntitlement");
 
 const requireTenant = (ctx) => {
   if (!ctx.tenantId)
@@ -42,22 +24,22 @@ const pick = (obj, keys) =>
 
 // ─── Catalog Management ─────────────────────────────────────────────────
 
-const Catalog = mongoose.model("Catalog");
-const CatalogCategory = mongoose.model("CatalogCategory");
-const CatalogItem = mongoose.model("CatalogItem");
-const CatalogItemVariable = mongoose.model("CatalogItemVariable");
-const VariableSet = mongoose.model("VariableSet");
-const UserCriteria = mongoose.model("UserCriteria");
-const Cart = mongoose.model("Cart");
-const CartItem = mongoose.model("CartItem");
-const Request = mongoose.model("Request");
-const RequestedItem = mongoose.model("RequestedItem");
-const CatalogTask = mongoose.model("CatalogTask");
-const RequestApproval = mongoose.model("RequestApproval");
-const ItemApproval = mongoose.model("ItemApproval");
-const FulfillmentPlan = mongoose.model("FulfillmentPlan");
-const FulfillmentStep = mongoose.model("FulfillmentStep");
-const CatalogEntitlement = mongoose.model("CatalogEntitlement");
+const Catalog = require("../models/helpdesk/catalog/Catalog");
+const CatalogCategory = require("../models/helpdesk/catalog/CatalogCategory");
+const CatalogItem = require("../models/helpdesk/catalog/CatalogItem");
+const CatalogItemVariable = require("../models/helpdesk/catalog/CatalogItemVariable");
+const VariableSet = require("../models/helpdesk/catalog/VariableSet");
+const UserCriteria = require("../models/helpdesk/catalog/UserCriteria");
+const Cart = require("../models/helpdesk/catalog/Cart");
+const CartItem = require("../models/helpdesk/catalog/CartItem");
+const Request = require("../models/helpdesk/catalog/Request");
+const RequestedItem = require("../models/helpdesk/catalog/RequestedItem");
+const CatalogTask = require("../models/helpdesk/catalog/CatalogTask");
+const RequestApproval = require("../models/helpdesk/catalog/RequestApproval");
+const ItemApproval = require("../models/helpdesk/catalog/ItemApproval");
+const FulfillmentPlan = require("../models/helpdesk/catalog/FulfillmentPlan");
+const FulfillmentStep = require("../models/helpdesk/catalog/FulfillmentStep");
+const CatalogEntitlement = require("../models/helpdesk/catalog/CatalogEntitlement");
 
 // ─── Catalog CRUD ───────────────────────────────────────────────────────
 
@@ -1114,6 +1096,26 @@ exports.transitionRequest = async (ctx, requestId, toStatus, data, actor) => {
   if (!req)
     throw Object.assign(new Error("Request not found"), { statusCode: 404 });
   assertTransition("request", req.status, toStatus);
+  // Parent-completion rule: a REQUEST may only be closed as fulfilled when all
+  // of its requested items (RITMs) have reached a terminal state. The server
+  // derives parent fulfillment from child states instead of trusting an
+  // arbitrary client status patch.
+  if (toStatus === "closed_complete" && !data?.forceCompletion) {
+    const children = await RequestedItem.find({ requestId });
+    const allDone = children.every((r) =>
+      ["closed_complete", "closed_incomplete", "closed_canceled"].includes(
+        r.status,
+      ),
+    );
+    if (children.length > 0 && !allDone) {
+      throw Object.assign(
+        new Error(
+          "Request cannot be closed as complete while one or more requested items remain unfulfilled",
+        ),
+        { statusCode: 409 },
+      );
+    }
+  }
   const before = { status: req.status };
   req.status = toStatus;
   if (toStatus === "closed_complete") {
@@ -1504,6 +1506,23 @@ exports.createFulfillmentPlan = async (ctx, data, actor) => {
     createdBy: actor.userId,
   });
   return plan;
+};
+
+exports.updateFulfillmentPlan = async (ctx, planId, data) => {
+  const plan = await exports.getFulfillmentPlan(ctx, planId);
+  const allowed = ["name", "description", "isActive", "isDefault", "conditions", "metadata"];
+  Object.assign(plan, pick(data, allowed));
+  await plan.save();
+  return plan;
+};
+
+exports.deleteFulfillmentPlan = async (ctx, planId, actor) => {
+  const plan = await exports.getFulfillmentPlan(ctx, planId);
+  plan.isDeleted = true;
+  plan.deletedAt = new Date();
+  plan.deletedBy = actor.userId || actor._id;
+  await plan.save();
+  return { success: true };
 };
 
 exports.addFulfillmentStep = async (ctx, planId, data, actor) => {

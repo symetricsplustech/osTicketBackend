@@ -704,6 +704,24 @@ exports.createFulfillmentPlan = async (req, res, next) => {
   }
 };
 
+exports.updateFulfillmentPlan = async (req, res, next) => {
+  try {
+    const result = await requestService.updateFulfillmentPlan({ tenantId: req.tenantId }, req.params.id, req.body, req.user);
+    res.json({ success: true, data: result });
+  } catch (err) {
+    next(err);
+  }
+};
+
+exports.deleteFulfillmentPlan = async (req, res, next) => {
+  try {
+    const result = await requestService.deleteFulfillmentPlan({ tenantId: req.tenantId }, req.params.id, req.user);
+    res.json({ success: true, data: result });
+  } catch (err) {
+    next(err);
+  }
+};
+
 exports.addFulfillmentStep = async (req, res, next) => {
   try {
     const result = await requestService.addFulfillmentStep(

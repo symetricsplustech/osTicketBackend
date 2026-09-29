@@ -2,22 +2,20 @@
  * Service Level Management service — unified business logic for SLA plans,
  * OLA, UC targets, schedules, conditions, breakdowns, repair jobs, and dashboard.
  */
-const mongoose = require("mongoose");
 const { emitEvent } = require("../realtime/socketManager");
 const auditEventService = require("./auditEventService");
 const numberingService = require("./numbering.service");
 
-// Register SLM models before retrieving them from Mongoose's registry.
-require("../models/SlaPlan");
-require("../models/SlaEvent");
-require("../models/slm/OLA");
-require("../models/slm/UnderpinningContractTarget");
-require("../models/slm/SLACondition");
-require("../models/slm/BusinessSchedule");
-require("../models/slm/HolidayCalendar");
-require("../models/slm/SLABreakdown");
-require("../models/slm/SLARepairJob");
-require("../models/helpdesk/tickets/Ticket");
+const SlaPlan = require("../models/SlaPlan");
+const SlaEvent = require("../models/SlaEvent");
+const OLA = require("../models/slm/OLA");
+const UnderpinningContractTarget = require("../models/slm/UnderpinningContractTarget");
+const SLACondition = require("../models/slm/SLACondition");
+const BusinessSchedule = require("../models/slm/BusinessSchedule");
+const HolidayCalendar = require("../models/slm/HolidayCalendar");
+const SLABreakdown = require("../models/slm/SLABreakdown");
+const SLARepairJob = require("../models/slm/SLARepairJob");
+const Ticket = require("../models/helpdesk/tickets/Ticket");
 
 const requireTenant = (ctx) => {
   if (!ctx.tenantId)
@@ -30,17 +28,6 @@ const pick = (obj, keys) =>
   Object.fromEntries(
     keys.filter((k) => obj[k] !== undefined).map((k) => [k, obj[k]]),
   );
-
-const SlaPlan = mongoose.model("SlaPlan");
-const SlaEvent = mongoose.model("SlaEvent");
-const OLA = mongoose.model("OLA");
-const UnderpinningContractTarget = mongoose.model("UnderpinningContractTarget");
-const SLACondition = mongoose.model("SLACondition");
-const BusinessSchedule = mongoose.model("BusinessSchedule");
-const HolidayCalendar = mongoose.model("HolidayCalendar");
-const SLABreakdown = mongoose.model("SLABreakdown");
-const SLARepairJob = mongoose.model("SLARepairJob");
-const Ticket = mongoose.model("Ticket");
 
 // ─── SLA Plan CRUD ──────────────────────────────────────────────────────
 

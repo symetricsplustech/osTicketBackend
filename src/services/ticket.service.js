@@ -28,13 +28,13 @@ const { assertTransition } = require("./stateMachine.service");
 const audit = (args) => auditService.audit(args).catch(() => {});
 
 const resolveDepartment = async (helpTopic, companyId = null) => {
-  const scope = { status: "active" };
+  const scope = { isActive: true };
   if (companyId) scope.company = companyId;
   if (helpTopic && helpTopic.department) {
     const dept = await Department.findById(helpTopic.department);
     if (
       dept &&
-      dept.status === "active" &&
+      dept.isActive &&
       (!companyId ||
         !dept.company ||
         String(dept.company) === String(companyId))
@@ -46,7 +46,7 @@ const resolveDepartment = async (helpTopic, companyId = null) => {
     const dept = await Department.findById(settings.system.defaultDept);
     if (
       dept &&
-      dept.status === "active" &&
+      dept.isActive &&
       (!companyId ||
         !dept.company ||
         String(dept.company) === String(companyId))
@@ -69,7 +69,7 @@ const applyFilters = async ({
 }) => {
   const filterQuery = { status: "active" };
   if (companyId) filterQuery.company = companyId;
-  const filters = await TicketFilter.find(filterQuery).sort({ order: 1 });
+  const filters = await TicketFilter.find(filterQuery).sort({ sortOrder: 1 });
   const actions = {
     dept: null,
     agent: null,
@@ -320,8 +320,9 @@ const createTicket = async ({
   attachments = [],
   customData = {},
   toAddresses = [],
+  company,
 }) => {
-  const companyId = user?.company || null;
+  const companyId = company || user?.company || null;
   const helpTopic = topicId ? await HelpTopic.findById(topicId) : null;
   if (
     helpTopic &&
@@ -693,9 +694,10 @@ const createTicket = async ({
     userId: user._id,
     actor: createdBy || null,
   });
-  audit({
+  await auditService.auditRequired({
     company: companyId,
-    actorType: createdBy ? "agent" : "user",
+    actorType:
+      createdBy && String(createdBy) !== String(user._id) ? "agent" : "user",
     actor: createdBy || user._id || null,
     actorName: createdBy ? String(createdBy) : `${user.name} <${user.email}>`,
     action: "ticket.created",
@@ -1047,7 +1049,7 @@ const applyStatusChange = async (
   ) {
     const taskSettings = await SystemSetting.getSettings().catch(() => null);
     if (taskSettings?.tickets?.blockCloseOnOpenTasks !== false) {
-      const Task = require("../models/Task");
+      const Task = require("../models/core/Task");
       const openTasks = await Task.countDocuments({
         ticket: ticket._id,
         status: "open",
@@ -1231,7 +1233,7 @@ const autoCloseResolvedTickets = async () => {
     }).limit(100);
     summary.checked = due.length;
     const blockOnTasks = settings.tickets?.blockCloseOnOpenTasks !== false;
-    const Task = blockOnTasks ? require("../models/Task") : null;
+    const Task = blockOnTasks ? require("../models/core/Task") : null;
     for (const ticket of due) {
       try {
         if (

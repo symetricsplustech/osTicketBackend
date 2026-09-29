@@ -1,37 +1,15 @@
-const mongoose = require("mongoose");
-
-const problemCISchema = new mongoose.Schema(
-  {
-    problem: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Problem",
-      required: true,
-      index: true,
-    },
-    ci: { type: mongoose.Schema.Types.ObjectId, ref: "CI", required: true },
-    company: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Company",
-      default: null,
-      index: true,
-    },
-    linkedBy: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
-      default: null,
-    },
-    linkedAt: { type: Date, default: Date.now },
-    role: {
-      type: String,
-      enum: ["causal", "affected", "related"],
-      default: "affected",
-    },
-    isActive: { type: Boolean, default: true },
+/**
+ * PostgreSQL-backed model — compatibility shim with ITSM FK aliases.
+ * The service layer addresses child entities as `problem` / `ci`; the tables
+ * store the `_id`-suffixed FK columns, plus snake_case soft columns.
+ */
+const { model } = require("../../compat");
+module.exports = model("problem_cis", {
+  fieldAliases: {
+    company: "company_id",
+    problem: "problem_id",
+    ci: "ci_id",
+    linkedBy: "linked_by",
+    isActive: "is_active",
   },
-  { timestamps: true },
-);
-
-problemCISchema.index({ problem: 1, ci: 1 }, { unique: true });
-problemCISchema.index({ company: 1, problem: 1 });
-
-module.exports = mongoose.model("ProblemCI", problemCISchema);
+});

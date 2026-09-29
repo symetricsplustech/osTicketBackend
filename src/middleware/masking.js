@@ -9,7 +9,6 @@
  */
 const P5 = () => require("../models/Platform5");
 
-// Map model names → mongoose model (lazy to avoid circular deps)
 const registry = new Map();
 
 function registerModel(modelName, model) {

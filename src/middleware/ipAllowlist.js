@@ -41,12 +41,10 @@ const normIp = (req) => {
 
 async function getAllowlist(companyId) {
   try {
-    const mongoose = require("mongoose");
-    const coll = mongoose.connection.db.collection("fieldmaskings");
-    const docs = await coll
-      .find({ model: "__ip_allowlist__" })
-      .limit(20)
-      .toArray();
+    const { getDB } = require("../config/db");
+    const docs = await getDB()("fieldmaskings")
+      .where({ model: "__ip_allowlist__" })
+      .limit(20);
     const match = companyId
       ? docs.find((d) => String(d.tenantId || "") === String(companyId))
       : null;

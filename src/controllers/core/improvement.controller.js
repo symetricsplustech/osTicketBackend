@@ -5,7 +5,7 @@ exports.listOpportunities = async (req, res, next) => { try { res.json({ success
 exports.getOpportunity = async (req, res, next) => { try { res.json({ success: true, data: await svc.getOpportunity({ tenantId: req.tenantId }, req.params.id) }); } catch (e) { next(e); } };
 exports.createOpportunity = async (req, res, next) => { try { res.status(201).json({ success: true, data: await svc.createOpportunity({ tenantId: req.tenantId }, req.body, req.user) }); } catch (e) { next(e); } };
 exports.updateOpportunity = async (req, res, next) => { try { res.json({ success: true, data: await svc.updateOpportunity({ tenantId: req.tenantId }, req.params.id, req.body, req.user) }); } catch (e) { next(e); } };
-exports.transitionOpportunity = async (req, res, next) => { try { res.json({ success: true, data: await svc.transitionOpportunity({ tenantId: req.tenantId }, req.params.id, req.body.status, req.user) }); } catch (e) { next(e); } };
+exports.transitionOpportunity = async (req, res, next) => { try { res.json({ success: true, data: await svc.transitionOpportunity({ tenantId: req.tenantId }, req.params.id, req.body.status, req.user, req.body) }); } catch (e) { next(e); } };
 exports.deleteOpportunity = async (req, res, next) => { try { res.json({ success: true, data: await svc.deleteOpportunity({ tenantId: req.tenantId }, req.params.id, req.user) }); } catch (e) { next(e); } };
 
 // ─── Initiatives ──────────────────────────────────────────────────────

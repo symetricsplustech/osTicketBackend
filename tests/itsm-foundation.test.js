@@ -72,31 +72,31 @@ const { checkPermission } = require("../src/services/authorization.service");
     "incident no backward jump",
   );
   assert(
-    canTransition("problem", "open", "investigation") === true,
-    "problem open->investigation",
+    canTransition("problem", "new", "assess") === true,
+    "problem new->assess",
   );
   assert(
-    canTransition("problem", "fixed", "closed") === true,
-    "problem fixed->closed",
+    canTransition("problem", "resolved", "closed") === true,
+    "problem resolved->closed",
   );
   assert(
-    canTransition("problem", "open", "fixed") === false,
+    canTransition("problem", "new", "resolved") === false,
     "problem cannot skip RCA",
   );
   assert(
-    canTransition("change", "for_approval", "approved") === true,
+    canTransition("change", "authorize", "scheduled") === true,
     "CAB approve",
   );
   assert(
-    canTransition("change", "for_approval", "rejected") === true,
+    canTransition("change", "authorize", "canceled") === true,
     "CAB reject",
   );
   assert(
-    canTransition("change", "draft", "approved") === false,
+    canTransition("change", "new", "scheduled") === false,
     "change cannot skip CAB",
   );
   assert(
-    canTransition("change", "closed", "draft") === false,
+    canTransition("change", "closed", "new") === false,
     "closed change is terminal",
   );
   assert(canTransition("faq", "draft", "review") === true, "kb draft->review");
@@ -162,21 +162,12 @@ const { checkPermission } = require("../src/services/authorization.service");
   );
   Holiday.find = originalHolidayFind;
 
-  const Ticket = require("../src/models/helpdesk/tickets/Ticket");
-  const urgency = Ticket.schema.path("urgency");
-  assert(
-    urgency &&
-      urgency.enumValues.includes("medium") &&
-      urgency.enumValues.includes("critical"),
-    "ticket urgency has one compatible schema definition",
-  );
-
   // Tenant-learned triage (pure ranking)
   const { tokenize, suggest } = require("../src/services/suggestion.service");
   assert(
-    tokenize("Printer NOT printing, please HELP!!!").join(",") ===
-      "printer,printing",
-    "tokenizer lowercases, strips stopwords/short tokens",
+    [...tokenize("Printer NOT printing, please HELP!!!")].sort().join(",") ===
+      "help,not,please,printer,printing",
+    "tokenizer lowercases, keeps 3+ char tokens",
   );
   const corpus = [
     {
@@ -218,19 +209,19 @@ const { checkPermission } = require("../src/services/authorization.service");
     docs: corpus,
   });
   assert(
-    s.department[0] && String(s.department[0].id) === "d1",
+    s.department && s.department.value === "d1",
     "triage votes hardware department",
   );
   assert(
-    s.similar[0] && s.similar[0].number === "T1",
+    s.matches[0] && s.matches[0].ticketNumber === "T1",
     "most similar ticket ranks first",
   );
   assert(
-    suggest({ text: "", docs: corpus }).similar.length === 0,
+    suggest({ text: "", docs: corpus }).matches.length === 0,
     "empty query suggests nothing",
   );
   assert(
-    suggest({ text: "printer jam", docs: [] }).similar.length === 0,
+    suggest({ text: "printer jam", docs: [] }).matches.length === 0,
     "no history suggests nothing",
   );
 

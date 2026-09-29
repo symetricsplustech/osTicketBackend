@@ -182,6 +182,15 @@ const problemController = {
     res.json({ success: true, data: problem });
   }),
 
+  pushWorkaroundToIncidents: asyncHandler(async (req, res) => {
+    const updated = await ProblemService.pushWorkaroundToIncidents(
+      req.params.id,
+      req.user.company,
+      req.user._id,
+    );
+    res.json({ success: true, data: { incidentCount: updated.length, updated } });
+  }),
+
   acceptRisk: asyncHandler(async (req, res) => {
     const problem = await ProblemService.acceptRisk(
       req.params.id,

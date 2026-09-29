@@ -1,7 +1,7 @@
 /* eslint-disable no-console */
-const mongoose = require("mongoose");
+const connectDB = require("../src/config/db");
+const { getDB } = require("../src/config/db");
 const app = require("../src/app");
-const config = require("../src/config/config");
 const Company = require("../src/models/Company");
 const User = require("../src/models/User");
 const HelpTopic = require("../src/models/HelpTopic");
@@ -51,44 +51,47 @@ const assert = (condition, message) => {
   let createdTicket;
   const suffix = Date.now();
   try {
-    await mongoose.connect(config.mongoUri, {
-      serverSelectionTimeoutMS: 15000,
-    });
+    await connectDB();
     server = app.listen(port);
     [companyA, companyB] = await Promise.all([
       Company.create({ name: `Portal intake A ${suffix}`, status: "active" }),
       Company.create({ name: `Portal intake B ${suffix}`, status: "active" }),
     ]);
+    await getDB()("tenant_modules").insert([companyA, companyB].map((company) => ({
+      tenant_id: company.id,
+      module_key: "helpdesk",
+      status: "active",
+    })));
     [userA, userB] = await Promise.all([
       User.create({
         name: "Portal requester A",
         email: `portal-a-${suffix}@osticket.local`,
         password: "Pass@1234",
-        company: companyA._id,
-        isRegistered: true,
+        company_id: companyA.id,
+        is_registered: true,
         status: "active",
       }),
       User.create({
         name: "Portal requester B",
         email: `portal-b-${suffix}@osticket.local`,
         password: "Pass@1234",
-        company: companyB._id,
-        isRegistered: true,
+        company_id: companyB.id,
+        is_registered: true,
         status: "active",
       }),
     ]);
     const [topicA, topicB] = await Promise.all([
       HelpTopic.create({
-        company: companyA._id,
-        topic: `Access issue ${suffix}`,
-        isPublic: true,
-        status: "active",
+        company_id: companyA.id,
+        name: `Access issue ${suffix}`,
+        is_public: true,
+        is_active: true,
       }),
       HelpTopic.create({
-        company: companyB._id,
-        topic: `Private issue ${suffix}`,
-        isPublic: true,
-        status: "active",
+        company_id: companyB.id,
+        name: `Private issue ${suffix}`,
+        is_public: true,
+        is_active: true,
       }),
     ]);
 
@@ -128,13 +131,13 @@ const assert = (condition, message) => {
     assert(
       formA.status === 200 &&
         formA.data.topics.some(
-          (item) => String(item._id) === String(topicA._id),
+          (item) => String(item.id) === String(topicA.id),
         ),
       "requester receives their tenant help topics",
     );
     assert(
       !formA.data.topics.some(
-        (item) => String(item._id) === String(topicB._id),
+        (item) => String(item.id) === String(topicB.id),
       ),
       "requester cannot see another tenant help topics",
     );
@@ -147,7 +150,7 @@ const assert = (condition, message) => {
       token: loginA.data.token,
       body: {
         subject: "Missing description",
-        topic: String(topicA._id),
+        topic: String(topicA.id),
         priority: "Normal",
       },
     });
@@ -160,7 +163,7 @@ const assert = (condition, message) => {
       body: {
         subject: "Cross tenant",
         details: "This must be rejected.",
-        topic: String(topicB._id),
+        topic: String(topicB.id),
         priority: "Normal",
       },
     });
@@ -172,7 +175,7 @@ const assert = (condition, message) => {
     const ticketForm = new FormData();
     ticketForm.append("subject", " Cannot sign in ");
     ticketForm.append("details", " Please reset my account access. ");
-    ticketForm.append("topic", String(topicA._id));
+    ticketForm.append("topic", String(topicA.id));
     ticketForm.append("priority", "Normal");
     ticketForm.append(
       "files",
@@ -187,16 +190,16 @@ const assert = (condition, message) => {
       create.status === 201 && create.data.ticket?.number,
       "requester can create a ticket through the portal",
     );
-    createdTicket = create.data.ticket._id;
+    createdTicket = create.data.ticket.id;
     const ticket = await Ticket.findById(createdTicket).lean();
     const initialMessage = await TicketThread.findOne({
-      ticket: createdTicket,
-      posterType: "user",
+      ticket_id: createdTicket,
+      user_id: userA.id,
       type: "message",
     }).lean();
     assert(
-      String(ticket.company) === String(companyA._id) &&
-        String(ticket.user) === String(userA._id),
+      String(ticket.company_id) === String(companyA.id) &&
+        String(ticket.user_id) === String(userA.id),
       "created ticket is owned and tenant-scoped to the requester",
     );
     assert(
@@ -210,10 +213,10 @@ const assert = (condition, message) => {
     );
     assert(
       await AuditEvent.exists({
-        company: companyA._id,
-        actor: userA._id,
+        tenant_id: companyA.id,
+        actor_id: userA.id,
         action: "ticket.created",
-        entityId: createdTicket,
+        resource_id: createdTicket,
       }),
       "ticket creation is audit logged within the tenant",
     );
@@ -223,21 +226,23 @@ const assert = (condition, message) => {
     process.exitCode = 1;
   } finally {
     if (server) await new Promise((resolve) => server.close(resolve));
-    const companies = [companyA?._id, companyB?._id].filter(Boolean);
+    const companies = [companyA?.id, companyB?.id].filter(Boolean);
     if (companies.length) {
-      const tickets = await Ticket.find({ company: { $in: companies } })
-        .select("_id")
-        .lean();
-      await TicketThread.deleteMany({
-        ticket: { $in: tickets.map((item) => item._id) },
-      });
-      await Ticket.deleteMany({ company: { $in: companies } });
-      await HelpTopic.deleteMany({ company: { $in: companies } });
-      await Priority.deleteMany({ company: { $in: companies } });
-      await AuditEvent.deleteMany({ company: { $in: companies } });
-      await User.deleteMany({ company: { $in: companies } });
-      await Company.deleteMany({ _id: { $in: companies } });
+      const db = getDB();
+      const tickets = await db("tickets")
+        .whereIn("company_id", companies)
+        .select("id");
+      const ticketIds = tickets.map((t) => t.id);
+      if (ticketIds.length) {
+        await db("ticket_threads").whereIn("ticket_id", ticketIds).del();
+      }
+      await db("tickets").whereIn("company_id", companies).del();
+      await db("help_topics").whereIn("company_id", companies).del();
+      await db("priorities").whereIn("company_id", companies).del();
+      await db("audit_events").whereIn("tenant_id", companies).del();
+      await db("users").whereIn("company_id", companies).del();
+      await db("companies").whereIn("id", companies).del();
     }
-    await mongoose.disconnect();
+    await getDB().destroy();
   }
 })();

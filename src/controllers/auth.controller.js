@@ -15,6 +15,7 @@ const emailService = require("../services/email.service");
 const { generateConfirmationToken } = require("../utils/generators");
 const { verifyTotp } = require("../utils/totp");
 const { assertPasswordPolicy } = require("../utils/passwordPolicy");
+const { recordSession } = require("../services/session.service");
 
 /**
  * Second-factor gate (§47): accounts with twoFactorEnabled must present a
@@ -42,7 +43,6 @@ const verifySecondFactor = async (principal, code) => {
 };
 const config = require("../config/config");
 const Company = require("../models/Company");
-const mongoose = require("mongoose");
 
 const sendTokenResponse = (user, type, res, status = 200) => {
   const token = signToken({
@@ -164,6 +164,14 @@ exports.login = asyncHandler(async (req, res) => {
   await verifySecondFactor(user, totpCode);
   user.lastLogin = new Date();
   await user.save();
+  await recordSession({
+    tenantId: user.company || null,
+    userId: user._id,
+    email: user.email,
+    ip: req.ip || req.connection?.remoteAddress || "",
+    userAgent: req.get?.("user-agent") || "",
+    mfaVerified: !!user.twoFactorEnabled,
+  });
   auditLogin({
     actorType: "user",
     actor: user._id,
@@ -277,6 +285,14 @@ exports.portalLogin = asyncHandler(async (req, res) => {
     const isAdmin = agent.isAdmin || (agent.role && agent.role.isAdmin);
     agent.lastLogin = new Date();
     await agent.save();
+    await recordSession({
+      tenantId: agent.company || null,
+      agentId: agent._id,
+      email: agent.email,
+      ip: req.ip || req.connection?.remoteAddress || "",
+      userAgent: req.get?.("user-agent") || "",
+      mfaVerified: false,
+    });
     auditLogin({
       actorType: "agent",
       actor: agent._id,
@@ -296,15 +312,10 @@ exports.portalLogin = asyncHandler(async (req, res) => {
     // Get activated modules from tenant_modules collection (the source of truth)
     let moduleKeys = [];
     if (agent.company) {
-      const mongoose = require("mongoose");
-      const tenantModules = await mongoose.connection.db
-        .collection("tenant_modules")
-        .find({
-          tenantId: new mongoose.Types.ObjectId(agent.company),
-          status: "active",
-        })
-        .toArray();
-      moduleKeys = tenantModules.map((m) => m.moduleKey);
+      const { getDB } = require("../config/db");
+      const tenantModules = await getDB()("tenant_modules")
+        .where({ tenant_id: agent.company, status: "active" });
+      moduleKeys = tenantModules.map((m) => m.module_key);
     }
     return res.json({
       success: true,
@@ -337,15 +348,10 @@ exports.portalLogin = asyncHandler(async (req, res) => {
     // Get activated modules from tenant_modules collection
     let moduleKeys = [];
     if (user.company) {
-      const mongoose = require("mongoose");
-      const tenantModules = await mongoose.connection.db
-        .collection("tenant_modules")
-        .find({
-          tenantId: new mongoose.Types.ObjectId(user.company),
-          status: "active",
-        })
-        .toArray();
-      moduleKeys = tenantModules.map((m) => m.moduleKey);
+      const { getDB } = require("../config/db");
+      const tenantModules = await getDB()("tenant_modules")
+        .where({ tenant_id: user.company, status: "active" });
+      moduleKeys = tenantModules.map((m) => m.module_key);
     }
     return res.json({
       success: true,
@@ -393,15 +399,10 @@ exports.adminLogin = asyncHandler(async (req, res) => {
   // Get activated modules from tenant_modules collection
   let moduleKeys = [];
   if (agent.company) {
-    const mongoose = require("mongoose");
-    const tenantModules = await mongoose.connection.db
-      .collection("tenant_modules")
-      .find({
-        tenantId: new mongoose.Types.ObjectId(agent.company),
-        status: "active",
-      })
-      .toArray();
-    moduleKeys = tenantModules.map((m) => m.moduleKey);
+    const { getDB } = require("../config/db");
+    const tenantModules = await getDB()("tenant_modules")
+      .where({ tenant_id: agent.company, status: "active" });
+    moduleKeys = tenantModules.map((m) => m.module_key);
   }
   res.json({ success: true, token, user: agent, moduleKeys });
 });

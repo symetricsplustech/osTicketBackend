@@ -3,8 +3,8 @@
 // Uses seeded data. Creates throwaway tickets (SMOKE-TEST) and cleans them up.
 const path = require("path");
 const B = path.resolve(__dirname, "..");
-const mongoose = require(path.join(B, "src/../node_modules/mongoose"));
-const config = require(path.join(B, "src/config/config"));
+const connectDB = require(path.join(B, "src/config/db"));
+const { getDB } = require(path.join(B, "src/config/db"));
 const User = require(path.join(B, "src/models/User"));
 const Agent = require(path.join(B, "src/models/Agent"));
 const Team = require(path.join(B, "src/models/Team"));
@@ -31,8 +31,8 @@ const assert = (cond, msg) => {
 };
 
 const run = async () => {
-  await mongoose.connect(config.mongoUri, { serverSelectionTimeoutMS: 15000 });
-  console.log(`Connected: ${config.mongoUri}\n`);
+  await connectDB();
+  console.log("Connected to PostgreSQL\n");
 
   const company = await require(path.join(B, "src/models/Company")).findOne({
     domain: "nimbus.osticket.local",
@@ -258,7 +258,7 @@ const run = async () => {
   await SlaPlan.deleteOne({ _id: slaPlan._id }).catch(() => {});
   console.log("\nCleanup done (SMOKE-TEST artifacts soft-deleted).");
 
-  await mongoose.disconnect();
+  await getDB().destroy();
   console.log("\nALL SMOKE TESTS PASSED");
   process.exit(0);
 };

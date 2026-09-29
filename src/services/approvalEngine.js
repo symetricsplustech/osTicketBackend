@@ -2,17 +2,15 @@
  * Approval Engine service — unified approval lifecycle: policy evaluation,
  * instance creation, step sequencing, decisions, delegation, timeout, escalation, audit.
  */
-const mongoose = require("mongoose");
 const numberingService = require("./numbering.service");
 const { emitEvent } = require("../realtime/socketManager");
 
-// Register approval-engine models before retrieving them from Mongoose.
-require("../models/approval/ApprovalDefinition");
-require("../models/approval/ApprovalInstance");
-require("../models/approval/ApprovalStep");
-require("../models/approval/Approver");
-require("../models/approval/Delegation");
-require("../models/approval/ApprovalDecision");
+const ApprovalDefinition = require("../models/approval/ApprovalDefinition");
+const ApprovalInstance = require("../models/approval/ApprovalInstance");
+const ApprovalStep = require("../models/approval/ApprovalStep");
+const Approver = require("../models/approval/Approver");
+const Delegation = require("../models/approval/Delegation");
+const ApprovalDecision = require("../models/approval/ApprovalDecision");
 
 const requireTenant = (ctx) => {
   if (!ctx.tenantId)
@@ -25,13 +23,6 @@ const pick = (obj, keys) =>
   Object.fromEntries(
     keys.filter((k) => obj[k] !== undefined).map((k) => [k, obj[k]]),
   );
-
-const ApprovalDefinition = mongoose.model("ApprovalDefinition");
-const ApprovalInstance = mongoose.model("ApprovalInstance");
-const ApprovalStep = mongoose.model("ApprovalStep");
-const Approver = mongoose.model("Approver");
-const Delegation = mongoose.model("Delegation");
-const ApprovalDecision = mongoose.model("ApprovalDecision");
 
 // ─── Condition Matching ─────────────────────────────────────────────────
 

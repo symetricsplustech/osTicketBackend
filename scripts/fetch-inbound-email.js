@@ -1,5 +1,6 @@
 /* eslint-disable no-console */
-const mongoose = require("mongoose");
+const connectDB = require("../src/config/db");
+const { getDB } = require("../src/config/db");
 const config = require("../src/config/config");
 const { pollInbox } = require("../src/services/inboundEmail.service");
 
@@ -11,13 +12,16 @@ const sinceDays = (() => {
 })();
 
 const run = async () => {
-  await mongoose.connect(config.mongoUri, { serverSelectionTimeoutMS: 15000 });
-  console.log(
+  await connectDB();
+  try {
+    console.log(
     `Polling ${config.email.imapUser}@${config.email.imapHost} (last ${sinceDays} day(s))...`,
   );
-  const summary = await pollInbox({ sinceDays });
-  console.log("Poll summary:", JSON.stringify(summary, null, 2));
-  await mongoose.disconnect();
+    const summary = await pollInbox({ sinceDays });
+    console.log("Poll summary:", JSON.stringify(summary, null, 2));
+  } finally {
+    await getDB().destroy();
+  }
 };
 
 run().catch((err) => {

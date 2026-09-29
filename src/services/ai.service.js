@@ -22,4 +22,23 @@ async function summarizeThread({ title = "", entries = [] }) {
   };
 }
 
-module.exports = { summarizeThread };
+function extractiveSummary(sentences, count = 3) {
+  const scored = sentences
+    .filter((s) => s.trim().length > 20)
+    .map((s, i) => {
+      const words = s.toLowerCase().split(/\s+/);
+      const uniqueWords = new Set(words);
+      const score = (uniqueWords.size / words.length) * (1 - i * 0.05);
+      return { text: s.trim(), score };
+    })
+    .sort((a, b) => b.score - a.score);
+  return {
+    summary: scored
+      .slice(0, count)
+      .map((s) => s.text)
+      .join(" "),
+    sentences: scored.slice(0, count).map((s) => s.text),
+  };
+}
+
+module.exports = { summarizeThread, extractiveSummary };

@@ -3,22 +3,20 @@
  * service portfolio management, business/technical services, offerings,
  * configuration items, relationships, dependencies, commitments, and impact analysis.
  */
-const mongoose = require("mongoose");
 const numberingService = require("./numbering.service");
 const auditEventService = require("./auditEventService");
 const { emitEvent } = require("../realtime/socketManager");
 
-// Register CMDB models before retrieving them from Mongoose's registry.
-require("../models/cmdb/ServicePortfolio");
-require("../models/cmdb/BusinessService");
-require("../models/cmdb/TechnicalService");
-require("../models/cmdb/ServiceOffering");
-require("../models/cmdb/ConfigurationItem");
-require("../models/cmdb/CIRelationship");
-require("../models/cmdb/ServiceOwner");
-require("../models/cmdb/ServiceCommitment");
-require("../models/cmdb/ServiceLevelCommitment");
-require("../models/cmdb/Dependency");
+const ServicePortfolio = require("../models/cmdb/ServicePortfolio");
+const BusinessService = require("../models/cmdb/BusinessService");
+const TechnicalService = require("../models/cmdb/TechnicalService");
+const ServiceOffering = require("../models/cmdb/ServiceOffering");
+const ConfigurationItem = require("../models/cmdb/ConfigurationItem");
+const CIRelationship = require("../models/cmdb/CIRelationship");
+const ServiceOwner = require("../models/cmdb/ServiceOwner");
+const ServiceCommitment = require("../models/cmdb/ServiceCommitment");
+const ServiceLevelCommitment = require("../models/cmdb/ServiceLevelCommitment");
+const Dependency = require("../models/cmdb/Dependency");
 
 const requireTenant = (ctx) => {
   if (!ctx.tenantId)
@@ -31,17 +29,6 @@ const pick = (obj, keys) =>
   Object.fromEntries(
     keys.filter((k) => obj[k] !== undefined).map((k) => [k, obj[k]]),
   );
-
-const ServicePortfolio = mongoose.model("ServicePortfolio");
-const BusinessService = mongoose.model("BusinessService");
-const TechnicalService = mongoose.model("TechnicalService");
-const ServiceOffering = mongoose.model("ServiceOffering");
-const ConfigurationItem = mongoose.model("ConfigurationItem");
-const CIRelationship = mongoose.model("CIRelationship");
-const ServiceOwner = mongoose.model("ServiceOwner");
-const ServiceCommitment = mongoose.model("ServiceCommitment");
-const ServiceLevelCommitment = mongoose.model("ServiceLevelCommitment");
-const Dependency = mongoose.model("Dependency");
 
 // ─── Service Portfolio ──────────────────────────────────────────────────
 
@@ -551,6 +538,15 @@ exports.createRelationship = async (ctx, data, actor) => {
     throw Object.assign(new Error("Cannot create relationship to self"), {
       statusCode: 422,
     });
+  // Prevent cross-tenant references
+  const [source, target] = await Promise.all([
+    ConfigurationItem.findOne({ _id: data.sourceCIId, tenantId }),
+    ConfigurationItem.findOne({ _id: data.targetCIId, tenantId }),
+  ]);
+  if (!source)
+    throw Object.assign(new Error("Source CI not found"), { statusCode: 404 });
+  if (!target)
+    throw Object.assign(new Error("Target CI not found"), { statusCode: 404 });
   return CIRelationship.create({ ...data, tenantId, createdBy: actor.userId });
 };
 
@@ -839,6 +835,15 @@ exports.createDependency = async (ctx, data, actor) => {
     throw Object.assign(new Error("Cannot create dependency to self"), {
       statusCode: 422,
     });
+  // Prevent cross-tenant references for CMDB-backed dependency ends
+  for (const end of ["source", "target"]) {
+    if (String(data[`${end}Type`]).toLowerCase() !== "ci") continue;
+    const ci = await ConfigurationItem.findOne({ _id: data[`${end}Id`], tenantId });
+    if (!ci)
+      throw Object.assign(new Error(`Dependency ${end} CI not found`), {
+        statusCode: 404,
+      });
+  }
   return Dependency.create({ ...data, tenantId, createdBy: actor.userId });
 };
 

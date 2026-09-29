@@ -308,8 +308,28 @@ exports.getPresenceStats = async (req, res, next) => {
     next(e);
   }
 };
+exports.listPresence = async (req, res, next) => {
+  try {
+    res.json({
+      success: true,
+      data: await svc.listPresence({ tenantId: req.tenantId }),
+    });
+  } catch (e) {
+    next(e);
+  }
+};
 
 // ─── Capacity ───────────────────────────────────────────────────────────
+exports.listCapacity = async (req, res, next) => {
+  try {
+    res.json({
+      success: true,
+      data: await svc.listCapacity({ tenantId: req.tenantId }),
+    });
+  } catch (e) {
+    next(e);
+  }
+};
 exports.getCapacity = async (req, res, next) => {
   try {
     res.json({

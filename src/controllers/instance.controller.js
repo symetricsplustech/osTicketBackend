@@ -14,7 +14,6 @@ const { computeDueDate } = require("../services/sla.service");
 const ApiError = require("../utils/ApiError");
 const asyncHandler = require("../utils/asyncHandler");
 const { signToken } = require("../middleware/auth");
-const mongoose = require("mongoose");
 const crypto = require("crypto");
 const config = require("../config/config");
 const InstanceInvitation = require("../models/InstanceInvitation");
@@ -22,6 +21,8 @@ const InstanceCompany = require("../models/InstanceCompany");
 const { runWithTenant } = require("../middleware/tenantScope");
 const { nameKey } = require("../services/companyHierarchy.service");
 const { isInstancePermission, permissionsForMembership } = require("../services/instanceAccess.service");
+const { assertActiveUnit } = require("../services/instancePlacement.service");
+const { isCanonicalKey } = require("../permissions/itsmCatalog");
 
 const membershipFor = (user, instanceId) =>
   (user.instanceMemberships || []).find(
@@ -148,37 +149,38 @@ exports.createInstance = asyncHandler(async (req, res) => runWithTenant(null, as
 
   let instance;
   for (let attempt = 0; attempt < 3; attempt += 1) {
-    const session = await mongoose.startSession();
+    const { getDB } = require("../config/db");
     try {
-      await session.withTransaction(async () => {
+      await getDB().transaction(async (trx) => {
     // Create the instance (Company with instance flag)
-    const company = await Company.create([{
+    const [instanceId] = await trx.insert({
       name,
       domain: domain.toLowerCase(),
-      instanceCode,
+      instance_code: instanceCode,
       email: companyEmail || user.email,
-      supportEmail: companyEmail || `support@${domain}`,
+      support_email: companyEmail || `support@${domain}`,
       status: "active",
-      billingCycle: "monthly",
-      planStartedAt: new Date(),
-      planExpiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-      createdByUser: user._id,
-      isInstance: true,
-      instanceOwner: user._id,
-    }], { session });
+      billing_cycle: "monthly",
+      plan_started_at: new Date(),
+      plan_expires_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+      created_by_user: user._id,
+      is_instance: true,
+      instance_owner: user._id,
+    }).into("companies").returning("*");
 
-    instance = company[0];
+    instance = { ...instanceId, _id: instanceId.id, instanceCode: instanceId.instance_code, createdAt: instanceId.created_at };
 
-    const [primaryCompany] = await InstanceCompany.create([{
-      tenantId: instance._id,
+    const primaryCompany = await trx.insert({
+      tenant_id: instance._id,
       name: String(companyName || name).trim(),
-      nameKey: nameKey(companyName || name),
+      name_key: nameKey(companyName || name),
       domain: domain.toLowerCase(),
       email: companyEmail || user.email,
-      isPrimary: true,
-      ownerUser: user._id,
-    }], { session });
-    instance.primaryCompany = primaryCompany._id;
+      is_primary: true,
+      owner_user: user._id,
+    }).into("instance_companies").returning("*");
+    instance.primaryCompany = primaryCompany[0].id;
+    await trx("companies").where({ id: instance._id }).update({ primary_company: instance.primaryCompany });
 
     // Create instance membership for the creator (Instance Owner/Admin)
     const membership = {
@@ -188,71 +190,59 @@ exports.createInstance = asyncHandler(async (req, res) => runWithTenant(null, as
       joinedAt: new Date(),
       invitedBy: user._id,
     };
-    await User.updateOne(
-      { _id: user._id },
-      { $addToSet: { instanceMemberships: membership } },
-      { session }
-    );
+    await trx("users").where({ id: user._id }).update({
+      instance_memberships: JSON.stringify([...(user.instanceMemberships || []), membership]),
+    });
 
     // Create default roles
     const roles = [];
     for (const r of DEFAULT_ROLES) {
-      const role = await Role.create([{
-        ...r,
-        company: instance._id,
-        scope: "tenant",
-      }], { session });
-      roles.push(role[0]);
+      const [role] = await trx("roles").insert({
+        name: r.name, is_admin: r.isAdmin, permissions: JSON.stringify(r.permissions),
+        company_id: instance._id, scope: "tenant",
+      }).returning("*");
+      roles.push({ ...role, _id: role.id });
     }
 
     // Create default departments
     const departments = [];
     for (const d of DEFAULT_DEPARTMENTS) {
-      const dept = await Department.create([{
-        ...d,
-        company: instance._id,
-      }], { session });
-      departments.push(dept[0]);
+      const [dept] = await trx("departments").insert({
+        name: d.name, is_public: d.isPublic, notes: d.notes, company_id: instance._id,
+      }).returning("*");
+      departments.push({ ...dept, _id: dept.id });
     }
 
     // Create default SLA plans
     const slaPlans = [];
     for (const s of DEFAULT_SLA_PLANS) {
-      const sla = await SlaPlan.create([{
-        ...s,
-        company: instance._id,
-      }], { session });
-      slaPlans.push(sla[0]);
+      const [sla] = await trx("sla_plans").insert({
+        name: s.name, grace_period: s.gracePeriod, schedule: s.schedule,
+        notes: s.notes, company_id: instance._id,
+      }).returning("*");
+      slaPlans.push({ ...sla, _id: sla.id });
     }
 
     // Create default teams
-    const supportTeam = await Team.create([{
-      name: "Support Team",
-      notes: "Front-line support",
-      company: instance._id,
-      members: [],
-      lead: null,
-    }], { session });
+    const supportTeam = await trx("teams").insert({
+      name: "Support Team", notes: "Front-line support", company_id: instance._id,
+    }).returning("*");
 
-    const techTeam = await Team.create([{
-      name: "Technical Team",
-      notes: "Escalation team",
-      company: instance._id,
-      members: [],
-      lead: null,
-    }], { session });
+    await trx("teams").insert({
+      name: "Technical Team", notes: "Escalation team", company_id: instance._id,
+    });
 
     // Create default help topics
-    const generalTopic = await HelpTopic.create([{
-      topic: "General Inquiry",
+    await trx("help_topics").insert({
+      name: "General Inquiry",
       category: "Support",
-      department: departments.find(d => d.name === "Support")?._id,
+      department_id: departments.find(d => d.name === "Support")?._id,
       priority: "Normal",
-      sla: slaPlans.find(s => s.name === "Business Hours")?._id,
-      autoAssignTeam: supportTeam[0]?._id,
-      isPublic: true,
-      company: instance._id,
-    }], { session });
+      sla_id: slaPlans.find(s => s.name === "Business Hours")?._id,
+      auto_assign_team_id: supportTeam[0]?.id,
+      is_public: true,
+      company_id: instance._id,
+    });
 
     // Instance defaults must not overwrite the global SystemSetting document.
     instance.settings = {
@@ -264,28 +254,29 @@ exports.createInstance = asyncHandler(async (req, res) => runWithTenant(null, as
       auth: { passwordMinLength: 8 },
       schedules: { timezone: "UTC" },
     };
-    await instance.save({ session });
+    await trx("companies").where({ id: instance._id }).update({ settings: JSON.stringify(instance.settings) });
 
     // Activate default modules for this instance
-    const db = mongoose.connection.db;
     const now = new Date();
     for (const key of DEFAULT_TENANT_MODULES) {
-      await db.collection("tenant_modules").updateOne(
-        { tenantId: instance._id, moduleKey: key },
-        {
-          $set: { status: "active", activatedAt: now, updatedAt: now },
-          $setOnInsert: { tenantId: instance._id, moduleKey: key, createdAt: now },
-        },
-        { upsert: true, session },
-      );
+      await trx("tenant_modules").insert({
+        tenant_id: instance._id,
+        module_key: key,
+        status: "active",
+        activated_at: now,
+        updated_at: now,
+        created_at: now,
+      }).onConflict(["tenant_id", "module_key"]).merge({
+        status: "active",
+        activated_at: now,
+        updated_at: now,
+      });
     }
 
       });
       break;
     } catch (err) {
       if (!err.hasErrorLabel?.("TransientTransactionError") || attempt === 2) throw err;
-    } finally {
-      await session.endSession();
     }
   }
 
@@ -351,14 +342,15 @@ exports.selectInstance = asyncHandler(async (req, res) => {
     id: req.user._id, type: "user", tid: instance._id,
     sv: Number(req.user.sessionVersion || 0),
   });
-  const moduleDocs = await mongoose.connection.db.collection("tenant_modules")
-    .find({ tenantId: instance._id, status: "active" }).toArray();
+  const { getDB: getDB2 } = require("../config/db");
+  const moduleDocs = await getDB2()("tenant_modules")
+    .where({ tenant_id: instance._id, status: "active" });
   res.json({
     success: true, token,
     instance: { _id: instance._id, name: instance.name, status: instance.status },
     role: membership.role,
     permissions: permissionsForMembership(membership),
-    moduleKeys: moduleDocs.map((item) => item.moduleKey),
+    moduleKeys: moduleDocs.map((item) => item.module_key),
   });
 });
 
@@ -421,9 +413,14 @@ exports.createInvitation = asyncHandler(async (req, res) => {
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ||
       !["instance_admin", "agent", "requester"].includes(role))
     throw new ApiError(422, "Valid email and assignable role are required");
+  const permissions = req.body.permissions || [];
+  if (!Array.isArray(permissions) || permissions.length > 200 ||
+      !permissions.every((key) => isCanonicalKey(key)))
+    throw new ApiError(422, "Choose valid Instance permission keys");
+  const organizationUnit = await assertActiveUnit(instanceId, req.body.organizationUnit || null);
   const token = crypto.randomBytes(32).toString("hex");
   const invitation = await InstanceInvitation.create({
-    instance: instance._id, email, role,
+    instance: instance._id, email, role, permissions: [...new Set(permissions)], organizationUnit,
     tokenHash: crypto.createHash("sha256").update(token).digest("hex"),
     expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
     invitedBy: req.user._id,
@@ -461,6 +458,7 @@ exports.acceptInvitation = asyncHandler(async (req, res) => runWithTenant(null, 
     acceptedAt: null, expiresAt: { $gt: new Date() },
   });
   if (!invitation) throw new ApiError(403, "Invitation is invalid or expired");
+  await assertActiveUnit(instanceId, invitation.organizationUnit);
   const membership = {
     instance: instanceId,
     role: invitation.role,
@@ -468,6 +466,7 @@ exports.acceptInvitation = asyncHandler(async (req, res) => runWithTenant(null, 
     status: "active",
     joinedAt: new Date(),
     invitedBy: invitation.invitedBy,
+    organizationUnit: invitation.organizationUnit,
   };
   const updated = await User.updateOne(
     { _id: user._id, "instanceMemberships.instance": { $ne: instance._id } },

@@ -1,6 +1,6 @@
 /* eslint-disable no-console */
-const mongoose = require("mongoose");
-const config = require("../src/config/config");
+const connectDB = require("../src/config/db");
+const { getDB } = require("../src/config/db");
 const User = require("../src/models/User");
 const Company = require("../src/models/Company");
 
@@ -12,7 +12,8 @@ const TEST_USERS = [
 ];
 
 const run = async () => {
-  await mongoose.connect(config.mongoUri, { serverSelectionTimeoutMS: 15000 });
+  await connectDB();
+  try {
   const company = await Company.findOne({ status: "active" }).sort({
     createdAt: 1,
   });
@@ -26,7 +27,6 @@ const run = async () => {
       user.status = "active";
       user.company = company ? company._id : null;
       user.password = "Customer@123";
-      user.markModified("password");
       await user.save();
     } else {
       user = await User.create({
@@ -44,7 +44,9 @@ const run = async () => {
     );
   }
 
-  await mongoose.disconnect();
+  } finally {
+    await getDB().destroy();
+  }
 };
 
 run().catch((err) => {

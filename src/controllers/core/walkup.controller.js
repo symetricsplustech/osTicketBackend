@@ -365,6 +365,13 @@ exports.cancelAppointment = async (req, res, next) => {
 };
 
 // ─── Interactions ──────────────────────────────────────────────────────
+exports.listInteractions = async (req, res, next) => {
+  try {
+    res.json({ success: true, data: await svc.listInteractions({ tenantId: req.tenantId }, req.query) });
+  } catch (e) {
+    next(e);
+  }
+};
 exports.createInteraction = async (req, res, next) => {
   try {
     res
@@ -377,6 +384,13 @@ exports.createInteraction = async (req, res, next) => {
           req.user,
         ),
       });
+  } catch (e) {
+    next(e);
+  }
+};
+exports.updateInteraction = async (req, res, next) => {
+  try {
+    res.json({ success: true, data: await svc.updateInteraction({ tenantId: req.tenantId }, req.params.id, req.body, req.user) });
   } catch (e) {
     next(e);
   }
@@ -401,6 +415,13 @@ exports.completeInteraction = async (req, res, next) => {
         req.body,
       ),
     });
+  } catch (e) {
+    next(e);
+  }
+};
+exports.cancelInteraction = async (req, res, next) => {
+  try {
+    res.json({ success: true, data: await svc.cancelInteraction({ tenantId: req.tenantId }, req.params.id, req.user) });
   } catch (e) {
     next(e);
   }

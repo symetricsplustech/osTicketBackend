@@ -128,6 +128,11 @@ router.post(
   requirePermission("itsm.change.change_request.update"),
   ctrl.createImplementationResult,
 );
+router.get(
+  "/:id/result",
+  requirePermission("itsm.change.change_request.read"),
+  ctrl.getImplementationResult,
+);
 
 router.post(
   "/cab/:cabId/meeting",

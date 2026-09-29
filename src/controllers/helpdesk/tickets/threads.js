@@ -1,6 +1,6 @@
 const Ticket = require("../../../models/helpdesk/tickets/Ticket");
 const TicketThread = require("../../../models/helpdesk/tickets/TicketThread");
-const Task = require("../../../models/Task");
+const Task = require("../../../models/core/Task");
 const User = require("../../../models/User");
 const Agent = require("../../../models/Agent");
 const Team = require("../../../models/Team");
@@ -258,9 +258,7 @@ exports.mergeTickets = asyncHandler(async (req, res) => {
     ...(target.collaborators || []).map((c) => String(c)),
     ...(source.collaborators || []).map((c) => String(c)),
   ]);
-  target.collaborators = [...collabs].map((c) =>
-    require("mongoose").Types.ObjectId(c),
-  );
+  target.collaborators = [...collabs].map((c) => c);
   await target.save();
   await TicketLink.create({
     company: source.company,
@@ -402,13 +400,11 @@ exports.splitTicket = asyncHandler(async (req, res) => {
     ticketNumber: newTicket.number,
     actor: req.agent._id,
   });
-  res
-    .status(201)
-    .json({
-      success: true,
-      message: `Ticket ${newTicket.number} created from split`,
-      ticket: newTicket,
-    });
+  res.status(201).json({
+    success: true,
+    message: `Ticket ${newTicket.number} created from split`,
+    ticket: newTicket,
+  });
 });
 exports.updateThread = asyncHandler(async (req, res) => {
   if (!hasPerm(req.agent, "tickets.edit"))

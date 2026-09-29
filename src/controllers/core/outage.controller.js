@@ -12,7 +12,7 @@ exports.deleteOutage = async (req, res, next) => { try { res.json({ success: tru
 // ─── CI Associations ───────────────────────────────────────────────────
 exports.listOutageCIs = async (req, res, next) => { try { res.json({ success: true, data: await svc.listOutageCIs({ tenantId: req.tenantId }, req.params.outageId) }); } catch (e) { next(e); } };
 exports.addOutageCI = async (req, res, next) => { try { res.status(201).json({ success: true, data: await svc.addOutageCI({ tenantId: req.tenantId }, req.params.outageId, req.body, req.user) }); } catch (e) { next(e); } };
-exports.removeOutageCI = async (req, res, next) => { try { res.json({ success: true, data: await svc.removeOutageCI({ tenantId: req.tenantId }, req.params.outageId, req.params.ciId) }); } catch (e) { next(e); } };
+exports.removeOutageCI = async (req, res, next) => { try { res.json({ success: true, data: await svc.removeOutageCI({ tenantId: req.tenantId }, req.params.outageId, req.params.ciId, req.user) }); } catch (e) { next(e); } };
 exports.updateOutageCI = async (req, res, next) => { try { res.json({ success: true, data: await svc.updateOutageCI({ tenantId: req.tenantId }, req.params.outageId, req.params.ciId, req.body) }); } catch (e) { next(e); } };
 
 // ─── Service Associations ─────────────────────────────────────────────
@@ -29,9 +29,12 @@ exports.getTimeline = async (req, res, next) => { try { res.json({ success: true
 exports.updateCommunicationPlan = async (req, res, next) => { try { res.json({ success: true, data: await svc.updateCommunicationPlan({ tenantId: req.tenantId }, req.params.outageId, req.body) }); } catch (e) { next(e); } };
 exports.recordCommunication = async (req, res, next) => { try { res.json({ success: true, data: await svc.recordCommunication({ tenantId: req.tenantId }, req.params.outageId, req.body, req.user) }); } catch (e) { next(e); } };
 
-// ─── Related Incidents/Changes ────────────────────────────────────────
-exports.associateIncident = async (req, res, next) => { try { res.json({ success: true, data: await svc.associateIncident({ tenantId: req.tenantId }, req.params.outageId, req.body.incidentId) }); } catch (e) { next(e); } };
-exports.associateChange = async (req, res, next) => { try { res.json({ success: true, data: await svc.associateChange({ tenantId: req.tenantId }, req.params.outageId, req.body.changeId) }); } catch (e) { next(e); } };
+// ─── Related Incidents/Changes (16.3) ──────────────────────────────────
+exports.listRelations = async (req, res, next) => { try { res.json({ success: true, data: await svc.listRelations({ tenantId: req.tenantId }, req.params.outageId, req.query) }); } catch (e) { next(e); } };
+exports.removeRelation = async (req, res, next) => { try { res.json({ success: true, data: await svc.removeRelation({ tenantId: req.tenantId }, req.params.outageId, req.params.relationId, req.user) }); } catch (e) { next(e); } };
+exports.associateIncident = async (req, res, next) => { try { res.status(201).json({ success: true, data: await svc.associateIncident({ tenantId: req.tenantId }, req.params.outageId, req.body.incidentId, req.body, req.user) }); } catch (e) { next(e); } };
+exports.associateMajorIncident = async (req, res, next) => { try { res.status(201).json({ success: true, data: await svc.associateMajorIncident({ tenantId: req.tenantId }, req.params.outageId, req.body.incidentId, req.body, req.user) }); } catch (e) { next(e); } };
+exports.associateChange = async (req, res, next) => { try { res.status(201).json({ success: true, data: await svc.associateChange({ tenantId: req.tenantId }, req.params.outageId, req.body.changeId, req.body, req.user) }); } catch (e) { next(e); } };
 
 // ─── Availability ─────────────────────────────────────────────────────
 exports.calculateAvailability = async (req, res, next) => { try { res.json({ success: true, data: await svc.calculateAvailability({ tenantId: req.tenantId }, req.body.entityType, req.body.entityId, req.body.periodStart, req.body.periodEnd) }); } catch (e) { next(e); } };

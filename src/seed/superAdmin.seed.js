@@ -1,5 +1,5 @@
-const mongoose = require("mongoose");
-const config = require("../config/config");
+const connectDB = require("../config/db");
+const { getDB } = require("../config/db");
 
 const SuperAdmin = require("../models/SuperAdmin");
 
@@ -19,8 +19,8 @@ const allModules = [
 ];
 
 const seedSuperAdmin = async () => {
-  await mongoose.connect(config.mongoUri, { serverSelectionTimeoutMS: 15000 });
-  console.log("Connected to MongoDB");
+  await connectDB();
+  console.log("Connected to database");
 
   let superAdmin = await SuperAdmin.findOne({
     email: "superadmin@osticket.local",
@@ -49,7 +49,7 @@ const seedSuperAdmin = async () => {
   console.log(`Super admin email: ${superAdmin.email}`);
   console.log(`Module keys: ${superAdmin.moduleKeys.join(", ")}`);
 
-  await mongoose.disconnect();
+  getDB().destroy();
 };
 
 seedSuperAdmin().catch((err) => {

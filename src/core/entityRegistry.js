@@ -2,40 +2,41 @@
 // Each entry defines: model, display fields, ref fields (populated from other entities),
 // relationships (for related lists), and automations (post-create/post-update cascades).
 
-const mongoose = require("mongoose");
+const { getDB } = require("../config/db");
 
 // Lazy model loader — resolves at call time, not import time
+const _modelCache = {};
 function M(name) {
-  try {
-    return mongoose.model(name);
-  } catch (_) {
-    // Try loading from known paths
-    const paths = [
-      `../models/${name}`,
-      `../models/Platform2`,
-      `../models/Platform3`,
-      `../models/Platform4`,
-      `../models/Platform5`,
-      `../models/Platform6`,
-      `../models/Platform7`,
-      `../models/Product`,
-      `../models/License`,
-      `../models/Stockroom`,
-      `../models/CustomerService`,
-      `../models/WorkflowExecutionLog`,
-      `../models/ScheduledReport`,
-      `../models/Remaining`,
-      `../models/Enterprise`,
-    ];
-    for (const p of paths) {
-      try {
-        const mod = require(p);
-        if (typeof mod === "function") return mod;
-        if (mod[name]) return mod[name];
-      } catch (_) {}
-    }
-    throw new Error(`Model "${name}" not found`);
+  if (_modelCache[name]) return _modelCache[name];
+  const paths = [
+    `../models/${name}`,
+    `../models/core/${name}`,
+    `../models/Platform2`,
+    `../models/Platform3`,
+    `../models/Platform4`,
+    `../models/Platform5`,
+    `../models/Platform6`,
+    `../models/Platform7`,
+    `../models/Product`,
+    `../models/License`,
+    `../models/Stockroom`,
+    `../models/CustomerService`,
+    `../models/WorkflowExecutionLog`,
+    `../models/ScheduledReport`,
+    `../models/Remaining`,
+    `../models/Enterprise`,
+  ];
+  for (const p of paths) {
+    try {
+      const mod = require(p);
+      const resolved = typeof mod === "function" ? mod : (mod[name] || mod);
+      if (resolved) {
+        _modelCache[name] = resolved;
+        return resolved;
+      }
+    } catch (_) {}
   }
+  throw new Error(`Model "${name}" not found`);
 }
 
 // ---- Automation hooks: fire after create/update, cascade across modules ----
@@ -108,19 +109,20 @@ const AUTOMATIONS = {
       // Link CI if provided
       if (req.body.ciId) {
         try {
-          await mongoose.connection.db
-            .collection("incidentcimetas")
-            .updateOne(
-              { incident: doc._id },
-              { $set: { cis: [mongoose.Types.ObjectId(req.body.ciId)] } },
-              { upsert: true },
-            );
+          const db = getDB();
+          const existing = await db("incidentcimetas").where({ incident: doc._id }).first();
+          if (existing) {
+            await db("incidentcimetas").where({ incident: doc._id }).update({ cis: JSON.stringify([req.body.ciId]) });
+          } else {
+            await db("incidentcimetas").insert({ incident: doc._id, cis: JSON.stringify([req.body.ciId]) });
+          }
         } catch (_) {}
       }
       // Notify on-call
       try {
         const Notification = M("Notification");
-        const OnCallSchedule = mongoose.models.OnCallSchedule;
+        let OnCallSchedule;
+        try { OnCallSchedule = M("OnCallSchedule"); } catch (_) {}
         if (OnCallSchedule) {
           const schedules = await OnCallSchedule.find({
             tenantId: doc.tenantId,

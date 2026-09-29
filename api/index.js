@@ -1,22 +1,10 @@
-const mongoose = require("mongoose");
 const app = require("../src/app");
-const config = require("../src/config/config");
+const connectDB = require("../src/config/db");
 const { ensureDefaults } = require("../src/bootstrap/ensureDefaults");
 
-let cached = global.__ostMongooseConn;
+let cached = global.__ostPostgresConn;
 if (!cached) {
-  cached = global.__ostMongooseConn = { conn: null, promise: null };
-}
-
-async function connectDB() {
-  if (cached.conn) return cached.conn;
-  if (!cached.promise) {
-    cached.promise = mongoose
-      .connect(config.mongoUri, { serverSelectionTimeoutMS: 15000 })
-      .then((m) => m.connection);
-  }
-  cached.conn = await cached.promise;
-  return cached.conn;
+  cached = global.__ostPostgresConn = { promise: null };
 }
 
 module.exports = async (req, res) => {
@@ -33,7 +21,8 @@ module.exports = async (req, res) => {
     return;
   }
   try {
-    await connectDB();
+    if (!cached.promise) cached.promise = connectDB();
+    await cached.promise;
     await ensureDefaults().catch((err) =>
       console.error("ensureDefaults failed:", err.message),
     );

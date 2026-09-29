@@ -1,23 +1,5 @@
-const mongoose = require("mongoose");
-
-const assetSchema = new mongoose.Schema(
-  {
-    company: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Company",
-      default: null,
-      index: true,
-    },
-    name: { type: String, required: true, trim: true },
-    serial: { type: String, default: "" },
-    ip: { type: String, default: "" },
-    hostname: { type: String, default: "" },
-    type: { type: String, default: "hardware" },
-    environment: { type: String, default: "" },
-    location: { type: String, default: "" },
-    status: { type: String, default: "active" },
-  },
-  { timestamps: true },
-);
-
-module.exports = mongoose.model("Asset", assetSchema);
+/**
+ * PostgreSQL-backed model — auto-generated compatibility shim.
+ */
+const { model } = require("./compat");
+module.exports = model("assets", { company_id: "company_id" });

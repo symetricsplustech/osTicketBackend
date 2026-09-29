@@ -2,10 +2,9 @@
  * Catalog Indexing — rebuilds catalog search index periodically.
  */
 const cron = require("node-cron");
-const mongoose = require("mongoose");
 
 async function indexCatalog() {
-  const CatalogItem = mongoose.model("CatalogItem");
+  const CatalogItem = require("../models/CatalogItem");
   const count = await CatalogItem.countDocuments({
     isActive: true,
     isDeleted: false,

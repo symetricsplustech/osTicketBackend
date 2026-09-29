@@ -1,41 +1,17 @@
-const mongoose = require("mongoose");
-
-const problemChangeSchema = new mongoose.Schema(
-  {
-    problem: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Problem",
-      required: true,
-      index: true,
-    },
-    change: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Change",
-      required: true,
-    },
-    company: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Company",
-      default: null,
-      index: true,
-    },
-    linkedBy: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
-      default: null,
-    },
-    linkedAt: { type: Date, default: Date.now },
-    relationshipType: {
-      type: String,
-      enum: ["remediation", "workaround", "investigation"],
-      default: "remediation",
-    },
-    isActive: { type: Boolean, default: true },
+/**
+ * PostgreSQL-backed model — compatibility shim with ITSM FK aliases.
+ * The service layer addresses change links via `problem` / `change` /
+ * `relationshipType` / `linkedBy` / `isActive`; the table stores `_id`-suffixed
+ * and snake_case columns.
+ */
+const { model } = require("../../compat");
+module.exports = model("problem_changes", {
+  fieldAliases: {
+    company: "company_id",
+    problem: "problem_id",
+    change: "change_id",
+    relationshipType: "relationship_type",
+    linkedBy: "linked_by",
+    isActive: "is_active",
   },
-  { timestamps: true },
-);
-
-problemChangeSchema.index({ problem: 1, change: 1 }, { unique: true });
-problemChangeSchema.index({ company: 1, problem: 1 });
-
-module.exports = mongoose.model("ProblemChange", problemChangeSchema);
+});

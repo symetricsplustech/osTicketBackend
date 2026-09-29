@@ -1,11 +1,11 @@
 /**
- * Canonical ITSM Permission Catalog (Modules 1–12)
+ * Canonical ITSM Permission Catalog (Modules 1–18)
  *
  * Single source of truth for the granular `itsm.*` permission model
- * (SERVICENOW_ITSM_GRANULAR_PERMISSIONS_FROM_TECHNICAL_MASTER.md §Modules 1–12).
+ * (SERVICENOW_ITSM_GRANULAR_PERMISSIONS_FROM_TECHNICAL_MASTER.md §Modules 1–18).
  *
  * Layout: Layer('itsm') → Module → Group → Resource → Action. Every action is a
- * flat key like `itsm.incident.incident.update`. Keys are authoritative (1908
+ * flat key like `itsm.incident.incident.update`. Keys are authoritative (2849
  * total); the structural grouping is derived so the tree, the picker UI and the
  * high-risk audit all share one definition.
  *
@@ -102,6 +102,62 @@ const MODULES = [
     moduleKey: "helpdesk",
     scope: "tenant",
   },
+  {
+    key: "universal_request",
+    namespace: "itsm.universal_request.*",
+    label: "Universal Request",
+    moduleKey: "helpdesk",
+    scope: "tenant",
+  },
+  {
+    key: "asset",
+    namespace: "itsm.asset.*",
+    label: "Asset Management",
+    moduleKey: "helpdesk",
+    scope: "tenant",
+  },
+  {
+    key: "service_cmdb",
+    namespace: "itsm.service_cmdb.*",
+    label: "Service Portfolio / Service Builder / CMDB-CSDM Context",
+    moduleKey: "helpdesk",
+    scope: "tenant",
+  },
+  {
+    key: "release",
+    namespace: "itsm.release.*",
+    label: "Release Management",
+    moduleKey: "helpdesk",
+    scope: "tenant",
+  },
+  {
+    key: "improvement",
+    namespace: "itsm.improvement.*",
+    label: "Continual Improvement Management",
+    moduleKey: "helpdesk",
+    scope: "tenant",
+  },
+  {
+    key: "outage",
+    namespace: "itsm.outage.*",
+    label: "Outage / Service Availability",
+    moduleKey: "helpdesk",
+    scope: "tenant",
+  },
+  {
+    key: "experience",
+    namespace: "itsm.experience.*",
+    label: "Workspace / Self-Service / Mobile",
+    moduleKey: "helpdesk",
+    scope: "tenant",
+  },
+  {
+    key: "reporting_admin",
+    namespace: "itsm.reporting_admin.*",
+    label: "Reporting / Audit / Administration",
+    moduleKey: "helpdesk",
+    scope: "tenant",
+  },
 ];
 
 const GROUPS = [
@@ -168,6 +224,27 @@ const FIELD_POLICIES = {
   walkup_checkin: ["vip_flag", "security_notes"],
   appointment: ["internal_notes", "patient_data"],
   walkup_interaction: ["internal_notes", "diagnosis"],
+  // Instance administration plane — custom domains + email channels
+  instance_domain: [
+    "verification_token",
+    "verification_record",
+    "tls_certificate",
+    "tls_private_key",
+    "failure_reason",
+  ],
+  instance_email: [
+    "verification_token",
+    "smtp_password",
+    "smtp_username",
+    "dkim_private_key",
+    "spf_record",
+    "dkim_selector",
+    "dmarc_record",
+    "failure_reason",
+  ],
+  instance_email_sender: ["headers", "reply_to_address"],
+  instance_email_delivery: ["error_message", "raw_response", "from_address", "to_address"],
+  instance_email_message: ["headers", "to_addresses", "cc_addresses", "error_message", "references", "from_address"],
 };
 
 const humanize = (slug = "") =>
@@ -296,6 +373,15 @@ const isCanonicalKey = (key) => CANONICAL_KEY_SET.has(key);
 // permission key itself (`itsm.incident.incident.*` → resource 'incident').
 const resourceOf = (key) => {
   const parts = key.split(".");
+  if (parts[0] === "instance") {
+    if (parts[1] === "domain") return "instance_domain";
+    const sub = parts[2] || "channel";
+    if (sub === "sender") return "instance_email_sender";
+    if (sub === "inbound_action") return "instance_email";
+    if (sub === "delivery_log") return "instance_email_delivery";
+    if (sub === "message_audit") return "instance_email_message";
+    return "instance_email";
+  }
   if (
     parts[1] === "knowledge" &&
     (parts[3] || "").includes("knowledge_article")

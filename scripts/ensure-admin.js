@@ -15,8 +15,8 @@
 //      superadmins live outside tenants by design.
 // Never hardcodes credentials: password must come from --password or env,
 // and is never printed.
-const mongoose = require("mongoose");
-const config = require("../src/config/config");
+const connectDB = require("../src/config/db");
+const { getDB } = require("../src/config/db");
 const SuperAdmin = require("../src/models/SuperAdmin");
 
 const PLATFORM_ROLES = [
@@ -114,7 +114,7 @@ const run = async () => {
         .filter(Boolean)
     : ROLE_PERMISSIONS[platformRole];
 
-  await mongoose.connect(config.mongoUri, { serverSelectionTimeoutMS: 15000 });
+  await connectDB();
 
   let admin = await SuperAdmin.findOne({ email });
   if (admin) {
@@ -146,7 +146,7 @@ const run = async () => {
   console.log(
     `\nLogin at the frontend with:\n  email:    ${email}\n  password: (the one you just set)`,
   );
-  await mongoose.disconnect();
+  await getDB().destroy();
   process.exit(0);
 };
 

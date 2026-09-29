@@ -7,7 +7,6 @@
  * cannot be exited through the status endpoint — restore/reopen flows own
  * those paths.
  *
- * Matrices are derived from the current Mongoose enums plus TicketStatus
  * custom statuses (custom keys are allowed to/from any non-terminal state;
  * per-status matrices are future tenant configuration).
  */
@@ -160,7 +159,7 @@ const INCIDENT_TRANSITIONS = {
   on_hold_problem: ["in_progress", "new", "canceled"],
   on_hold_vendor: ["in_progress", "new", "canceled"],
   resolved: ["closed", "in_progress", "new"],
-  closed: ["in_progress", "new"], // reopen
+  closed: ["in_progress", "new", "investigating"], // reopen
   canceled: ["new"], // reopen from cancellation
   investigating: ["identified", "monitoring", "resolved", "in_progress"],
   identified: ["monitoring", "resolved", "in_progress", "investigating"],

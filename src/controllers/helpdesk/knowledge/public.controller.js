@@ -105,14 +105,12 @@ exports.categories = asyncHandler(async (req, res) => {
   const categories = await FaqCategory.find({ isPublic: true, ...comp }).sort({
     sortOrder: 1,
   });
-  const counts = await Faq.aggregate([
-    { $match: { isPublished: true, ...comp } },
-    { $group: { _id: "$category", count: { $sum: 1 } } },
-  ]);
+  const counts = await Faq.find({ isPublished: true, ...comp }).select("category_id");
   const countMap = {};
-  counts.forEach((c) => {
-    countMap[String(c._id)] = c.count;
-  });
+  for (const row of counts) {
+    const id = String(row.category_id || row.category);
+    countMap[id] = (countMap[id] || 0) + 1;
+  }
   res.json({
     success: true,
     items: categories.map((c) => ({

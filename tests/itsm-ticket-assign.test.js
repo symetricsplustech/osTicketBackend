@@ -1,7 +1,7 @@
 /* eslint-disable no-console */
-const mongoose = require("mongoose");
+const connectDB = require("../src/config/db");
+const { getDB } = require("../src/config/db");
 const app = require("../src/app");
-const config = require("../src/config/config");
 const Company = require("../src/models/Company");
 const Agent = require("../src/models/Agent");
 const User = require("../src/models/User");
@@ -48,9 +48,7 @@ const assert = (condition, message) => {
   let ticket;
   const suffix = Date.now();
   try {
-    await mongoose.connect(config.mongoUri, {
-      serverSelectionTimeoutMS: 15000,
-    });
+    await connectDB();
     server = app.listen(port);
     coA = await Company.create({
       name: `Assign A ${suffix}`,
@@ -61,88 +59,95 @@ const assert = (condition, message) => {
       status: "active",
     });
     const now = new Date();
-    const db = mongoose.connection.db;
+    const db = getDB();
     for (const c of [coA, coB]) {
-      await db
-        .collection("tenant_modules")
-        .updateOne(
-          { tenantId: c._id, moduleKey: "helpdesk" },
-          {
-            $set: { status: "active", activatedAt: now, updatedAt: now },
-            $setOnInsert: { moduleKey: "helpdesk", createdAt: now },
-          },
-          { upsert: true },
-        );
+      await db("tenant_modules")
+        .where({ tenant_id: c.id, module_key: "helpdesk" })
+        .update({
+          status: "active",
+          activated_at: now,
+          updated_at: now,
+          module_key: "helpdesk",
+          created_at: now,
+        })
+        .then(rows => rows.length ? rows : db("tenant_modules").insert({
+          tenant_id: c.id,
+          module_key: "helpdesk",
+          status: "active",
+          activated_at: now,
+          updated_at: now,
+          created_at: now,
+        }));
     }
     deptA1 = await Department.create({
       name: `Assign A1 ${suffix}`,
-      company: coA._id,
+      company_id: coA.id,
     });
     deptB1 = await Department.create({
       name: `Assign B1 ${suffix}`,
-      company: coB._id,
+      company_id: coB.id,
     });
     teamA = await Team.create({
       name: `Assign TeamA ${suffix}`,
-      company: coA._id,
-      status: "active",
+      company_id: coA.id,
+      is_active: true,
     });
     owner = await User.create({
       name: "Assign owner",
       email: `asg-owner-${suffix}@osticket.local`,
       password: "Pass@1234",
-      company: coA._id,
-      isRegistered: true,
+      company_id: coA.id,
+      is_registered: true,
       status: "active",
     });
-    const mkAgent = (name, company, departments, permissions) =>
+    const mkAgent = (name, company_id, departments, permissions) =>
       Agent.create({
         name,
         email: `${name.toLowerCase().replace(/\s+/g, "-")}-${suffix}@osticket.local`,
         password: "Pass@1234",
-        company,
-        isActive: true,
+        company_id,
+        is_active: true,
         departments,
         permissions,
-        isAdmin: false,
+        is_admin: false,
       });
     adminA = await Agent.create({
       name: "Assign admin",
       email: `asg-admin-${suffix}@osticket.local`,
       password: "Pass@1234",
-      company: coA._id,
-      isAdmin: true,
-      isActive: true,
+      company_id: coA.id,
+      is_admin: true,
+      is_active: true,
     });
     agentA1 = await mkAgent(
       "Assign A1",
-      coA._id,
-      [{ department: deptA1._id, isPrimary: true }],
+      coA.id,
+      [{ department: deptA1.id, isPrimary: true }],
       ["tickets.assign", "tickets.transfer", "tickets.reply", "tickets.note"],
     );
     agentA2 = await mkAgent(
       "Assign A2",
-      coA._id,
-      [{ department: deptA1._id, isPrimary: true }],
+      coA.id,
+      [{ department: deptA1.id, isPrimary: true }],
       [],
     );
     agentB1 = await mkAgent(
       "Assign B1",
-      coB._id,
-      [{ department: deptB1._id, isPrimary: true }],
+      coB.id,
+      [{ department: deptB1.id, isPrimary: true }],
       [],
     );
     agentNoPerm = await mkAgent(
       "Assign NoPerm",
-      coA._id,
-      [{ department: deptA1._id, isPrimary: true }],
+      coA.id,
+      [{ department: deptA1.id, isPrimary: true }],
       [],
     );
     ticket = await Ticket.create({
       number: `ASG-${suffix}`,
-      company: coA._id,
-      user: owner._id,
-      dept: deptA1._id,
+      company_id: coA.id,
+      user_id: owner.id,
+      dept_id: deptA1.id,
       subject: "Assignment ticket",
       priority: "Normal",
       status: "open",
@@ -169,7 +174,7 @@ const assert = (condition, message) => {
     const noPermAssign = await request(
       "POST",
       `/agent/tickets/${ticket.number}/assign`,
-      { token: tokenNoPerm, body: { agentId: String(agentA2._id) } },
+      { token: tokenNoPerm, body: { agentId: String(agentA2.id) } },
     );
     assert(
       noPermAssign.status === 403,
@@ -179,7 +184,7 @@ const assert = (condition, message) => {
     const crossTenantAssign = await request(
       "POST",
       `/agent/tickets/${ticket.number}/assign`,
-      { token: tokenB1, body: { agentId: String(agentB1._id) } },
+      { token: tokenB1, body: { agentId: String(agentB1.id) } },
     );
     assert(
       [403, 404].includes(crossTenantAssign.status),
@@ -190,25 +195,25 @@ const assert = (condition, message) => {
     const assign = await request(
       "POST",
       `/agent/tickets/${ticket.number}/assign`,
-      { token: tokenA1, body: { agentId: String(agentA2._id) } },
+      { token: tokenA1, body: { agentId: String(agentA2.id) } },
     );
     assert(assign.status === 200, "scoped agent can assign an in-tenant agent");
-    const reloaded = await Ticket.findById(ticket._id);
+    const reloaded = await Ticket.findById(ticket.id);
     assert(
-      String(reloaded.agent) === String(agentA2._id),
+      String(reloaded.agent_id) === String(agentA2.id),
       "ticket is assigned to the target agent",
     );
     assert(reloaded.status === "assigned", "ticket status becomes assigned");
     assert(
       await AuditEvent.exists({
-        company: coA._id,
+        tenant_id: coA.id,
         action: "ticket.assigned",
-        entityId: ticket._id,
+        resource_id: ticket.id,
       }),
       "assignment is audit logged",
     );
     assert(
-      await TicketThread.exists({ ticket: ticket._id, type: "system" }),
+      await TicketThread.exists({ ticket_id: ticket.id, type: "system" }),
       "assignment system-event history is recorded",
     );
 
@@ -216,15 +221,15 @@ const assert = (condition, message) => {
     const crossTenantTarget = await request(
       "POST",
       `/agent/tickets/${ticket.number}/assign`,
-      { token: tokenA1, body: { agentId: String(agentB1._id) } },
+      { token: tokenA1, body: { agentId: String(agentB1.id) } },
     );
     assert(
       [403, 404].includes(crossTenantTarget.status),
       "cannot assign an in-tenant ticket to an out-of-tenant agent",
     );
-    const stillA2 = await Ticket.findById(ticket._id);
+    const stillA2 = await Ticket.findById(ticket.id);
     assert(
-      String(stillA2.agent) === String(agentA2._id),
+      String(stillA2.agent_id) === String(agentA2.id),
       "ticket assignment unchanged after cross-tenant assign attempt",
     );
 
@@ -232,21 +237,21 @@ const assert = (condition, message) => {
     const toTeam = await request(
       "POST",
       `/agent/tickets/${ticket.number}/assign`,
-      { token: tokenA1, body: { teamId: String(teamA._id) } },
+      { token: tokenA1, body: { teamId: String(teamA.id) } },
     );
     assert(toTeam.status === 200, "scoped agent can assign an in-tenant team");
-    const withTeam = await Ticket.findById(ticket._id);
+    const withTeam = await Ticket.findById(ticket.id);
     assert(
-      String(withTeam.team) === String(teamA._id),
+      String(withTeam.team_id) === String(teamA.id),
       "ticket is assigned to the target team",
     );
 
     // --- Claim / takeover ---
     const unassigned = await Ticket.create({
       number: `ASG-CLM-${suffix}`,
-      company: coA._id,
-      user: owner._id,
-      dept: deptA1._id,
+      company_id: coA.id,
+      user_id: owner.id,
+      dept_id: deptA1.id,
       subject: "Claim ticket",
       priority: "Normal",
       status: "open",
@@ -260,16 +265,16 @@ const assert = (condition, message) => {
       claim.status === 200,
       "agent can claim an unassigned in-tenant ticket",
     );
-    const claimedTicket = await Ticket.findById(unassigned._id);
+    const claimedTicket = await Ticket.findById(unassigned.id);
     assert(
-      String(claimedTicket.agent) === String(agentA1._id),
+      String(claimedTicket.agent_id) === String(agentA1.id),
       "claimed ticket is assigned to the claiming agent",
     );
     assert(
       await AuditEvent.exists({
-        company: coA._id,
+        tenant_id: coA.id,
         action: "ticket.claimed",
-        entityId: unassigned._id,
+        resource_id: unassigned.id,
       }),
       "claim is audit logged",
     );
@@ -292,7 +297,7 @@ const assert = (condition, message) => {
     const reassign = await request(
       "POST",
       `/agent/tickets/${ticket.number}/assign`,
-      { token: tokenA1, body: { agentId: String(agentA1._id) } },
+      { token: tokenA1, body: { agentId: String(agentA1.id) } },
     );
     assert(
       reassign.status === 200,
@@ -300,9 +305,9 @@ const assert = (condition, message) => {
     );
     assert(
       (await AuditEvent.countDocuments({
-        company: coA._id,
+        tenant_id: coA.id,
         action: "ticket.assigned",
-        entityId: ticket._id,
+        resource_id: ticket.id,
       })) >= 2,
       "reassignment appends assignment history",
     );
@@ -311,15 +316,15 @@ const assert = (condition, message) => {
     const crossTransfer = await request(
       "POST",
       `/agent/tickets/${ticket.number}/transfer`,
-      { token: tokenA1, body: { deptId: String(deptB1._id) } },
+      { token: tokenA1, body: { deptId: String(deptB1.id) } },
     );
     assert(
       [403, 404].includes(crossTransfer.status),
       "cannot transfer an in-tenant ticket to an out-of-tenant department",
     );
-    const stillDeptA = await Ticket.findById(ticket._id);
+    const stillDeptA = await Ticket.findById(ticket.id);
     assert(
-      String(stillDeptA.dept) === String(deptA1._id),
+      String(stillDeptA.dept_id) === String(deptA1.id),
       "ticket department unchanged after cross-tenant transfer attempt",
     );
 
@@ -327,7 +332,7 @@ const assert = (condition, message) => {
     const transfer = await request(
       "POST",
       `/agent/tickets/${ticket.number}/transfer`,
-      { token: tokenA1, body: { deptId: String(deptA1._id) } },
+      { token: tokenA1, body: { deptId: String(deptA1.id) } },
     );
     assert(
       transfer.status === 200,
@@ -335,9 +340,9 @@ const assert = (condition, message) => {
     );
     assert(
       await AuditEvent.exists({
-        company: coA._id,
+        tenant_id: coA.id,
         action: "ticket.transferred",
-        entityId: ticket._id,
+        resource_id: ticket.id,
       }),
       "transfer is audit logged",
     );
@@ -353,23 +358,21 @@ const assert = (condition, message) => {
     process.exitCode = 1;
   } finally {
     if (server) await new Promise((resolve) => server.close(resolve));
-    const corps = [coA?._id, coB?._id].filter(Boolean);
+    const corps = [coA?.id, coB?.id].filter(Boolean);
     if (corps.length) {
-      const db = mongoose.connection.db;
-      await db
-        .collection("tenant_modules")
-        .deleteMany({
-          tenantId: { $in: corps.map((c) => new mongoose.Types.ObjectId(c)) },
-        });
-      await AuditEvent.deleteMany({ company: { $in: corps } });
-      await TicketThread.deleteMany({ company: { $in: corps } });
-      await Ticket.deleteMany({ company: { $in: corps } });
-      await Team.deleteMany({ company: { $in: corps } });
-      await Department.deleteMany({ company: { $in: corps } });
-      await User.deleteMany({ company: { $in: corps } });
-      await Agent.deleteMany({ company: { $in: corps } });
-      await Company.deleteMany({ _id: { $in: corps } });
+      const db = getDB();
+      await db("tenant_modules").whereIn("tenant_id", corps).del();
+      await db("audit_events").whereIn("tenant_id", corps).del();
+      await db("ticket_threads").whereIn("ticket_id", function () {
+        this.select("id").from("tickets").whereIn("company_id", corps);
+      }).del();
+      await db("tickets").whereIn("company_id", corps).del();
+      await db("teams").whereIn("company_id", corps).del();
+      await db("departments").whereIn("company_id", corps).del();
+      await db("users").whereIn("company_id", corps).del();
+      await db("agents").whereIn("company_id", corps).del();
+      await db("companies").whereIn("id", corps).del();
     }
-    await mongoose.disconnect();
+    await getDB().destroy();
   }
 })();

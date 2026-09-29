@@ -2,22 +2,20 @@
  * On-Call Scheduling service — schedules, shifts, rosters, rotations,
  * coverage requests, time-off, escalation policies, and contact preferences.
  */
-const mongoose = require("mongoose");
 const numberingService = require("./numbering.service");
 const auditEventService = require("./auditEventService");
 const { emitEvent } = require("../realtime/socketManager");
 
-// Register on-call schemas before retrieving the models from Mongoose.
-require("../models/oncall/OnCallSchedule");
-require("../models/oncall/Shift");
-require("../models/oncall/Roster");
-require("../models/oncall/RosterMember");
-require("../models/oncall/Rotation");
-require("../models/oncall/CoverageRequest");
-require("../models/oncall/TimeOffRequest");
-require("../models/oncall/EscalationPolicy");
-require("../models/oncall/EscalationLevel");
-require("../models/oncall/ContactPreference");
+const OnCallSchedule = require("../models/oncall/OnCallSchedule");
+const Shift = require("../models/oncall/Shift");
+const Roster = require("../models/oncall/Roster");
+const RosterMember = require("../models/oncall/RosterMember");
+const Rotation = require("../models/oncall/Rotation");
+const CoverageRequest = require("../models/oncall/CoverageRequest");
+const TimeOffRequest = require("../models/oncall/TimeOffRequest");
+const EscalationPolicy = require("../models/oncall/EscalationPolicy");
+const EscalationLevel = require("../models/oncall/EscalationLevel");
+const ContactPreference = require("../models/oncall/ContactPreference");
 
 const requireTenant = (ctx) => {
   if (!ctx.tenantId)
@@ -30,17 +28,6 @@ const pick = (obj, keys) =>
   Object.fromEntries(
     keys.filter((k) => obj[k] !== undefined).map((k) => [k, obj[k]]),
   );
-
-const OnCallSchedule = mongoose.model("OnCallSchedule");
-const Shift = mongoose.model("Shift");
-const Roster = mongoose.model("Roster");
-const RosterMember = mongoose.model("RosterMember");
-const Rotation = mongoose.model("Rotation");
-const CoverageRequest = mongoose.model("CoverageRequest");
-const TimeOffRequest = mongoose.model("TimeOffRequest");
-const EscalationPolicy = mongoose.model("EscalationPolicy");
-const EscalationLevel = mongoose.model("EscalationLevel");
-const ContactPreference = mongoose.model("ContactPreference");
 
 // ─── OnCallSchedule CRUD ────────────────────────────────────────────────
 

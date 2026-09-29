@@ -164,6 +164,16 @@ const changeController = {
     });
   }),
 
+  getImplementationResult: asyncHandler(async (req, res) => {
+    res.json({
+      success: true,
+      data: await ChangeService.getImplementationResult(
+        req.params.id,
+        req.user.company,
+      ),
+    });
+  }),
+
   listModels: asyncHandler(async (req, res) => {
     res.json({
       success: true,

@@ -14,6 +14,25 @@ const signToken = (payload) =>
 
 const verifyToken = (token) => jwt.verify(token, config.jwt.secret);
 
+// Postgres uuid columns reject non-UUID strings with error code 22P02 which
+// would otherwise bubble as 500. Old Mongo ObjectId tokens (24 hex chars
+// without dashes, e.g. "6a92f166dc48b8a5932d5650") must be treated as an
+// expired session so the frontend clears localStorage and re-authenticates.
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const isValidUUID = (v) => typeof v === "string" && UUID_RE.test(v);
+
+const assertValidPrincipalId = (decoded) => {
+  if (!isValidUUID(decoded.id)) {
+    throw new ApiError(401, "Session expired, please login again");
+  }
+  // tid (tenant/instance id) is also a uuid column; an old Mongo ObjectId there
+  // would trigger 22P02 on Company lookup — surface as expired session instead
+  if (decoded.tid && !isValidUUID(decoded.tid)) {
+    throw new ApiError(401, "Session expired, please login again");
+  }
+};
+
 const assertSessionVersion = (decoded, principal) => {
   const tokenVersion = Number(decoded.sv || 0);
   const currentVersion = Number(principal.sessionVersion || 0);
@@ -176,6 +195,7 @@ const protectUser = asyncHandler(async (req, res, next) => {
     throw new ApiError(401, "Session expired, please login again");
   }
   if (decoded.type !== "user") throw new ApiError(403, "Customer access only");
+  assertValidPrincipalId(decoded);
   const user = await User.findById(decoded.id).select("+sessionVersion");
   if (!user || user.status !== "active")
     throw new ApiError(401, "Account not found or disabled");
@@ -195,6 +215,7 @@ const optionalUser = asyncHandler(async (req, res, next) => {
     try {
       const decoded = verifyToken(token);
       if (decoded.type === "user") {
+        if (!isValidUUID(decoded.id)) throw new ApiError(401, "Session expired");
         const user = await User.findById(decoded.id);
         if (user && user.status === "active") {
           assertSelectedMembership(decoded, user);
@@ -220,6 +241,7 @@ const protectAgent = asyncHandler(async (req, res, next) => {
     throw new ApiError(401, "Session expired, please login again");
   }
   if (decoded.type !== "agent") throw new ApiError(403, "Staff access only");
+  assertValidPrincipalId(decoded);
   const agent = await Agent.findById(decoded.id)
     .select("+sessionVersion")
     .populate("role");
@@ -243,6 +265,7 @@ const protectAdmin = asyncHandler(async (req, res, next) => {
     throw new ApiError(401, "Session expired, please login again");
   }
   if (decoded.type !== "agent") throw new ApiError(403, "Staff access only");
+  assertValidPrincipalId(decoded);
   const agent = await Agent.findById(decoded.id)
     .select("+sessionVersion")
     .populate("role");
@@ -274,6 +297,7 @@ const protectTenantPrincipal = asyncHandler(async (req, res, next) => {
   } catch (_) {
     throw new ApiError(401, "Session expired, please login again");
   }
+  assertValidPrincipalId(decoded);
   if (decoded.type === "user") {
     const user = await User.findById(decoded.id).select("+sessionVersion");
     if (!user || user.status !== "active")
@@ -284,6 +308,7 @@ const protectTenantPrincipal = asyncHandler(async (req, res, next) => {
     await attachActiveCompany(user, req, decoded.tid || user.company);
     await touchSession(user, req);
     req.user.tenantId = req.companyId;
+    req.tenantId = req.companyId;
   } else if (decoded.type === "agent") {
     const agent = await Agent.findById(decoded.id)
       .select("+sessionVersion")
@@ -296,6 +321,7 @@ const protectTenantPrincipal = asyncHandler(async (req, res, next) => {
     await attachActiveCompany(agent, req);
     await touchSession(agent, req);
     req.user.tenantId = req.companyId;
+    req.tenantId = req.companyId;
   } else if (decoded.type === "superadmin") {
     const superAdmin = await SuperAdmin.findById(decoded.id).select(
       "+sessionVersion",
@@ -327,6 +353,7 @@ const protectSuperAdmin = asyncHandler(async (req, res, next) => {
   }
   if (decoded.type !== "superadmin")
     throw new ApiError(403, "Super admin access only");
+  assertValidPrincipalId(decoded);
   const superAdmin = await SuperAdmin.findById(decoded.id).select(
     "+sessionVersion",
   );

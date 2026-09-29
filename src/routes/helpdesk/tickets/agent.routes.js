@@ -39,7 +39,7 @@ router.get("/tickets/export", ctrl.exportTickets);
 router.get(
   "/tickets/sla/predictions",
   moduleRequired("helpdesk"),
-  requirePermission("tickets.view"),
+  requirePermission("itsm.incident.incident.read"),
   async (req, res, next) => {
     try {
       const {
@@ -81,7 +81,7 @@ router.get(
 );
 router.get(
   "/tickets/:number/sla-history",
-  require("../../../controllers/admin.controller").ticketSlaHistory,
+  require("../../../controllers/admin").ticketSlaHistory,
 );
 router.get("/tickets/:number", ctrl.getTicket);
 router.post(
@@ -113,7 +113,7 @@ router.post("/tickets/:number/sla/resume", ctrl.resumeSla);
 router.post(
   "/tickets/:number/sla/predict",
   moduleRequired("helpdesk"),
-  requirePermission("tickets.view"),
+  requirePermission("itsm.incident.incident.read"),
   async (req, res, next) => {
     try {
       const {
@@ -138,13 +138,13 @@ router.delete("/queues/saved/:id", ctrl.deleteSavedQueue);
 router.post(
   "/tickets/:number/tasks",
   moduleRequired("helpdesk"),
-  requirePermission("tickets.tasks"),
+  requirePermission("itsm.core.task.update"),
   ctrl.addTask,
 );
 router.put(
   "/tickets/:number/tasks/:taskId",
   moduleRequired("helpdesk"),
-  requirePermission("tickets.tasks"),
+  requirePermission("itsm.core.task.update"),
   ctrl.updateTask,
 );
 

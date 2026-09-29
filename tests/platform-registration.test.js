@@ -1,23 +1,15 @@
 const assert = require("node:assert/strict");
-const mongoose = require("mongoose");
-mongoose.set("autoIndex", false);
-mongoose.set("autoCreate", false);
+const connectDB = require("../src/config/db");
+const { getDB } = require("../src/config/db");
 
 const database = `osticket_platform_registration_test_${process.pid}`;
-const uri = `mongodb://127.0.0.1:27017/${database}`;
-process.env.MONGODB_URI = uri;
 process.env.NODE_ENV = "test";
 process.env.EMAIL_HOST = "";
 process.env.EMAIL_USER = "";
 
 async function run() {
-  await mongoose.connect(uri);
+  await connectDB();
   const app = require("../src/app");
-  await Promise.all([
-    require("../src/models/InstanceCompany").createIndexes(),
-    require("../src/models/Department").createIndexes(),
-    require("../src/models/Team").createIndexes(),
-  ]);
   const server = app.listen(0);
   const address = `http://127.0.0.1:${server.address().port}/api/v1/auth`;
   const email = `registration-${process.pid}@example.invalid`;
@@ -32,8 +24,8 @@ async function run() {
 
     const created = await post("/register", {
       name: "Registration Test", email, password: "StrongPassword@123", policyConsent: true,
-      company: new mongoose.Types.ObjectId().toString(),
-      instanceId: new mongoose.Types.ObjectId().toString(),
+      company: require("crypto").randomUUID(),
+      instanceId: require("crypto").randomUUID(),
     });
     assert.equal(created.status, 201);
     const registration = await created.json();
@@ -41,7 +33,7 @@ async function run() {
     assert.match(registration.confirmationUrl, /\/confirm-email\?token=/);
     assert.equal(new URL(registration.confirmationUrl).searchParams.has("next"), false);
     const registeredUser = await require("../src/models/User").findOne({ email });
-    assert.equal(registeredUser.company, null);
+    assert.equal(registeredUser.company_id, null);
 
     const before = await post("/portal-login", { email, password: "StrongPassword@123" });
     assert.equal(before.status, 401);
@@ -54,8 +46,13 @@ async function run() {
     assert.equal(after.status, 200);
     const ownerLogin = await after.json();
     assert.equal(ownerLogin.role, "customer");
+    const freshUser = await require("../src/models/User").findOne({ email });
+    const perms = JSON.parse(JSON.stringify(freshUser.permissions || []));
+    if (!perms.includes("itsm.incident.incident.read")) {
+      perms.push("itsm.incident.incident.read");
+    }
     await require("../src/models/User").updateOne(
-      { email }, { $addToSet: { permissions: "itsm.incident.incident.read" } },
+      { email }, { $set: { permissions: perms } },
     );
 
     const instanceRequest = (route, tokenValue, body) => fetch(`${address.replace(/\/auth$/, "/instances")}${route}`, {
@@ -261,15 +258,18 @@ async function run() {
     const User = require("../src/models/User");
     const legacy = await Company.create({
       name: `Legacy Test ${process.pid}`, domain: `legacy-${process.pid}.example.invalid`,
-      status: "active", isInstance: true, instanceOwner: registeredUser._id,
+      status: "active", is_instance: true, instance_owner: registeredUser.id,
     });
-    await User.updateOne({ _id: registeredUser._id }, { $push: { instanceMemberships: {
-      instance: legacy._id, role: "instance_owner", status: "active",
-    } } });
+    const userForMembership = await User.findOne({ _id: registeredUser.id });
+    const memberships = JSON.parse(JSON.stringify(userForMembership.instance_memberships || []));
+    memberships.push({
+      instance: legacy.id, role: "instance_owner", status: "active",
+    });
+    await User.updateOne({ _id: registeredUser.id }, { $set: { instance_memberships: memberships } });
     const legacyUnit = await OrganizationUnit.create({
-      company: legacy._id, name: "Legacy Operations", type: "division",
+      company_id: legacy.id, name: "Legacy Operations", type: "division",
     });
-    await OrganizationUnitLabel.create({ company: legacy._id, type: "division", label: "Division" });
+    await OrganizationUnitLabel.create({ company_id: legacy.id, type: "division", label: "Division" });
     const migratedCompanies = await fetch(
       `${address.replace(/\/auth$/, "/instances")}/${legacy._id}/companies`,
       { headers: { authorization: `Bearer ${ownerLogin.token}` } },
@@ -286,19 +286,19 @@ async function run() {
     assert.equal(migratedUnits.status, 200);
     assert.equal((await migratedUnits.json()).items[0].instanceCompany._id, legacyPrimary._id);
     assert.equal(
-      String((await OrganizationUnit.findById(legacyUnit._id)).instanceCompany),
-      legacyPrimary._id,
+      String((await OrganizationUnit.findById(legacyUnit.id)).instance_company),
+      legacyPrimary.id,
     );
-    const previewMigration = await migrateDivisionToBusinessUnit(legacy._id);
+    const previewMigration = await migrateDivisionToBusinessUnit(legacy.id);
     assert.equal(previewMigration.units, 1);
     assert.equal(previewMigration.applied, false);
-    assert.equal((await OrganizationUnit.findById(legacyUnit._id)).type, "division");
-    const completedMigration = await migrateDivisionToBusinessUnit(legacy._id, { apply: true });
+    assert.equal((await OrganizationUnit.findById(legacyUnit.id)).type, "division");
+    const completedMigration = await migrateDivisionToBusinessUnit(legacy.id, { apply: true });
     assert.equal(completedMigration.applied, true);
-    assert.equal((await OrganizationUnit.findById(legacyUnit._id)).type, "business_unit");
-    assert.equal(await OrganizationUnitLabel.exists({ company: legacy._id, type: "division" }), null);
-    assert.ok(await OrganizationUnitLabel.exists({ company: legacy._id, type: "business_unit" }));
-    assert.equal((await migrateDivisionToBusinessUnit(legacy._id, { apply: true })).units, 0);
+    assert.equal((await OrganizationUnit.findById(legacyUnit.id)).type, "business_unit");
+    assert.equal(await OrganizationUnitLabel.exists({ company_id: legacy.id, type: "division" }), null);
+    assert.ok(await OrganizationUnitLabel.exists({ company_id: legacy.id, type: "business_unit" }));
+    assert.equal((await migrateDivisionToBusinessUnit(legacy.id, { apply: true })).units, 0);
 
     const inviteeEmail = `invitee-${process.pid}@example.invalid`;
     const inviteeRegistration = await post("/register", {
@@ -331,11 +331,34 @@ async function run() {
 
     const uninvited = await instanceRequest(`/${instance._id}/accept-invitation`, inviteeToken, { token: "0".repeat(64) });
     assert.equal(uninvited.status, 403);
+    const deniedPermissionOptions = await fetch(`${hierarchyBase}/permission-options?q=incident.read`, {
+      headers: { authorization: `Bearer ${inviteeToken}` },
+    });
+    assert.equal(deniedPermissionOptions.status, 403);
+    const permissionOptions = await fetch(`${hierarchyBase}/permission-options?q=incident.read`, {
+      headers: hierarchyHeaders,
+    });
+    assert.equal(permissionOptions.status, 200);
+    assert.ok((await permissionOptions.json()).items.includes("itsm.incident.incident.read"));
+    const invalidInvitation = await instanceRequest(`/${instance._id}/invitations`, ownerLogin.token, {
+      email: inviteeEmail, role: "agent", permissions: ["saas.admin.manage"],
+    });
+    assert.equal(invalidInvitation.status, 422);
+    const invalidPlacement = await instanceRequest(`/${instance._id}/invitations`, ownerLogin.token, {
+      email: inviteeEmail, role: "agent", organizationUnit: require("crypto").randomUUID(),
+    });
+    assert.equal(invalidPlacement.status, 422);
     const invited = await instanceRequest(`/${instance._id}/invitations`, ownerLogin.token, {
-      email: inviteeEmail, role: "agent",
+      email: inviteeEmail, role: "agent", organizationUnit: secondUnitBody.item._id,
+      permissions: ["itsm.incident.incident.read"],
     });
     const invitationBody = await invited.json();
     assert.equal(invited.status, 201, JSON.stringify(invitationBody));
+    const pendingInviteDelete = await fetch(`${hierarchyBase}/organization-units/${secondUnitBody.item._id}`, {
+      method: "DELETE", headers: hierarchyHeaders,
+    });
+    assert.equal(pendingInviteDelete.status, 409);
+    assert.match((await pendingInviteDelete.json()).message, /invitation/i);
     const invitationUrl = invitationBody.invitationUrl;
     const accepted = await instanceRequest(`/${instance._id}/accept-invitation`, inviteeToken, {
       token: new URL(invitationUrl).searchParams.get("token"),
@@ -345,6 +368,10 @@ async function run() {
     const selected = await instanceRequest(`/${instance._id}/select`, inviteeToken, {});
     assert.equal(selected.status, 200);
     const selectedToken = (await selected.json()).token;
+    const inviteeMembership = (await require("../src/models/User").findOne({ email: inviteeEmail }))
+      .instance_memberships.find((item) => String(item.instance) === instance.id);
+    assert.equal(String(inviteeMembership.organizationUnit), secondUnitBody.item.id);
+    assert.ok(inviteeMembership.permissions.includes("itsm.incident.incident.read"));
     const memberUrl = `${hierarchyBase}/members`;
     const inviteeUser = await require("../src/models/User").findOne({ email: inviteeEmail });
     const deniedMemberList = await fetch(memberUrl, { headers: { authorization: `Bearer ${selectedToken}` } });
@@ -354,7 +381,7 @@ async function run() {
     assert.equal((await membersBefore.json()).items.length, 2);
     const crossInstancePlacement = await fetch(`${memberUrl}/${inviteeUser._id}/organization-unit`, {
       method: "PUT", headers: hierarchyHeaders,
-      body: JSON.stringify({ organizationUnit: new mongoose.Types.ObjectId().toString() }),
+      body: JSON.stringify({ organizationUnit: require("crypto").randomUUID() }),
     });
     assert.equal(crossInstancePlacement.status, 422);
     const placed = await fetch(`${memberUrl}/${inviteeUser._id}/organization-unit`, {
@@ -362,8 +389,8 @@ async function run() {
       body: JSON.stringify({ organizationUnit: secondUnitBody.item._id }),
     });
     assert.equal(placed.status, 200, JSON.stringify(await placed.json()));
-    const placedUser = await require("../src/models/User").findById(inviteeUser._id);
-    assert.equal(String(placedUser.instanceMemberships.find((item) => String(item.instance) === instance._id).organizationUnit), secondUnitBody.item._id);
+    const placedUser = await require("../src/models/User").findById(inviteeUser.id);
+    assert.equal(String(placedUser.instance_memberships.find((item) => String(item.instance) === instance.id).organizationUnit), secondUnitBody.item.id);
     const blockedDelete = await fetch(`${hierarchyBase}/organization-units/${secondUnitBody.item._id}`, {
       method: "DELETE", headers: hierarchyHeaders,
     });
@@ -374,11 +401,11 @@ async function run() {
       body: JSON.stringify({ organizationUnit: null }),
     });
     assert.equal(cleared.status, 200);
-    const memberships = await fetch(`${address.replace(/\/auth$/, "/instances")}/my-instances`, {
+    const membershipCheck = await fetch(`${address.replace(/\/auth$/, "/instances")}/my-instances`, {
       headers: { authorization: `Bearer ${selectedToken}` },
     });
-    assert.equal(memberships.status, 200);
-    assert.equal((await memberships.json()).instances.length, 1);
+    assert.equal(membershipCheck.status, 200);
+    assert.equal((await membershipCheck.json()).instances.length, 1);
 
     const newEmail = `new-invitee-${process.pid}@example.invalid`;
     const newInvitation = await instanceRequest(`/${instance._id}/invitations`, ownerLogin.token, {
@@ -403,8 +430,12 @@ async function run() {
     assert.equal(newAcceptance.status, 200);
   } finally {
     await new Promise((resolve) => server.close(resolve));
-    await mongoose.connection.dropDatabase();
-    await mongoose.disconnect();
+    const db = getDB();
+    const tables = await db.raw("SELECT tablename FROM pg_tables WHERE schemaname = 'public'").then(r => r.rows.map(t => t.tablename));
+    for (const t of tables.filter((name) => !["knex_migrations", "knex_migrations_lock"].includes(name))) {
+      await db.raw("TRUNCATE TABLE ?? CASCADE", [t]);
+    }
+    await getDB().destroy();
   }
   console.log("Platform registration flow passed");
 }

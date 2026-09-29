@@ -7,6 +7,7 @@ const agentRoutes = require("./helpdesk/tickets/agent.routes");
 const adminRoutes = require("./admin.routes");
 const publicRoutes = require("./helpdesk/public");
 const rbacRoutes = require("./rbac.routes");
+const authorizationRoutes = require("./authorization.routes");
 const coreTaskRoutes = require("./core/task");
 const coreApprovalRoutes = require("./core/approval");
 const coreApprovalEngineRoutes = require("./core/approvalEngine");
@@ -16,6 +17,7 @@ const coreIncidentRoutes = require("./core/incident");
 const coreProblemRoutes = require("./core/problem");
 const coreChangeRoutes = require("./core/change");
 const coreRequestRoutes = require("./core/request");
+const coreUniversalRequestRoutes = require("./core/universalRequest");
 const coreKnowledgeRoutes = require("./core/knowledge");
 const coreSlmRoutes = require("./core/slm");
 const coreAssignmentRoutes = require("./core/assignments");
@@ -25,12 +27,19 @@ const coreCmdbRoutes = require("./core/cmdb");
 const coreReleaseRoutes = require("./core/release");
 const coreImprovementRoutes = require("./core/improvement");
 const coreOutageRoutes = require("./core/outage");
+const experienceRecordRoutes = require("./core/experienceRecords");
+const coreAssetRoutes = require("./core/assetManagement");
 const enterpriseRoutes = require("./enterprise.routes");
 const extraRoutes = require("./extra.routes");
-const gaps2Routes = require("./gaps2.routes");
-const gaps3Routes = require("./gaps3.routes");
+const closureGapRoutes = require("./itsm/closure-gap.routes");
+const priorityGapRoutes = require("./itsm/priority-gap.routes");
 const instanceRoutes = require("./instance.routes");
+const workflowRoutes = require("./workflow.routes");
+const reportingRoutes = require("./reporting.routes");
+const statusPageRoutes = require("./statusPage.routes");
+const csatRoutes = require("./csat.routes");
 const { protectSuperAdmin } = require("../middleware/auth");
+const { getDB } = require("../config/db");
 const Company = require("../models/Company");
 const Agent = require("../models/Agent");
 const SuperAdmin = require("../models/SuperAdmin");
@@ -59,16 +68,27 @@ router.use("/agent", agentRoutes);
 router.use("/admin", adminRoutes);
 router.use("/public", publicRoutes);
 router.use("/rbac", rbacRoutes);
+router.use("/authorization", authorizationRoutes);
+
+router.get("/itsm/permissions/tree", (req, res) => {
+  const catalog = require("../permissions/itsmCatalog");
+  res.json({
+    success: true,
+    modules: catalog.tree(),
+    total: catalog.allItsmKeys().length,
+  });
+});
 router.use("/core/tasks", coreTaskRoutes);
 router.use("/core/approvals", coreApprovalRoutes);
 router.use("/core/approval-engine", coreApprovalEngineRoutes);
 router.use("/core/attachments", coreAttachmentRoutes);
 router.use("/core/audit", coreAuditRoutes);
 router.use("/core/incidents", protectTenantPrincipal, coreIncidentRoutes);
-router.use("/core/problems", coreProblemRoutes);
-router.use("/core/changes", coreChangeRoutes);
+router.use("/core/problems", protectTenantPrincipal, coreProblemRoutes);
+router.use("/core/changes", protectTenantPrincipal, coreChangeRoutes);
 router.use("/core/requests", coreRequestRoutes);
-router.use("/core/knowledge", coreKnowledgeRoutes);
+router.use("/core/universal-requests", coreUniversalRequestRoutes);
+router.use("/core/knowledge", protectTenantPrincipal, coreKnowledgeRoutes);
 router.use("/core/slm", coreSlmRoutes);
 router.use("/core/assignments", coreAssignmentRoutes);
 router.use("/core/oncall", coreOncallRoutes);
@@ -77,16 +97,22 @@ router.use("/core/cmdb", coreCmdbRoutes);
 router.use("/core/release", coreReleaseRoutes);
 router.use("/core/improvement", coreImprovementRoutes);
 router.use("/core/outage", coreOutageRoutes);
+router.use("/core/experience-records", experienceRecordRoutes);
+router.use("/core/assets", coreAssetRoutes);
 router.use("/enterprise", enterpriseRoutes);
 router.use("/extra", extraRoutes);
-router.use("/gaps2", gaps2Routes);
-router.use("/gaps3", gaps3Routes);
+router.use("/gaps2", closureGapRoutes);
+router.use("/gaps3", priorityGapRoutes);
 router.use("/instances", instanceRoutes);
+router.use("/workflows", workflowRoutes);
+router.use("/reporting", reportingRoutes);
+router.use("/status-pages", statusPageRoutes);
+router.use("/csat", csatRoutes);
 router.get("/platform/overview", protectSuperAdmin, async (req, res, next) => {
   try {
     const [companies, agents] = await Promise.all([
       Company.find({})
-        .select("name domain status plan billingCycle planExpiresAt createdAt")
+        .select("_id name domain status plan billingCycle planExpiresAt createdAt")
         .sort({ createdAt: -1 })
         .lean(),
       Agent.countDocuments({ isActive: true }),
@@ -133,7 +159,7 @@ router.patch(
         req.params.id,
         { status: req.body.status, statusReason: req.body.reason || "" },
         { new: true },
-      ).select("name domain status statusReason");
+      ).select("_id name domain status statusReason");
       if (!company)
         return res
           .status(404)
@@ -235,7 +261,7 @@ router.get("/platform/operators", protectSuperAdmin, async (req, res, next) => {
   try {
     const operators = await SuperAdmin.find({})
       .select(
-        "name email role platformRole isActive permissions moduleKeys lastLogin createdAt",
+        "_id name email role platformRole isActive permissions moduleKeys lastLogin createdAt",
       )
       .sort({ createdAt: -1 })
       .lean();
@@ -327,18 +353,14 @@ router.get(
   protectSuperAdmin,
   async (req, res, next) => {
     try {
-      const mongoose = require("mongoose");
       const company = await Company.findById(req.params.id).select("name");
       if (!company)
         return res
           .status(404)
           .json({ success: false, message: "Organization not found" });
-      const modules = await mongoose.connection.db
-        .collection("tenant_modules")
-        .find({
-          tenantId: new mongoose.Types.ObjectId(req.params.id),
-        })
-        .toArray();
+      const modules = await getDB()("tenant_modules").where({
+        tenant_id: req.params.id,
+      });
       res.json({ success: true, company, modules });
     } catch (error) {
       next(error);
@@ -350,7 +372,6 @@ router.put(
   protectSuperAdmin,
   async (req, res, next) => {
     try {
-      const mongoose = require("mongoose");
       const validModules = [
         "helpdesk",
         "settings",
@@ -369,7 +390,7 @@ router.put(
       const active = new Set(
         requested.filter((key) => validModules.includes(key)),
       );
-      const tenantId = new mongoose.Types.ObjectId(req.params.id);
+      const tenantId = req.params.id;
       const company = await Company.findById(req.params.id).select("name");
       if (!company)
         return res
@@ -377,17 +398,19 @@ router.put(
           .json({ success: false, message: "Organization not found" });
       const now = new Date();
       for (const moduleKey of validModules) {
-        await mongoose.connection.db.collection("tenant_modules").updateOne(
-          { tenantId, moduleKey },
-          {
-            $set: {
-              status: active.has(moduleKey) ? "active" : "inactive",
-              updatedAt: now,
-            },
-            $setOnInsert: { tenantId, moduleKey, createdAt: now },
-          },
-          { upsert: true },
-        );
+        await getDB()("tenant_modules")
+          .insert({
+            tenant_id: tenantId,
+            module_key: moduleKey,
+            status: active.has(moduleKey) ? "active" : "inactive",
+            updated_at: now,
+            created_at: now,
+          })
+          .onConflict(["tenant_id", "module_key"])
+          .merge({
+            status: active.has(moduleKey) ? "active" : "inactive",
+            updated_at: now,
+          });
       }
       res.json({ success: true, modules: [...active] });
     } catch (error) {

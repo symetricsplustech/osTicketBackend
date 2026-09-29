@@ -2,36 +2,23 @@
  * Release Management service — unified engine for release lifecycle,
  * phases, tasks, components, dependencies, approvals, deployments, and rollbacks.
  */
-const mongoose = require('mongoose');
 const numberingService = require('./numbering.service');
 const auditEventService = require('./auditEventService');
 const { emitEvent } = require('../realtime/socketManager');
 
-// Register release models before retrieving them from Mongoose's registry.
-require('../models/release/Release');
-require('../models/release/ReleasePhase');
-require('../models/release/ReleaseTask');
-require('../models/release/ReleaseComponent');
-require('../models/release/ReleaseDependency');
-require('../models/release/ReleaseApproval');
-require('../models/release/ReleaseDeployment');
-require('../models/helpdesk/incidents/Change');
-require('../models/cmdb/ConfigurationItem');
-require('../models/cmdb/BusinessService');
+const Release = require('../models/release/Release');
+const ReleasePhase = require('../models/release/ReleasePhase');
+const ReleaseTask = require('../models/release/ReleaseTask');
+const ReleaseComponent = require('../models/release/ReleaseComponent');
+const ReleaseDependency = require('../models/release/ReleaseDependency');
+const ReleaseApproval = require('../models/release/ReleaseApproval');
+const ReleaseDeployment = require('../models/release/ReleaseDeployment');
+const Change = require('../models/helpdesk/incidents/Change');
+const ConfigurationItem = require('../models/cmdb/ConfigurationItem');
+const BusinessService = require('../models/cmdb/BusinessService');
 
 const requireTenant = (ctx) => { if (!ctx.tenantId) throw Object.assign(new Error('Tenant context required'), { statusCode: 400 }); return ctx.tenantId; };
 const pick = (obj, keys) => Object.fromEntries(keys.filter(k => obj[k] !== undefined).map(k => [k, obj[k]]));
-
-const Release = mongoose.model('Release');
-const ReleasePhase = mongoose.model('ReleasePhase');
-const ReleaseTask = mongoose.model('ReleaseTask');
-const ReleaseComponent = mongoose.model('ReleaseComponent');
-const ReleaseDependency = mongoose.model('ReleaseDependency');
-const ReleaseApproval = mongoose.model('ReleaseApproval');
-const ReleaseDeployment = mongoose.model('ReleaseDeployment');
-const Change = mongoose.model('Change');
-const ConfigurationItem = mongoose.model('ConfigurationItem');
-const BusinessService = mongoose.model('BusinessService');
 
 // ─── Release CRUD ──────────────────────────────────────────────────────
 

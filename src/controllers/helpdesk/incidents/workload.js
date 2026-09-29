@@ -1,6 +1,6 @@
 const Ticket = require("../../../models/helpdesk/tickets/Ticket");
 const TicketThread = require("../../../models/helpdesk/tickets/TicketThread");
-const Task = require("../../../models/Task");
+const Task = require("../../../models/core/Task");
 const User = require("../../../models/User");
 const Agent = require("../../../models/Agent");
 const Team = require("../../../models/Team");

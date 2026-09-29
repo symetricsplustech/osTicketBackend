@@ -3,12 +3,11 @@
  * and closes REQs when all RITMs are closed.
  */
 const cron = require("node-cron");
-const mongoose = require("mongoose");
 
 async function autoCompleteRequests() {
-  const Request = mongoose.model("Request");
-  const RequestedItem = mongoose.model("RequestedItem");
-  const CatalogTask = mongoose.model("CatalogTask");
+  const Request = require("../models/Request");
+  const RequestedItem = require("../models/RequestedItem");
+  const CatalogTask = require("../models/CatalogTask");
 
   // Find open requests
   const openReqs = await Request.find({

@@ -7,50 +7,28 @@ const logger = require("../utils/logger");
 
 async function record({
   tenantId,
-  taskId,
   entityType,
   entityId,
   action,
   actor,
-  actorName,
-  actorEmail,
-  actorRole,
   before,
   after,
-  changedFields,
   ipAddress,
   userAgent,
   correlationId,
-  sessionId,
-  requestId,
-  outcome,
-  denialReason,
-  duration,
-  metadata,
 }) {
   try {
     return await AuditEvent.create({
       tenantId,
-      taskId,
-      entityType,
-      entityId,
+      actorId: actor || null,
+      resourceType: entityType || null,
+      resourceId: entityId || null,
       action,
-      actor,
-      actorName,
-      actorEmail,
-      actorRole,
-      before,
-      after,
-      changedFields: changedFields || [],
-      ipAddress: ipAddress || "",
+      oldValues: before || {},
+      newValues: after || {},
+      ip: ipAddress || "",
       userAgent: userAgent || "",
       correlationId,
-      sessionId,
-      requestId,
-      outcome: outcome || "success",
-      denialReason: denialReason || "",
-      duration,
-      metadata: metadata || {},
     });
   } catch (err) {
     logger.error("AuditEvent create failed", {
@@ -99,10 +77,10 @@ async function listEvents({
   endDate,
 }) {
   const query = { tenantId };
-  if (entityType) query.entityType = entityType;
-  if (entityId) query.entityId = entityId;
+  if (entityType) query.resourceType = entityType;
+  if (entityId) query.resourceId = entityId;
   if (action) query.action = action;
-  if (actor) query.actor = actor;
+  if (actor) query.actorId = actor;
   if (startDate || endDate) {
     query.createdAt = {};
     if (startDate) query.createdAt.$gte = new Date(startDate);
@@ -114,7 +92,7 @@ async function listEvents({
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit)
-      .populate("actor", "name email"),
+      .populate("actorId", "name email"),
     AuditEvent.countDocuments(query),
   ]);
   return { events, total, page, limit, pages: Math.ceil(total / limit) };

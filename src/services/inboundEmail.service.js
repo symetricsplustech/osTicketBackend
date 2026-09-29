@@ -16,6 +16,13 @@ const SystemSetting = require("../models/SystemSetting");
 const ticketService = require("./ticket.service");
 const emailService = require("./email.service");
 const { notifyAgent } = require("./notification.service");
+const {
+  InstanceEmailChannel,
+  InstanceEmailInboundAction,
+  InstanceEmailMessageAudit,
+} = require("../models/InstanceEmailChannel");
+const { activeMembership } = require("./instanceAccess.service");
+const { executeInboundRecord } = require("./inboundItmExecutor.service");
 
 const TICKET_REF_PATTERN = /\[#(TKT-\d{4}-\d+|[A-Z0-9]{8,12})\]/i;
 const TICKET_REF_BODY_PATTERN = /#(TKT-\d{4}-\d+|[A-Z0-9]{8,12})\b/i;
@@ -315,6 +322,90 @@ const findDeptByInbox = async (companyId, toAddresses = []) => {
 };
 
 /**
+ * Email-driven ITSM intake gate (see emailPermissionGate.service.js).
+ *
+ * `instance.email.*` permissions cover channel CONFIGURATION only. When a
+ * tenant has configured an active inbound action, executing its ITSM record
+ * creation/mutation additionally requires the target canonical `itsm.*`
+ * business permission to be granted to the tenant membership. TENANT_CORE
+ * contains no `itsm.*` keys, so configuration alone never authorizes intake.
+ */
+
+const INBOUND_TRIGGER_MATCH = {
+  // default trigger: any inbound message on the channel
+  all: () => true,
+  sender: (action, email) => {
+    const want = action.conditions && action.conditions.sender;
+    if (!want) return true;
+    const wanted = Array.isArray(want) ? want : [want];
+    return wanted.some((w) => normalizeAddr(w) === normalizeAddr(email));
+  },
+  subject: (action, subject) => {
+    const want = action.conditions && action.conditions.subject;
+    if (!want) return true;
+    return String(subject || "").toLowerCase().includes(String(want).toLowerCase());
+  },
+  from_domain: (action, email) => {
+    const want = action.conditions && action.conditions.domain;
+    if (!want) return true;
+    const domain = String(email || "").split("@")[1] || "";
+    return String(want).toLowerCase() === domain.toLowerCase();
+  },
+};
+
+const inboundActionMatches = (action, { senderEmail, subject }) => {
+  const match = INBOUND_TRIGGER_MATCH[action.trigger] || INBOUND_TRIGGER_MATCH.all;
+  return Boolean(match(action, senderEmail, subject));
+};
+
+const resolveInboundActionFor = async ({ companyId, senderEmail, subject }) => {
+  if (!companyId) return null;
+  let channel = null;
+  let actions = null;
+  try {
+    channel = await InstanceEmailChannel.findOne({
+      instance_id: String(companyId),
+    });
+  } catch (_) {
+    channel = null;
+  }
+  if (!channel || channel.status !== "active") return null;
+  const channelId = String(channel.id || channel._id);
+  try {
+    actions = await InstanceEmailInboundAction.find({
+      channel_id: channelId,
+      is_active: true,
+    });
+  } catch (_) {
+    actions = [];
+  }
+  const ranked = (actions || [])
+    .slice()
+    .sort((a, b) => (a.priority || 100) - (b.priority || 100));
+  return (
+    ranked.find((a) => inboundActionMatches(a, { senderEmail, subject })) || null
+  );
+};
+
+const resolveTenantMembership = async (companyId) => {
+  try {
+    const company = await Company.findById(companyId);
+    if (!company || !company.ownerId) return null;
+    // The instance owner is an Agent (companies.owner_id -> agents), whose
+    // instance_memberships carry the tenant's permission grants. Fall back to
+    // the users table only for legacy rows where owner_id points at a User.
+    const owner =
+      (await Agent.findById(company.ownerId).select("instanceMemberships").lean()) ||
+      (await User.findById(company.ownerId)
+        .select("instanceMemberships")
+        .lean());
+    return activeMembership(owner, companyId);
+  } catch (_) {
+    return null; // fail closed: unresolved membership never grants intake
+  }
+};
+
+/**
  * Step 1 of reply matching: resolve the ticket from In-Reply-To / References
  * headers via the outbound EmailLog (every sent mail logs its Message-ID with
  * the ticket). Prefers our own outbound mails over echoed inbound IDs.
@@ -522,6 +613,102 @@ const processParsedEmail = async ({
       matchedVia,
     });
     return { action: "reply", ticketNumber: ticket.number, matchedVia };
+  }
+
+  // Email-driven ITSM intake gate + executor: an inbound action may only
+  // create/mutate ITSM records when the tenant holds the target `itsm.*`
+  // business permission; `instance.email.*` configuration grants are never
+  // sufficient. When an active action owns the message it owns it fully —
+  // a denied/unavailable action never falls back to legacy ticket ingest.
+  // Absent action / non-matching trigger keep legacy helpdesk behavior.
+  let inboundAction = null;
+  try {
+    inboundAction = await resolveInboundActionFor({
+      companyId: effectiveCompanyId,
+      senderEmail,
+      subject,
+    });
+  } catch (err) {
+    logger.error(`Inbound action resolution failed: ${err.message}`);
+  }
+  if (inboundAction) {
+    const membership = await resolveTenantMembership(effectiveCompanyId);
+    const outcome = await executeInboundRecord({
+      action: inboundAction,
+      companyId: effectiveCompanyId,
+      membership,
+      senderName,
+      senderEmail,
+      subject,
+      text,
+      messageId,
+      audit: true,
+    }).catch((err) => {
+      logger.error(`Inbound ITSM execution error: ${err.message}`);
+      return null;
+    });
+    const failed = !outcome || !outcome.executed;
+    const refuseReason = outcome
+      ? `permission_denied:${outcome.permission || "unknown"}`
+      : `execution_error:${effectiveCompanyId}`;
+    if (failed) {
+      logger.warn(
+        `Email-driven ITSM intake not executed for ${senderEmail} (${outcome ? outcome.permission : "unknown"}): ${outcome ? outcome.reason : "execution error"}`,
+      );
+      try {
+        await InstanceEmailMessageAudit.create({
+          channel_id: String(inboundAction.channel_id || inboundAction.id),
+          message_id: messageId,
+          from_address: senderEmail,
+          to_addresses: toAddresses,
+          direction: "inbound",
+          action: "skipped",
+          error_message: refuseReason,
+          processed_at: new Date(),
+        });
+      } catch (auditErr) {
+        logger.warn(`Inbound message-audit write failed: ${auditErr.message}`);
+      }
+      await markProcessed({
+        messageId,
+        subject,
+        from: senderEmail,
+        action: "skipped",
+        matchedVia: outcome && !outcome.allowed ? "permission_denied" : "record_not_created",
+      });
+      return {
+        action: "skipped",
+        reason: outcome && !outcome.allowed ? "email_permission_denied" : "email_record_not_created",
+      };
+    }
+    // Successful ITSM record creation — audit trail of the created entity.
+    // record_id is intentionally NULL here: the FK targets the tickets table,
+    // so non-ticket records are tracked by record_type instead.
+    try {
+      await InstanceEmailMessageAudit.create({
+        channel_id: String(inboundAction.channel_id || inboundAction.id),
+        message_id: messageId,
+        from_address: senderEmail,
+        to_addresses: toAddresses,
+        direction: "inbound",
+        action: outcome.recordType === "request" ? "created_request" : "created_ticket",
+        record_type: outcome.recordType,
+        processed_at: new Date(),
+      });
+    } catch (auditErr) {
+      logger.warn(`Inbound message-audit write failed: ${auditErr.message}`);
+    }
+    await markProcessed({
+      messageId,
+      subject,
+      from: senderEmail,
+      action: outcome.recordType,
+      matchedVia: `email_${outcome.recordType}`,
+    });
+    return {
+      action: outcome.recordType,
+      recordNumber: outcome.number,
+    };
   }
 
   const created = await handleNewTicket({

@@ -2,12 +2,11 @@
  * Abandoned Cart Cleanup — archives carts inactive for >7 days.
  */
 const cron = require("node-cron");
-const mongoose = require("mongoose");
 
 const CART_ARCHIVE_DAYS = parseInt(process.env.CART_ARCHIVE_DAYS || "7", 10);
 
 async function cleanupAbandonedCarts() {
-  const Cart = mongoose.model("Cart");
+  const Cart = require("../models/Cart");
   const cutoff = new Date(Date.now() - CART_ARCHIVE_DAYS * 24 * 60 * 60 * 1000);
   const result = await Cart.updateMany(
     { status: "active", updatedAt: { $lt: cutoff }, isDeleted: false },

@@ -7,7 +7,8 @@ const { ensurePrimaryCompany, nameKey } = require("../../services/companyHierarc
 
 async function adminInstance(req) {
   const id = req.params.instanceId;
-  const membership = req.user && !req.agent && activeMembership(req.user, id);
+  const principal = req.user || req.agent || req.superAdmin;
+  const membership = principal && activeMembership(principal, id);
   if (!membership || !["instance_owner", "instance_admin"].includes(membership.role) ||
       req.companyId && String(req.companyId) !== id)
     throw new ApiError(403, "Active instance admin membership required");
@@ -24,6 +25,13 @@ exports.list = asyncHandler(async (req, res) => {
   res.json({ success: true, items });
 });
 
+exports.get = asyncHandler(async (req, res) => {
+  const instance = await adminInstance(req);
+  const item = await InstanceCompany.findOne({ _id: req.params.companyId, tenantId: instance._id });
+  if (!item) throw new ApiError(404, "Company not found");
+  res.json({ success: true, item });
+});
+
 exports.create = asyncHandler(async (req, res) => {
   const instance = await adminInstance(req);
   const name = String(req.body.name || "").trim();
@@ -36,7 +44,7 @@ exports.create = asyncHandler(async (req, res) => {
     });
     res.status(201).json({ success: true, item });
   } catch (error) {
-    if (error.code === 11000) throw new ApiError(409, "Company name already exists in this instance");
+    if (error.code === "23505") throw new ApiError(409, "Company name already exists in this instance");
     throw error;
   }
 });
@@ -63,7 +71,7 @@ exports.update = asyncHandler(async (req, res) => {
   try {
     await item.save();
   } catch (error) {
-    if (error.code === 11000) throw new ApiError(409, "Company name already exists in this instance");
+    if (error.code === "23505") throw new ApiError(409, "Company name already exists in this instance");
     throw error;
   }
   res.json({ success: true, item });

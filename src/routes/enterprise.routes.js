@@ -4,7 +4,7 @@
 // Helpdesk frontend expects.
 const express = require("express");
 const asyncHandler = require("../utils/asyncHandler");
-const { protectTenantPrincipal } = require("../middleware/auth");
+const { protectTenantPrincipal, requirePermission } = require("../middleware/auth");
 
 const router = express.Router();
 router.use(protectTenantPrincipal);
@@ -48,9 +48,9 @@ const openTicketStatuses = [
 // ── Reports ─────────────────────────────────────────────────────────────
 router.get(
   "/reports/overview",
+  requirePermission("itsm.reporting_admin.report_definition.read"),
   asyncHandler(async (req, res) => {
-    const mongoose = require("mongoose");
-    const Ticket = mongoose.model("Ticket");
+    const Ticket = require("../models/helpdesk/tickets/Ticket");
     const q = { company: tenantOf(req) };
     const [total, resolved, open] = await Promise.all([
       Ticket.countDocuments(q),
@@ -77,10 +77,9 @@ router.get(
 router.get(
   "/realtime",
   asyncHandler(async (req, res) => {
-    const mongoose = require("mongoose");
-    const Ticket = mongoose.model("Ticket");
-    const Incident = mongoose.model("Incident");
-    const Change = mongoose.model("Change");
+    const Ticket = require("../models/helpdesk/tickets/Ticket");
+    const Incident = require("../models/helpdesk/incidents/Incident");
+    const Change = require("../models/helpdesk/incidents/Change");
     const q = { company: tenantOf(req) };
     const [openTickets, openIncidents, pendingChanges] = await Promise.all([
       Ticket.countDocuments({ ...q, status: { $in: openTicketStatuses } }),
@@ -113,9 +112,9 @@ const normAsset = (a) => ({
 
 router.get(
   "/assets",
+  requirePermission("itsm.asset.asset.read"),
   asyncHandler(async (req, res) => {
-    const mongoose = require("mongoose");
-    const Asset = mongoose.model("Asset");
+    const Asset = require("../models/Asset");
     const filter = scoped(req);
     if (req.query.search) filter.$or = [
       { name: new RegExp(req.query.search, "i") },
@@ -132,8 +131,7 @@ router.get(
 router.get(
   "/assets/:id",
   asyncHandler(async (req, res) => {
-    const mongoose = require("mongoose");
-    const Asset = mongoose.model("Asset");
+    const Asset = require("../models/Asset");
     const asset = await Asset.findOne({ _id: req.params.id, ...scoped(req) });
     res.json({ success: true, asset: asset ? normAsset(asset) : null });
   }),
@@ -141,9 +139,9 @@ router.get(
 
 router.post(
   "/assets",
+  requirePermission("itsm.asset.asset.create"),
   asyncHandler(async (req, res) => {
-    const mongoose = require("mongoose");
-    const Asset = mongoose.model("Asset");
+    const Asset = require("../models/Asset");
     const doc = await Asset.create({
       company: tenantOf(req),
       name: req.body.name,
@@ -159,11 +157,38 @@ router.post(
   }),
 );
 
+router.put(
+  "/assets/:id",
+  requirePermission("itsm.asset.asset.update"),
+  asyncHandler(async (req, res) => {
+    const Asset = require("../models/Asset");
+    const asset = await Asset.findOne({ _id: req.params.id, ...scoped(req) });
+    if (!asset) return res.status(404).json({ success: false, message: "Asset not found" });
+    for (const field of ["name", "hostname", "ip", "type", "environment", "location", "status"])
+      if (req.body[field] !== undefined) asset[field] = req.body[field];
+    if (req.body.serial !== undefined || req.body.serialNumber !== undefined)
+      asset.serial = req.body.serial ?? req.body.serialNumber;
+    await asset.save();
+    res.json({ success: true, asset: normAsset(asset) });
+  }),
+);
+
+router.delete(
+  "/assets/:id",
+  requirePermission("itsm.asset.asset.delete"),
+  asyncHandler(async (req, res) => {
+    const Asset = require("../models/Asset");
+    const asset = await Asset.findOne({ _id: req.params.id, ...scoped(req) });
+    if (!asset) return res.status(404).json({ success: false, message: "Asset not found" });
+    await asset.deleteOne();
+    res.json({ success: true });
+  }),
+);
+
 router.get(
   "/cmdb/health",
   asyncHandler(async (req, res) => {
-    const mongoose = require("mongoose");
-    const Asset = mongoose.model("Asset");
+    const Asset = require("../models/Asset");
     const q = scoped(req);
     const total = await Asset.countDocuments(q);
     const staleSince = new Date(Date.now() - 90 * 24 * 3600 * 1000);
@@ -191,8 +216,7 @@ router.get(
 router.get(
   "/cmdb/cis/:ciId/impact",
   asyncHandler(async (req, res) => {
-    const mongoose = require("mongoose");
-    const Asset = mongoose.model("Asset");
+    const Asset = require("../models/Asset");
     const ci = await Asset.findOne({ _id: req.params.ciId, ...scoped(req) });
     if (!ci) {
       return res.json({
@@ -245,9 +269,9 @@ const normProblem = (p) => ({
 
 router.get(
   "/problems",
+  requirePermission("itsm.problem.problem.read"),
   asyncHandler(async (req, res) => {
-    const mongoose = require("mongoose");
-    const Problem = mongoose.model("Problem");
+    const Problem = require("../models/helpdesk/incidents/Problem");
     const problems = await Problem.find(scoped(req))
       .populate("assignedTo", "name")
       .sort({ createdAt: -1 })
@@ -258,9 +282,9 @@ router.get(
 
 router.post(
   "/problems",
+  requirePermission("itsm.problem.problem.create"),
   asyncHandler(async (req, res) => {
-    const mongoose = require("mongoose");
-    const Problem = mongoose.model("Problem");
+    const Problem = require("../models/helpdesk/incidents/Problem");
     const doc = await Problem.create({
       company: tenantOf(req),
       title: req.body.title,
@@ -295,9 +319,8 @@ const normChange = (c) => ({
 });
 
 const findConflicts = async (req, { start, end, excludeId }) => {
-  const mongoose = require("mongoose");
-  const Change = mongoose.model("Change");
-  const BlackoutWindow = mongoose.model("BlackoutWindow");
+  const Change = require("../models/helpdesk/incidents/Change");
+  const BlackoutWindow = require("../models/helpdesk/incidents/BlackoutWindow");
   const q = { company: tenantOf(req) };
   if (start || end) {
     q.windowStart = { $ne: null };
@@ -334,9 +357,9 @@ router.get(
 
 router.get(
   "/changes",
+  requirePermission("itsm.change.change_request.read"),
   asyncHandler(async (req, res) => {
-    const mongoose = require("mongoose");
-    const Change = mongoose.model("Change");
+    const Change = require("../models/helpdesk/incidents/Change");
     const changes = await Change.find(scoped(req))
       .populate("assignedTo", "name")
       .sort({ createdAt: -1 })
@@ -347,9 +370,9 @@ router.get(
 
 router.post(
   "/changes",
+  requirePermission("itsm.change.change_request.create"),
   asyncHandler(async (req, res) => {
-    const mongoose = require("mongoose");
-    const Change = mongoose.model("Change");
+    const Change = require("../models/helpdesk/incidents/Change");
     const risk = req.body.risk || "medium";
     const riskScore = riskScores[risk] || 35;
     const windowStart = req.body.windowStart
@@ -385,8 +408,7 @@ router.post(
 router.put(
   "/changes/:id",
   asyncHandler(async (req, res) => {
-    const mongoose = require("mongoose");
-    const Change = mongoose.model("Change");
+    const Change = require("../models/helpdesk/incidents/Change");
     const update = { status: req.body.status || "review" };
     if (req.body.cabDecision) update.customData = { cabDecision: req.body.cabDecision };
     if (req.body.decidedAt) update.decidedAt = req.body.decidedAt;
@@ -425,9 +447,9 @@ const normIncident = (i) => ({
 
 router.get(
   "/incidents",
+  requirePermission("itsm.incident.incident.read"),
   asyncHandler(async (req, res) => {
-    const mongoose = require("mongoose");
-    const Incident = mongoose.model("Incident");
+    const Incident = require("../models/helpdesk/incidents/Incident");
     const incidents = await Incident.find(scoped(req))
       .populate("commander", "name")
       .sort({ createdAt: -1 })
@@ -439,8 +461,7 @@ router.get(
 router.post(
   "/incidents",
   asyncHandler(async (req, res) => {
-    const mongoose = require("mongoose");
-    const Incident = mongoose.model("Incident");
+    const Incident = require("../models/helpdesk/incidents/Incident");
     const doc = await Incident.create({
       number: `INC-${Date.now()}`,
       company: tenantOf(req),
@@ -457,8 +478,7 @@ router.post(
 router.put(
   "/incidents/:id",
   asyncHandler(async (req, res) => {
-    const mongoose = require("mongoose");
-    const Incident = mongoose.model("Incident");
+    const Incident = require("../models/helpdesk/incidents/Incident");
     const update = { status: req.body.status };
     if (req.body.resolvedAt) {
       update.resolvedAt = req.body.resolvedAt;
@@ -477,9 +497,8 @@ router.put(
 router.post(
   "/incidents/:id/major",
   asyncHandler(async (req, res) => {
-    const mongoose = require("mongoose");
-    const Incident = mongoose.model("Incident");
-    const MajorIncident = mongoose.model("MajorIncident");
+    const Incident = require("../models/helpdesk/incidents/Incident");
+    const MajorIncident = require("../models/helpdesk/incidents/MajorIncident");
     const incident = await Incident.findOneAndUpdate(
       { _id: req.params.id, ...scoped(req) },
       { $set: { isMajor: true, severity: "Sev1" } },
@@ -498,10 +517,9 @@ router.post(
 router.put(
   "/incidents/:id/communication-plan",
   asyncHandler(async (req, res) => {
-    const mongoose = require("mongoose");
-    const Incident = mongoose.model("Incident");
-    const MajorIncident = mongoose.model("MajorIncident");
-    const CommunicationPlan = mongoose.model("CommunicationPlan");
+    const Incident = require("../models/helpdesk/incidents/Incident");
+    const MajorIncident = require("../models/helpdesk/incidents/MajorIncident");
+    const CommunicationPlan = require("../models/helpdesk/incidents/CommunicationPlan");
     const incident = await Incident.findOne({ _id: req.params.id, ...scoped(req) });
     if (!incident) return res.status(404).json({ success: false, error: "Incident not found" });
     let mi = await MajorIncident.findOne({ incident: incident._id });
@@ -531,8 +549,7 @@ router.put(
 router.get(
   "/itom/alerts",
   asyncHandler(async (req, res) => {
-    const mongoose = require("mongoose");
-    const ItomAlert = mongoose.model("ItomAlert");
+    const ItomAlert = require("../models/ItomAlert");
     const filter = scoped(req);
     if (req.query.severity) filter.severity = req.query.severity;
     if (req.query.status) filter.status = req.query.status;
@@ -559,8 +576,7 @@ router.get(
 router.put(
   "/itom/alerts/:id",
   asyncHandler(async (req, res) => {
-    const mongoose = require("mongoose");
-    const ItomAlert = mongoose.model("ItomAlert");
+    const ItomAlert = require("../models/ItomAlert");
     const update = { status: req.body.status };
     if (req.body.status === "resolved") update.resolvedAt = new Date();
     const doc = await ItomAlert.findOneAndUpdate(
@@ -577,10 +593,7 @@ router.put(
 router.get(
   "/audit",
   asyncHandler(async (req, res) => {
-    const mongoose = require("mongoose");
-    const AuditEvent = require("../models/core/AuditEvent");
-    const AuditEventModel =
-      typeof AuditEvent === "function" ? AuditEvent : mongoose.model("AuditEvent");
+    const AuditEventModel = require("../models/core/AuditEvent");
     const t = tenantOf(req);
     const filter = t ? { $or: [{ company: t }, { tenantId: t }] } : {};
     const page = parseInt(req.query.page, 10) || 1;
@@ -608,9 +621,8 @@ router.get(
 router.post(
   "/requests/cart",
   asyncHandler(async (req, res) => {
-    const mongoose = require("mongoose");
-    const ServiceRequest = mongoose.model("ServiceRequest");
-    const ServiceCatalogItem = mongoose.model("ServiceCatalogItem");
+    const ServiceRequest = require("../models/helpdesk/incidents/ServiceRequest");
+    const ServiceCatalogItem = require("../models/ServiceCatalogItem");
     const requester = actorId(req);
     const fulfilledFor = req.body.fulfilledFor || requester;
     const items = Array.isArray(req.body.items) ? req.body.items : [];

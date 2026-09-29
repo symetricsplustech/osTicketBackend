@@ -1,98 +1,32 @@
-const mongoose = require("mongoose");
-
-const systemSettingSchema = new mongoose.Schema(
-  {
-    key: { type: String, required: true, unique: true },
-    value: { type: mongoose.Schema.Types.Mixed },
-  },
-  { timestamps: true },
-);
+/**
+ * PostgreSQL-backed model — auto-generated compatibility shim.
+ */
+const { model } = require("./compat");
+const repo = model("system_settings", {});
 
 const defaultSettings = {
-  company: {
-    name: "My Support Center",
-    phone: "",
-    email: "",
-    url: "",
-    logo: "",
-  },
+  company: { name: "My Support Center", phone: "", email: "", url: "", logo: "" },
   system: {
-    defaultDept: "",
-    defaultTicketNumberFormat: "0",
-    defaultPriority: "Normal",
-    defaultSla: "",
-    dateFormat: "dd-MM-yyyy",
-    timeFormat: "24h",
-    autoLockTickets: true,
-    ticketLockMinutes: 5,
-    maxOpenTickets: 0,
-    allowTicketReopen: true,
-    enableKb: true,
-    enableAnnouncements: true,
-    registrationEnabled: true,
-    emailToTicket: "",
+    defaultDept: "", defaultTicketNumberFormat: "0", defaultPriority: "Normal",
+    defaultSla: "", dateFormat: "dd-MM-yyyy", timeFormat: "24h",
+    autoLockTickets: true, ticketLockMinutes: 5, maxOpenTickets: 0,
+    allowTicketReopen: true, enableKb: true, enableAnnouncements: true,
+    registrationEnabled: true, emailToTicket: "",
   },
   tickets: {
-    autoResponder: true,
-    autoAssign: true,
-    notifyNewTicketToDept: true,
-    notifyNewTicketToTeam: true,
-    notifyAssignment: true,
-    notifyTransfer: true,
-    notifyReplyToUser: true,
-    closedTicketEmail: true,
-    overdueNotice: true,
-    // Resolved → Closed waiting period: auto-close resolved tickets with no
-    // customer reply after this many hours (0/disabled = never auto-close).
-    autoCloseEnabled: true,
-    autoCloseAfterHours: 72,
-    // Resolution discipline (§41): require code + solution to resolve.
-    requireResolution: true,
-    // Parent stays open until subtasks finish (§22).
-    blockCloseOnOpenTasks: true,
-    // Reopen windows in days (§40): customer reply reopens inside the window,
-    // otherwise a new ticket linked to the previous one is created.
-    reopenWindowDays: 7,
-    closedReopenWindowDays: 60,
+    autoResponder: true, autoAssign: true, notifyNewTicketToDept: true,
+    notifyNewTicketToTeam: true, notifyAssignment: true, notifyTransfer: true,
+    notifyReplyToUser: true, closedTicketEmail: true, overdueNotice: true,
+    autoCloseEnabled: true, autoCloseAfterHours: 72, requireResolution: true,
+    blockCloseOnOpenTasks: true, reopenWindowDays: 7, closedReopenWindowDays: 60,
   },
-  emails: {
-    banList: [],
-  },
-  email: {
-    smtpHost: "",
-    smtpPort: 587,
-    smtpSecure: true,
-    smtpUser: "",
-    smtpPass: "",
-    fromEmail: "",
-    fromName: "",
-  },
-  autoresponder: {
-    enabled: true,
-    subject: "Ticket received - [ticket.number]",
-    body: "Dear [user.name],\n\nThank you for contacting us. Your ticket [ticket.number] has been created and a member of our team will get back to you shortly.\n\nRegards,\nSupport Team",
-  },
-  alerts: {
-    notifyNewTicket: true,
-    notifyMessage: true,
-    notifyAssignment: true,
-    notifyTransfer: true,
-    notifyOverdue: true,
-    notifyEscalation: true,
-    notifyClosed: true,
-  },
-  auth: {
-    registrationEnabled: true,
-    emailVerification: false,
-    allowGuestTickets: true,
-    passwordMinLength: 8,
-    sessionTimeoutMinutes: 0,
-    lockoutEnabled: false,
-    maxLoginAttempts: 5,
-  },
+  emails: { banList: [] },
+  email: { smtpHost: "", smtpPort: 587, smtpSecure: true, smtpUser: "", smtpPass: "", fromEmail: "", fromName: "" },
+  autoresponder: { enabled: true, subject: "Ticket received - [ticket.number]", body: "Dear [user.name],\n\nThank you for contacting us. Your ticket [ticket.number] has been created and a member of our team will get back to you shortly.\n\nRegards,\nSupport Team" },
+  alerts: { notifyNewTicket: true, notifyMessage: true, notifyAssignment: true, notifyTransfer: true, notifyOverdue: true, notifyEscalation: true, notifyClosed: true },
+  auth: { registrationEnabled: true, emailVerification: false, allowGuestTickets: true, passwordMinLength: 8, sessionTimeoutMinutes: 0, lockoutEnabled: false, maxLoginAttempts: 5 },
   schedules: {
-    timezone: "UTC",
-    businessHoursEnabled: false,
+    timezone: "UTC", businessHoursEnabled: false,
     monday: { enabled: true, open: "09:00", close: "17:00" },
     tuesday: { enabled: true, open: "09:00", close: "17:00" },
     wednesday: { enabled: true, open: "09:00", close: "17:00" },
@@ -102,32 +36,16 @@ const defaultSettings = {
     sunday: { enabled: false, open: "09:00", close: "17:00" },
     enforceBusinessHours: false,
   },
-  // ---- Enterprise: engines configuration ----
-  routing: {
-    algorithm: "skill_based", // none | round_robin | least_workload | skill_based | availability
-  },
-  csat: {
-    enabled: true,
-    ratingScale: 5,
-    npsEnabled: true,
-  },
-  ai: {
-    enabled: true,
-    autoResolveEnabled: false,
-    autoResolveThreshold: 0.8,
-    qaEnabled: true,
-  },
-  automation: {
-    slaBreachNotify: true,
-    slaWarningNotify: false,
-    waitingForCustomerNotify: true,
-  },
+  routing: { algorithm: "skill_based" },
+  csat: { enabled: true, ratingScale: 5, npsEnabled: true },
+  ai: { enabled: true, autoResolveEnabled: false, autoResolveThreshold: 0.8, qaEnabled: true },
+  automation: { slaBreachNotify: true, slaWarningNotify: false, waitingForCustomerNotify: true },
 };
 
-systemSettingSchema.statics.defaultSettings = defaultSettings;
+repo.defaultSettings = defaultSettings;
 
-systemSettingSchema.statics.getSettings = async function () {
-  const docs = await this.find();
+repo.getSettings = async function () {
+  const docs = await repo.find();
   const merged = JSON.parse(JSON.stringify(defaultSettings));
   for (const doc of docs) {
     const keys = doc.key.split(".");
@@ -140,12 +58,12 @@ systemSettingSchema.statics.getSettings = async function () {
   return merged;
 };
 
-systemSettingSchema.statics.setSetting = async function (key, value) {
-  return this.findOneAndUpdate(
-    { key },
-    { key, value },
-    { upsert: true, new: true },
-  );
+repo.setSetting = async function (key, value) {
+  const existing = await repo.findOne({ key });
+  if (existing) {
+    return repo.updateById(existing.id, { key, value });
+  }
+  return repo.create({ key, value });
 };
 
-module.exports = mongoose.model("SystemSetting", systemSettingSchema);
+module.exports = repo;

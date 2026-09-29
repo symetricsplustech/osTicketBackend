@@ -34,6 +34,11 @@ const {
   canonicalFromLegacy,
 } = require("../permissions/legacyMappings");
 const { isHighRisk } = require("../permissions/itsmCatalog");
+const {
+  FIELD_POLICIES,
+  isItsmKey,
+  sensitiveFieldsFor,
+} = require("../permissions/itsmCatalog");
 
 const ALLOW = "ALLOW";
 const DENY = "DENY";
@@ -102,7 +107,6 @@ const directPermissions = (principal) =>
  * Split raw permission strings into ALLOW vs explicit DENY sets.
  * Deny convention: '!tickets.delete'. Backward compatible — legacy string
  * sets simply never contain '!' entries, so behavior is unchanged for them.
- * Role.permissions has a Mongoose enum that rejects '!' entries, so role
  * DENYs are not expressible today (documented gap); use direct grants.
  */
 function splitPermissions(list) {
@@ -201,14 +205,32 @@ function resolveEffectivePermissions(principal, extraRoles) {
   const rawAll = [...directGrants, ...roleGrants];
   const effective = expandGrants(rawAll);
   const legacyHeld = rawAll.filter((k) => isLegacyKey(k));
-  const source = {
-    direct: directGrants,
-    roles: roleListOf(principal, extraRoles).map((r) => ({
-      id: r._id,
-      name: r.name,
-      permissions: r.permissions || [],
-    })),
+  const sources = {};
+  const canonicalOfLegacy = (leg) => {
+    const mapped = canonicalFromLegacy(leg);
+    return Array.isArray(mapped) ? mapped : [mapped].filter(Boolean);
   };
+  for (const key of effective) {
+    if (directAllow.has(key)) {
+      sources[key] = "direct";
+    } else if (roleAllow.has(key)) {
+      sources[key] = "role";
+    } else if (
+      isItsmKey(key) &&
+      legacyHeld.some((leg) => canonicalOfLegacy(leg).includes(key))
+    ) {
+      sources[key] = "legacy";
+    } else if (rawAll.includes(key)) {
+      sources[key] = "direct";
+    } else {
+      sources[key] = "inherited";
+    }
+  }
+  const roles = roleListOf(principal, extraRoles).map((r) => ({
+    id: r._id,
+    name: r.name,
+    permissions: r.permissions || [],
+  }));
   return {
     grants: [...effective],
     direct: directGrants,
@@ -220,7 +242,8 @@ function resolveEffectivePermissions(principal, extraRoles) {
       canonical: canonicalFromLegacy(k),
     })),
     scopes: grantedScopes(principal, extraRoles),
-    sources: source,
+    sources,
+    roles,
   };
 }
 
@@ -305,6 +328,115 @@ function evaluateScope(principal, scope, record, tenant, scopeContext) {
       ]);
       const theirs = [...idList(record.dept), ...idList(record.department)];
       return theirs.some((d) => mine.has(d));
+    }
+    case "ORGANIZATION": {
+      const mine = new Set([
+        ...idList(principal.organization),
+        ...idList(principal.org),
+        ...idList(principal.company),
+        ...idList(principal.tenantId),
+      ]);
+      const theirs = [
+        ...idList(record.organization),
+        ...idList(record.org),
+        ...idList(record.organizationId),
+      ];
+      if (theirs.length === 0) return false;
+      return theirs.some((o) => mine.has(o));
+    }
+    case "BUSINESS_UNIT": {
+      const mine = new Set([
+        ...idList(principal.businessUnit),
+        ...idList(principal.unit),
+        ...idList(principal.orgUnit),
+      ]);
+      const theirs = [
+        ...idList(record.businessUnit),
+        ...idList(record.unit),
+        ...idList(record.orgUnit),
+      ];
+      return theirs.some((u) => mine.has(u));
+    }
+    case "BRANCH": {
+      const mine = idList(principal.branch);
+      const theirs = [
+        ...idList(record.branch),
+        ...idList(record.location && record.location.branch),
+      ];
+      return theirs.some((b) => mine.includes(b));
+    }
+    case "LOCATION": {
+      const mine = idList(principal.location);
+      const theirs = [
+        ...idList(record.location),
+        ...idList(record.locationId),
+      ];
+      return theirs.some((l) => mine.includes(l));
+    }
+    case "GROUP": {
+      const mine = new Set(idList(principal.groups));
+      const theirs = [
+        ...idList(record.group),
+        ...idList(record.groups),
+      ];
+      return theirs.some((g) => mine.has(g));
+    }
+    case "ASSIGNMENT_GROUP": {
+      const mine = new Set([
+        ...idList(principal.teams),
+        ...idList(principal.assignmentGroups),
+        ...idList(principal.group),
+        ...idList((principal.role && principal.role.teams) || []),
+      ]);
+      const theirs = [
+        ...idList(record.assignmentGroup),
+        ...idList(record.assignmentGroups),
+        ...idList(record.team),
+        ...idList(record.teamId),
+      ];
+      return theirs.some((t) => mine.has(t));
+    }
+    case "MANAGED_USERS": {
+      // Caller supplies scopeContext.managedUserIds (users whose manager is the
+      // principal) or scopeContext.managerGraph. Without either, fall back to
+      // direct manager match on the record (reporter/requester reports-to me).
+      const managed = new Set(idList(scopeContext && scopeContext.managedUserIds));
+      const graph = (scopeContext && scopeContext.managerGraph) || {};
+      for (const f of ["requester", "user", "createdBy", "owner", "reporter"]) {
+        const u = idStr(record[f]);
+        if (!u) continue;
+        if (managed.has(u)) return true;
+        if (String(graph[u] || "") === me) return true;
+      }
+      if (idStr(record.manager) === me) return true;
+      return false;
+    }
+    case "REQUESTED_FOR_ME":
+      return [
+        "requestedFor",
+        "fulfilledFor",
+        "beneficiary",
+        "customer",
+      ]
+        .map((f) => idStr(record[f]))
+        .some((v) => v && v === me);
+    case "CREATED_BY_ME":
+      return [
+        "createdBy",
+        "openedBy",
+        "reportedBy",
+        "author",
+      ]
+        .map((f) => idStr(record[f]))
+        .some((v) => v && v === me);
+    case "WATCHING": {
+      const mine = new Set([...idList(record.watchers), ...idList(record.watching)]);
+      return mine.has(me);
+    }
+    case "CUSTOM": {
+      const predicate = scopeContext && scopeContext.customScope;
+      if (typeof predicate === "function") return !!predicate(record, principal);
+      return false;
     }
     default:
       return false;
@@ -441,6 +573,116 @@ function filterFields(principal, fields, extraRoles) {
   const allowedFields = requested.filter((f) => grants.has(String(f)));
   const deniedFields = requested.filter((f) => !grants.has(String(f)));
   return { allowedFields, deniedFields };
+}
+
+// ---------------------------------------------------------------------------
+// Field policy dimensions — MD §21 / Granular Permissions "Field policy
+// dimensions": READ | WRITE | HIDE | MASK | UNMASK | API_READ | API_WRITE |
+// SEARCH | REPORT | EXPORT. Every sensitive field declared in FIELD_POLICIES
+// is policy-governed; granular grants use the `field:<name>` (full access) or
+// `field:<name>:<DIMENSION>` forms, and roles may carry the same tokens inside
+// their fieldAccess array.
+// ---------------------------------------------------------------------------
+
+const FIELD_DIMENSIONS = [
+  "READ",
+  "WRITE",
+  "HIDE",
+  "MASK",
+  "UNMASK",
+  "API_READ",
+  "API_WRITE",
+  "SEARCH",
+  "REPORT",
+  "EXPORT",
+];
+
+function parseFieldGrant(token) {
+  if (typeof token !== "string" || !token) return null;
+  const parts = token.split(":");
+  if (parts.length < 2) return null;
+  const dims = parts[2] ? parts[2].split(",") : null;
+  return {
+    name: parts[1],
+    dims: dims ? new Set(dims.map((d) => d.toUpperCase())) : null,
+  };
+}
+
+function fieldGrantMap(principal, extraRoles) {
+  const map = {}; // field -> Set of granted dimensions (null = all)
+  const add = (token) => {
+    const grant = parseFieldGrant(token);
+    if (!grant) return;
+    if (grant.dims === null) map[grant.name] = null;
+    else {
+      map[grant.name] = map[grant.name] || new Set();
+      for (const d of grant.dims) map[grant.name].add(d);
+    }
+  };
+  for (const role of roleListOf(principal, extraRoles)) {
+    for (const f of role.fieldAccess || []) {
+      if (typeof f !== "string" || !f) continue;
+      if (f.startsWith("field:")) add(f);
+      else add(`field:${f}:READ,WRITE,UNMASK,API_READ,API_WRITE,SEARCH,REPORT,EXPORT`);
+    }
+  }
+  for (const p of directPermissions(principal)) {
+    if (typeof p === "string" && p.startsWith("field:")) add(p);
+  }
+  if (isAggregateAdmin(principal)) {
+    for (const f of Object.keys(FIELD_POLICIES).flatMap((k) => FIELD_POLICIES[k])) {
+      map[f] = map[f] || null;
+    }
+  }
+  return map;
+}
+
+/**
+ * Does the principal hold `dimension` for `field` on resource `resourceKey`?
+ * Non-sensitive fields are always allowed. Sensitive fields allow only when a
+ * grant names the field (or names it for that dimension).
+ */
+function evaluateFieldPolicy(principal, resourceKey, field, dimension, extraRoles) {
+  const dim = String(dimension || "READ").toUpperCase();
+  const sensitive = FIELD_POLICIES[resourceKey] || [];
+  if (field === "*") return true;
+  if (!sensitive.includes(field)) return true;
+  const map = fieldGrantMap(principal, extraRoles);
+  const grants = map[field];
+  if (grants === undefined) return false;
+  if (grants === null) return true;
+  return grants.has(dim);
+}
+
+/**
+ * Partition requested fields into visible / masked / hidden so a controller can
+ * redact values before serialization. Principals with UNMASK see the true value;
+ * MASK-only grantees see a masked placeholder; everyone else loses the field.
+ */
+function maskFields(principal, resourceKey, fields, extraRoles) {
+  const requested = fields || [];
+  const map = fieldGrantMap(principal, extraRoles);
+  const visible = [];
+  const masked = [];
+  const hidden = [];
+  for (const field of requested) {
+    const sensitive = (FIELD_POLICIES[resourceKey] || []).includes(field);
+    if (!sensitive) {
+      visible.push(field);
+      continue;
+    }
+    const grants = map[field];
+    const canRead = grants === undefined
+      ? false
+      : grants === null
+        ? true
+        : grants.has("READ") || grants.has("UNMASK") || grants.has("API_READ");
+    const canUnmask = !grants || grants === null || grants.has("UNMASK");
+    if (canRead && canUnmask) visible.push(field);
+    else if (canRead) masked.push(field);
+    else hidden.push(field);
+  }
+  return { visible, masked, hidden };
 }
 
 // ---------------------------------------------------------------------------
@@ -692,11 +934,17 @@ module.exports = {
   hasPermission,
   isAggregateAdmin,
   collectPermissions,
+  resolveEffectivePermissions,
   splitPermissions,
   grantedScopes,
   evaluateScope,
   checkScope,
   matchConditions,
   filterFields,
+  evaluateFieldPolicy,
+  maskFields,
+  FIELD_DIMENSIONS,
+  sensitiveFieldsFor,
   principalTenant,
+  expandGrants,
 };

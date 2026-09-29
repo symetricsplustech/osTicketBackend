@@ -1,5 +1,5 @@
 // Environment variable validation — fails fast on missing critical vars
-const REQUIRED = ["MONGODB_URI", "JWT_SECRET"];
+const REQUIRED = ["JWT_SECRET"];
 const RECOMMENDED = ["PORT", "NODE_ENV"];
 const SECURITY = ["FIELD_ENC_KEY"];
 
@@ -9,6 +9,9 @@ function validateEnv() {
 
   for (const key of REQUIRED) {
     if (!process.env[key]) errors.push(`Missing REQUIRED env var: ${key}`);
+  }
+  if (!process.env.DATABASE_URL && !process.env.PG_DATABASE) {
+    errors.push("Missing PostgreSQL configuration: set DATABASE_URL or PG_DATABASE");
   }
   for (const key of RECOMMENDED) {
     if (!process.env[key])

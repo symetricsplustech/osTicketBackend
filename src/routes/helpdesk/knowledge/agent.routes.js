@@ -16,43 +16,43 @@ router.get("/kb/suggest", publicCtrl.suggestForAgent);
 router.get(
   "/faq-categories",
   moduleRequired("helpdesk"),
-  requirePermission("kb.manage"),
+  requirePermission("itsm.knowledge.article_manage_access"),
   ctrl.listFaqCategories,
 );
 router.post(
   "/faq-categories",
   moduleRequired("helpdesk"),
-  requirePermission("kb.manage"),
+  requirePermission("itsm.knowledge.article_manage_access"),
   ctrl.createFaqCategory,
 );
 router.get(
   "/faqs",
   moduleRequired("helpdesk"),
-  requirePermission("kb.manage"),
+  requirePermission("itsm.knowledge.article_manage_access"),
   ctrl.listFaqs,
 );
 router.post(
   "/faqs",
   moduleRequired("helpdesk"),
-  requirePermission("kb.manage"),
+  requirePermission("itsm.knowledge.article_manage_access"),
   ctrl.createFaq,
 );
 router.put(
   "/faqs/:id",
   moduleRequired("helpdesk"),
-  requirePermission("kb.manage"),
+  requirePermission("itsm.knowledge.article_manage_access"),
   ctrl.updateFaq,
 );
 router.post(
   "/faqs/:id/transition",
   moduleRequired("helpdesk"),
-  requirePermission("kb.manage"),
+  requirePermission("itsm.knowledge.article_manage_access"),
   ctrl.transitionFaq,
 );
 router.delete(
   "/faqs/:id",
   moduleRequired("helpdesk"),
-  requirePermission("kb.manage"),
+  requirePermission("itsm.knowledge.article_manage_access"),
   ctrl.deleteFaq,
 );
 

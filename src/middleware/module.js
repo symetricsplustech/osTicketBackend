@@ -24,32 +24,29 @@ function moduleRequired(moduleKey) {
         return next(new ApiError(403, "Tenant context required"));
       }
 
-      const mongoose = require("mongoose");
+      const { getDB } = require("../config/db");
 
-      // Check tenant_modules collection
-      const db = mongoose.connection.db;
-      const tenantObjectId = new mongoose.Types.ObjectId(tenantId);
-      let subscription = await db.collection("tenant_modules").findOne({
-        tenantId: tenantObjectId,
-        moduleKey,
+      // Check PostgreSQL module entitlements.
+      let subscription = await getDB()("tenant_modules").where({
+        tenant_id: tenantId,
+        module_key: moduleKey,
         status: "active",
-      });
+      }).first();
       let graceReadOnly = false;
 
       if (!subscription) {
         // Read-only grace period: recently deactivated modules stay readable until graceUntil
-        const graceDoc = await db.collection("tenant_modules").findOne({
-          tenantId: tenantObjectId,
-          moduleKey,
+        const graceDoc = await getDB()("tenant_modules").where({
+          tenant_id: tenantId,
+          module_key: moduleKey,
           status: "disabled",
-          graceUntil: { $gt: new Date() },
-        });
+        }).where("grace_until", ">", new Date()).first();
         if (graceDoc) {
           if (req.method !== "GET") {
             return next(
               new ApiError(
                 403,
-                `Module "${moduleKey}" is in read-only grace period until ${graceDoc.graceUntil.toISOString()}`,
+                `Module "${moduleKey}" is in read-only grace period until ${graceDoc.grace_until.toISOString()}`,
               ),
             );
           }
@@ -60,19 +57,19 @@ function moduleRequired(moduleKey) {
 
       if (!subscription) {
         // Trial expiry check
-        const trialDoc = await db.collection("tenant_modules").findOne({
-          tenantId: tenantObjectId,
-          moduleKey,
+        const trialDoc = await getDB()("tenant_modules").where({
+          tenant_id: tenantId,
+          module_key: moduleKey,
           status: "trial",
-        });
+        }).first();
         if (
           trialDoc &&
-          trialDoc.trialEndsAt &&
-          trialDoc.trialEndsAt < new Date()
+          trialDoc.trial_ends_at &&
+          trialDoc.trial_ends_at < new Date()
         ) {
-          await db
-            .collection("tenant_modules")
-            .updateOne({ _id: trialDoc._id }, { $set: { status: "expired" } });
+          await getDB()("tenant_modules")
+            .where({ id: trialDoc.id })
+            .update({ status: "expired" });
           return next(
             new ApiError(403, `Trial for "${moduleKey}" has expired`),
           );
@@ -113,14 +110,11 @@ function moduleAnyRequired(moduleKeys) {
         return next(new ApiError(403, "Tenant context required"));
       }
 
-      const mongoose = require("mongoose");
-      const db = mongoose.connection.db;
+      const { getDB } = require("../config/db");
 
-      const subscription = await db.collection("tenant_modules").findOne({
-        tenantId: new mongoose.Types.ObjectId(tenantId),
-        moduleKey: { $in: moduleKeys },
-        status: "active",
-      });
+      const subscription = await getDB()("tenant_modules").where({
+        tenant_id: tenantId,
+      }).whereIn("module_key", moduleKeys).where({ status: "active" }).first();
 
       if (!subscription) {
         return next(
@@ -162,19 +156,13 @@ async function getTenantModules(req, res, next) {
       return res.json({ modules: allModules });
     }
 
-    const mongoose = require("mongoose");
-    const db = mongoose.connection.db;
+    const { getDB } = require("../config/db");
 
-    const modules = await db
-      .collection("tenant_modules")
-      .find({
-        tenantId: new mongoose.Types.ObjectId(tenantId),
-        status: "active",
-      })
-      .toArray();
+    const modules = await getDB()("tenant_modules")
+      .where({ tenant_id: tenantId, status: "active" });
 
     const active = modules
-      .map((m) => m.moduleKey)
+      .map((m) => m.module_key)
       .filter((m) => allModules.includes(m));
 
     res.json({ modules: active.length ? active : allModules });
@@ -199,8 +187,7 @@ async function activateModules(req, res, next) {
       return next(new ApiError(400, "modules array is required"));
     }
 
-    const mongoose = require("mongoose");
-    const db = mongoose.connection.db;
+    const { getDB } = require("../config/db");
 
     // Valid module keys (only Helpdesk + owner Settings for now)
     const validModules = ["helpdesk", "settings"];
@@ -211,35 +198,23 @@ async function activateModules(req, res, next) {
     for (const key of moduleKeys) {
       if (!validModules.includes(key)) continue;
 
-      await db.collection("tenant_modules").updateOne(
-        {
-          tenantId: new mongoose.Types.ObjectId(tenantId),
-          moduleKey: key,
-        },
-        {
-          $set: {
-            status: "active",
-            activatedAt: now,
-            updatedAt: now,
-          },
-          $setOnInsert: {
-            tenantId: new mongoose.Types.ObjectId(tenantId),
-            moduleKey: key,
-            createdAt: now,
-          },
-        },
-        { upsert: true },
-      );
+      await getDB()("tenant_modules").insert({
+        tenant_id: tenantId,
+        module_key: key,
+        status: "active",
+        activated_at: now,
+        updated_at: now,
+        created_at: now,
+      }).onConflict(["tenant_id", "module_key"]).merge({
+        status: "active",
+        activated_at: now,
+        updated_at: now,
+      });
     }
 
     // Return updated modules list
-    const modules = await db
-      .collection("tenant_modules")
-      .find({
-        tenantId: new mongoose.Types.ObjectId(tenantId),
-        status: "active",
-      })
-      .toArray();
+    const modules = await getDB()("tenant_modules")
+      .where({ tenant_id: tenantId, status: "active" });
 
     res.json({ modules });
   } catch (error) {
@@ -259,29 +234,20 @@ async function deactivateModule(req, res, next) {
       return next(new ApiError(403, "Tenant context required"));
     }
 
-    const mongoose = require("mongoose");
-    const db = mongoose.connection.db;
+    const { getDB } = require("../config/db");
 
     // Don't allow deactivating settings
     if (moduleKey === "settings") {
       return next(new ApiError(400, "Cannot deactivate settings module"));
     }
 
-    await db.collection("tenant_modules").updateOne(
-      {
-        tenantId: new mongoose.Types.ObjectId(tenantId),
-        moduleKey,
-      },
-      { $set: { status: "inactive", updatedAt: new Date() } },
-    );
+    await getDB()("tenant_modules").where({
+      tenant_id: tenantId,
+      module_key: moduleKey,
+    }).update({ status: "inactive", updated_at: new Date() });
 
-    const modules = await db
-      .collection("tenant_modules")
-      .find({
-        tenantId: new mongoose.Types.ObjectId(tenantId),
-        status: "active",
-      })
-      .toArray();
+    const modules = await getDB()("tenant_modules")
+      .where({ tenant_id: tenantId, status: "active" });
 
     res.json({ modules });
   } catch (error) {

@@ -353,7 +353,7 @@ exports.createUser = asyncHandler(async (req, res) => {
   if (exists) throw new ApiError(409, "A user with this email already exists");
   let orgId = null;
   if (organization) {
-    if (!require("mongoose").isValidObjectId(organization))
+    if (!organization || !(typeof organization === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(organization)))
       throw new ApiError(422, "Invalid organization selected");
     const org = await Organization.findOne({
       _id: organization,
@@ -399,7 +399,7 @@ exports.updateUser = asyncHandler(async (req, res) => {
   if (organization !== undefined) {
     if (!organization) {
       user.organization = null;
-    } else if (!require("mongoose").isValidObjectId(organization)) {
+    } else if (!(typeof organization === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(organization))) {
       throw new ApiError(422, "Invalid organization selected");
     } else {
       user.organization = organization;

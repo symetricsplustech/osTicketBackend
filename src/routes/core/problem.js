@@ -113,6 +113,11 @@ router.post(
   ctrl.publishWorkaround,
 );
 router.post(
+  "/:id/push-workaround-to-incidents",
+  requirePermission("itsm.problem.problem.update"),
+  ctrl.pushWorkaroundToIncidents,
+);
+router.post(
   "/:id/accept-risk",
   requirePermission("itsm.problem.problem.update"),
   ctrl.acceptRisk,

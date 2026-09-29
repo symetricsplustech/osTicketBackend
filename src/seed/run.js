@@ -1,7 +1,7 @@
 /* eslint-disable no-console */
-const mongoose = require("mongoose");
 const dns = require("dns");
-const config = require("../config/config");
+const connectDB = require("../config/db");
+const { getDB } = require("../config/db");
 
 dns.setServers(["8.8.8.8", "1.1.1.1"]);
 const Role = require("../models/Role");
@@ -14,7 +14,7 @@ const User = require("../models/User");
 const Organization = require("../models/Organization");
 const Ticket = require("../models/helpdesk/tickets/Ticket");
 const TicketThread = require("../models/helpdesk/tickets/TicketThread");
-const Task = require("../models/Task");
+const Task = require("../models/core/Task");
 const CannedResponse = require("../models/helpdesk/knowledge/CannedResponse");
 const FaqCategory = require("../models/helpdesk/knowledge/FaqCategory");
 const Faq = require("../models/helpdesk/knowledge/Faq");
@@ -75,21 +75,21 @@ const MODELS = [
   require("../models/helpdesk/incidents/Problem"),
   require("../models/helpdesk/incidents/Change"),
   require("../models/helpdesk/tickets/TicketLink"),
-  require("../models/Approval"),
+  require("../models/core/Approval"),
   require("../models/Conversation"),
   require("../models/ChatMessage"),
   require("../models/CallLog"),
   require("../models/ServiceCatalogItem"),
   require("../models/Integration"),
-  require("../models/AuditEvent"),
+  require("../models/core/AuditEvent"),
   require("../models/HealthScore"),
 ];
 
 const reset = process.argv.includes("--reset");
 
 const run = async () => {
-  await mongoose.connect(config.mongoUri, { serverSelectionTimeoutMS: 15000 });
-  console.log(`Connected to MongoDB: ${config.mongoUri}`);
+  await connectDB();
+  console.log("Connected to database");
 
   if (reset) {
     console.log("Resetting database...");
@@ -101,7 +101,7 @@ const run = async () => {
     console.log(
       "Database already has data. Use `npm run seed:reset` to reseed.",
     );
-    await mongoose.disconnect();
+    getDB().destroy();
     return;
   }
 
@@ -1439,7 +1439,7 @@ const run = async () => {
   console.log("  Admin Panel         admin@osticket.local / Admin@123");
   console.log("==============================================");
 
-  await mongoose.disconnect();
+  getDB().destroy();
 };
 
 run().catch((err) => {

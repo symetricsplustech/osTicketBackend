@@ -269,10 +269,6 @@ const GOAL_TRANSITIONS_TEST = {
   abandoned: [],
 };
 
-function canTransition(current, target, transitions) {
-  return transitions[current]?.includes(target) || false;
-}
-
 console.log('\n=== OPPORTUNITY STATE MACHINE ===\n');
 assert(canTransition('new', 'qualified', OPPORTUNITY_TRANSITIONS_TEST) === true, 'new->qualified');
 assert(canTransition('new', 'rejected', OPPORTUNITY_TRANSITIONS_TEST) === true, 'new->rejected');

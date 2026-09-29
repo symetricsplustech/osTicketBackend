@@ -1,7 +1,7 @@
 /* eslint-disable no-console */
-const mongoose = require("mongoose");
+const connectDB = require("../src/config/db");
+const { getDB } = require("../src/config/db");
 const app = require("../src/app");
-const config = require("../src/config/config");
 const Company = require("../src/models/Company");
 const Agent = require("../src/models/Agent");
 const User = require("../src/models/User");
@@ -43,56 +43,61 @@ const assert = (condition, message) => {
   let agentB;
   const suffix = Date.now();
   try {
-    await mongoose.connect(config.mongoUri, {
-      serverSelectionTimeoutMS: 15000,
-    });
+    await connectDB();
     server = app.listen(port);
     [coA, coB] = await Promise.all([
       Company.create({ name: `Read A ${suffix}`, status: "active" }),
       Company.create({ name: `Read B ${suffix}`, status: "active" }),
     ]);
-    const db = mongoose.connection.db;
+    const db = getDB();
     const now = new Date();
     for (const c of [coA, coB]) {
-      await db
-        .collection("tenant_modules")
-        .updateOne(
-          { tenantId: c._id, moduleKey: "helpdesk" },
-          {
-            $set: { status: "active", activatedAt: now, updatedAt: now },
-            $setOnInsert: { moduleKey: "helpdesk", createdAt: now },
-          },
-          { upsert: true },
-        );
+      await db("tenant_modules")
+        .where({ tenant_id: c.id, module_key: "helpdesk" })
+        .update({
+          status: "active",
+          activated_at: now,
+          updated_at: now,
+          module_key: "helpdesk",
+          created_at: now,
+        })
+        .then(rows => rows.length ? rows : db("tenant_modules").insert({
+          tenant_id: c.id,
+          module_key: "helpdesk",
+          status: "active",
+          activated_at: now,
+          updated_at: now,
+          created_at: now,
+        }));
     }
     const [deptA1, deptA2, deptB] = await Promise.all([
-      Department.create({ name: `Read A1 ${suffix}`, company: coA._id }),
-      Department.create({ name: `Read A2 ${suffix}`, company: coA._id }),
-      Department.create({ name: `Read B ${suffix}`, company: coB._id }),
+      Department.create({ name: `Read A1 ${suffix}`, company_id: coA.id }),
+      Department.create({ name: `Read A2 ${suffix}`, company_id: coA.id }),
+      Department.create({ name: `Read B ${suffix}`, company_id: coB.id }),
     ]);
     [owner1, owner2, emp] = await Promise.all([
       User.create({
         name: "Read owner 1",
         email: `read-owner1-${suffix}@osticket.local`,
         password: "Pass@1234",
-        company: coA._id,
-        isRegistered: true,
+        company_id: coA.id,
+        is_registered: true,
         status: "active",
       }),
       User.create({
         name: "Read owner 2",
         email: `read-owner2-${suffix}@osticket.local`,
         password: "Pass@1234",
-        company: coA._id,
-        isRegistered: true,
+        company_id: coA.id,
+        is_registered: true,
         status: "active",
       }),
       User.create({
         name: "Read emp",
         email: `read-emp-${suffix}@osticket.local`,
         password: "Pass@1234",
-        company: coB._id,
-        isRegistered: true,
+        company_id: coB.id,
+        is_registered: true,
         status: "active",
       }),
     ]);
@@ -101,61 +106,57 @@ const assert = (condition, message) => {
         name: "Read admin A",
         email: `read-admina-${suffix}@osticket.local`,
         password: "Pass@1234",
-        company: coA._id,
-        isAdmin: true,
-        isActive: true,
-        departments: [{ department: deptA1._id, isPrimary: true }],
+        company_id: coA.id,
+        is_admin: true,
+        is_active: true,
+        departments: [{ department: deptA1.id, isPrimary: true }],
       }),
       Agent.create({
         name: "Read agent A",
         email: `read-agenta-${suffix}@osticket.local`,
         password: "Pass@1234",
-        company: coA._id,
-        isActive: true,
-        departments: [{ department: deptA1._id, isPrimary: true }],
+        company_id: coA.id,
+        is_active: true,
+        departments: [{ department: deptA1.id, isPrimary: true }],
       }),
       Agent.create({
         name: "Read agent other",
         email: `read-othera-${suffix}@osticket.local`,
         password: "Pass@1234",
-        company: coA._id,
-        isActive: true,
-        departments: [{ department: deptA2._id, isPrimary: true }],
+        company_id: coA.id,
+        is_active: true,
+        departments: [{ department: deptA2.id, isPrimary: true }],
       }),
       Agent.create({
         name: "Read agent B",
         email: `read-agentb-${suffix}@osticket.local`,
         password: "Pass@1234",
-        company: coB._id,
-        isActive: true,
-        departments: [{ department: deptB._id, isPrimary: true }],
+        company_id: coB.id,
+        is_active: true,
+        departments: [{ department: deptB.id, isPrimary: true }],
       }),
     ]);
 
     const ticket = await Ticket.create({
       number: `RD-${suffix}`,
-      company: coA._id,
-      user: owner1._id,
-      dept: deptA1._id,
-      agent: agentA._id,
+      company_id: coA.id,
+      user_id: owner1.id,
+      dept_id: deptA1.id,
+      agent_id: agentA.id,
       subject: "Read access ticket",
       priority: "Normal",
       status: "assigned",
     });
     await TicketThread.create({
-      ticket: ticket._id,
-      company: coA._id,
+      ticket_id: ticket.id,
       type: "message",
-      posterType: "user",
-      user: owner1._id,
+      user_id: owner1.id,
       body: "public message",
     });
     await TicketThread.create({
-      ticket: ticket._id,
-      company: coA._id,
+      ticket_id: ticket.id,
       type: "note",
-      posterType: "agent",
-      agent: agentA._id,
+      agent_id: agentA.id,
       body: "PRIVATE work note - must not leak",
     });
     const login = async (path, body) => {
@@ -236,7 +237,7 @@ const assert = (condition, message) => {
     assert(
       ownerList.status === 200 &&
         ownerList.data.items.every(
-          (t) => String(t.user) === String(owner1._id),
+          (t) => String(t.user_id) === String(owner1.id),
         ),
       "requester ticket list returns only their own tickets",
     );
@@ -274,7 +275,7 @@ const assert = (condition, message) => {
     });
     assert(
       agentList.status === 200 &&
-        agentList.data.items.some((t) => String(t._id) === String(ticket._id)),
+        agentList.data.items.some((t) => String(t.id) === String(ticket.id)),
       "in-scope agent list includes the ticket",
     );
     const otherList = await request("GET", "/agent/tickets", {
@@ -282,7 +283,7 @@ const assert = (condition, message) => {
     });
     assert(
       otherList.status === 200 &&
-        !otherList.data.items.some((t) => String(t._id) === String(ticket._id)),
+        !otherList.data.items.some((t) => String(t.id) === String(ticket.id)),
       "out-of-scope agent list excludes the ticket",
     );
 
@@ -302,21 +303,19 @@ const assert = (condition, message) => {
     process.exitCode = 1;
   } finally {
     if (server) await new Promise((resolve) => server.close(resolve));
-    const corps = [coA?._id, coB?._id].filter(Boolean);
+    const corps = [coA?.id, coB?.id].filter(Boolean);
     if (corps.length) {
-      const db = mongoose.connection.db;
-      await db
-        .collection("tenant_modules")
-        .deleteMany({
-          tenantId: { $in: corps.map((c) => new mongoose.Types.ObjectId(c)) },
-        });
-      await TicketThread.deleteMany({ company: { $in: corps } });
-      await Ticket.deleteMany({ company: { $in: corps } });
-      await Department.deleteMany({ company: { $in: corps } });
-      await User.deleteMany({ company: { $in: corps } });
-      await Agent.deleteMany({ company: { $in: corps } });
-      await Company.deleteMany({ _id: { $in: corps } });
+      const db = getDB();
+      await db("tenant_modules").whereIn("tenant_id", corps).del();
+      await db("ticket_threads").whereIn("ticket_id", function () {
+        this.select("id").from("tickets").whereIn("company_id", corps);
+      }).del();
+      await db("tickets").whereIn("company_id", corps).del();
+      await db("departments").whereIn("company_id", corps).del();
+      await db("users").whereIn("company_id", corps).del();
+      await db("agents").whereIn("company_id", corps).del();
+      await db("companies").whereIn("id", corps).del();
     }
-    await mongoose.disconnect();
+    await getDB().destroy();
   }
 })();

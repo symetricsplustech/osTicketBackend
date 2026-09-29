@@ -1,41 +1,16 @@
-const mongoose = require("mongoose");
-
-const changeServiceSchema = new mongoose.Schema(
-  {
-    change: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Change",
-      required: true,
-      index: true,
-    },
-    service: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "ServiceOffering",
-      required: true,
-    },
-    company: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Company",
-      default: null,
-      index: true,
-    },
-    linkedBy: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
-      default: null,
-    },
-    linkedAt: { type: Date, default: Date.now },
-    impactLevel: {
-      type: String,
-      enum: ["none", "low", "medium", "high"],
-      default: "low",
-    },
-    isActive: { type: Boolean, default: true },
+/**
+ * PostgreSQL-backed model — compatibility shim with ITSM FK aliases.
+ * The service layer addresses change-service links via `change` / `service` /
+ * `impactLevel` / `isActive`; the table stores `_id`-suffixed and snake_case
+ * columns.
+ */
+const { model } = require("../../compat");
+module.exports = model("change_services", {
+  fieldAliases: {
+    company: "company_id",
+    change: "change_id",
+    service: "service_id",
+    impactLevel: "impact_level",
+    isActive: "is_active",
   },
-  { timestamps: true },
-);
-
-changeServiceSchema.index({ change: 1, service: 1 }, { unique: true });
-changeServiceSchema.index({ company: 1, change: 1 });
-
-module.exports = mongoose.model("ChangeService", changeServiceSchema);
+});

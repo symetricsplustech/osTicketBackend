@@ -25,7 +25,7 @@ async function ensurePrimaryCompany(instance) {
           { upsert: true, new: true },
         );
       } catch (error) {
-        if (error.code !== 11000) throw error;
+        if (error.code !== "23505") throw error;
         primary = await InstanceCompany.findOne({ tenantId: instance._id, isPrimary: true });
         if (!primary) throw error;
       }

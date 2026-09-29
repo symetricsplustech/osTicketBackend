@@ -132,6 +132,12 @@ router.delete(
 
 // ─── Presence ───────────────────────────────────────────────────────────
 router.get(
+  "/presence",
+  protectTenantPrincipal,
+  requirePermission("itsm.assignment.agent_presence.read"),
+  ctrl.listPresence,
+);
+router.get(
   "/agents/:agentId/presence",
   protectTenantPrincipal,
   requirePermission("itsm.assignment.presence_read_team"),
@@ -157,6 +163,12 @@ router.get(
 );
 
 // ─── Capacity ───────────────────────────────────────────────────────────
+router.get(
+  "/capacity",
+  protectTenantPrincipal,
+  requirePermission("itsm.assignment.agent_capacity.read"),
+  ctrl.listCapacity,
+);
 router.get(
   "/agents/:agentId/capacity",
   protectTenantPrincipal,

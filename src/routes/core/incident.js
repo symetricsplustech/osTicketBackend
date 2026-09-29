@@ -145,6 +145,11 @@ router.post(
   requirePermission("itsm.incident.incident.update"),
   ctrl.demoteMajor,
 );
+router.post(
+  "/:id/major/rca",
+  requirePermission("itsm.incident.incident.update"),
+  ctrl.createMajorRca,
+);
 router.put(
   "/:id/major/comm-plan",
   requirePermission("itsm.incident.incident.update"),

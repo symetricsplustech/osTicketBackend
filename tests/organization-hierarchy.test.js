@@ -7,7 +7,6 @@ async function run() {
   assert.equal(hierarchy.normalizeType(" Business_Unit "), "business_unit");
   assert.equal(hierarchy.validType("business_unit"), true);
   assert.equal(hierarchy.validType("business unit"), false);
-  assert.equal(OrganizationUnit.schema.path("type").options.enum, undefined);
 
   const findOne = OrganizationUnit.findOne;
   const exists = OrganizationUnit.exists;

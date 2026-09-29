@@ -2,22 +2,20 @@
  * Walk-Up Experience service — locations, services, queues, check-ins,
  * appointments, interactions, kiosks, and wait-time estimation.
  */
-const mongoose = require("mongoose");
 const numberingService = require("./numbering.service");
 const auditEventService = require("./auditEventService");
 const { emitEvent } = require("../realtime/socketManager");
 
-// Register walk-up schemas before retrieving their models from Mongoose.
-require("../models/walkup/WalkupLocation");
-require("../models/walkup/WalkupService");
-require("../models/walkup/WalkupQueue");
-require("../models/walkup/WalkupCheckin");
-require("../models/walkup/Appointment");
-require("../models/walkup/WalkupInteraction");
-require("../models/walkup/Kiosk");
-require("../models/walkup/WaitTimeEvent");
-require("../models/User");
-require("../models/Team");
+const WalkupLocation = require("../models/walkup/WalkupLocation");
+const WalkupService = require("../models/walkup/WalkupService");
+const WalkupQueue = require("../models/walkup/WalkupQueue");
+const WalkupCheckin = require("../models/walkup/WalkupCheckin");
+const Appointment = require("../models/walkup/Appointment");
+const WalkupInteraction = require("../models/walkup/WalkupInteraction");
+const Kiosk = require("../models/walkup/Kiosk");
+const WaitTimeEvent = require("../models/walkup/WaitTimeEvent");
+const User = require("../models/User");
+const Team = require("../models/Team");
 
 const requireTenant = (ctx) => {
   if (!ctx.tenantId)
@@ -30,17 +28,6 @@ const pick = (obj, keys) =>
   Object.fromEntries(
     keys.filter((k) => obj[k] !== undefined).map((k) => [k, obj[k]]),
   );
-
-const WalkupLocation = mongoose.model("WalkupLocation");
-const WalkupService = mongoose.model("WalkupService");
-const WalkupQueue = mongoose.model("WalkupQueue");
-const WalkupCheckin = mongoose.model("WalkupCheckin");
-const Appointment = mongoose.model("Appointment");
-const WalkupInteraction = mongoose.model("WalkupInteraction");
-const Kiosk = mongoose.model("Kiosk");
-const WaitTimeEvent = mongoose.model("WaitTimeEvent");
-const User = mongoose.model("User");
-const Team = mongoose.model("Team");
 
 // ─── Location CRUD ──────────────────────────────────────────────────────
 
@@ -716,12 +703,26 @@ exports.cancelAppointment = async (ctx, appointmentId, actor) => {
 
 // ─── Interactions ──────────────────────────────────────────────────────
 
+exports.listInteractions = async (ctx, query = {}) => {
+  const tenantId = requireTenant(ctx);
+  const filter = { tenantId, ...pick(query, ["status", "channel", "priority", "agentId"]) };
+  if (query.search) filter.$or = [
+    { number: { $regex: query.search, $options: "i" } },
+    { summary: { $regex: query.search, $options: "i" } },
+    { requesterName: { $regex: query.search, $options: "i" } },
+  ];
+  return WalkupInteraction.find(filter).sort({ updatedAt: -1 });
+};
+
 exports.createInteraction = async (ctx, data, actor) => {
   const tenantId = requireTenant(ctx);
   return WalkupInteraction.create({
     ...data,
     tenantId,
-    createdBy: actor.userId,
+    number: data.number || await numberingService.nextNumber(tenantId, "INT"),
+    status: data.status || "new",
+    startedAt: data.startedAt || new Date(),
+    createdBy: actor.userId || actor._id,
   });
 };
 
@@ -735,6 +736,16 @@ exports.getInteraction = async (ctx, interactionId) => {
     throw Object.assign(new Error("Interaction not found"), {
       statusCode: 404,
     });
+  return interaction;
+};
+
+exports.updateInteraction = async (ctx, interactionId, data) => {
+  const tenantId = requireTenant(ctx);
+  const interaction = await exports.getInteraction(ctx, interactionId);
+  const allowed = ["channel", "requesterName", "requesterEmail", "summary", "description", "status", "priority", "agentId", "notes", "resolution", "outcome", "incidentId", "requestId", "metadata"];
+  Object.assign(interaction, pick(data, allowed));
+  await interaction.save();
+  emitEvent(tenantId, "walkup.interaction.updated", { interactionId });
   return interaction;
 };
 
@@ -772,6 +783,16 @@ exports.completeInteraction = async (ctx, interactionId, data) => {
     interactionId,
     outcome: interaction.outcome,
   });
+  return interaction;
+};
+
+exports.cancelInteraction = async (ctx, interactionId) => {
+  const tenantId = requireTenant(ctx);
+  const interaction = await exports.getInteraction(ctx, interactionId);
+  interaction.status = "cancelled";
+  interaction.endedAt = new Date();
+  await interaction.save();
+  emitEvent(tenantId, "walkup.interaction.cancelled", { interactionId });
   return interaction;
 };
 

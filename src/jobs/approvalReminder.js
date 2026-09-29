@@ -2,7 +2,6 @@
  * Request Approval Reminders — sends reminders for pending approvals.
  */
 const cron = require("node-cron");
-const mongoose = require("mongoose");
 
 const REMINDER_HOURS = parseInt(
   process.env.APPROVAL_REMINDER_HOURS || "48",
@@ -10,7 +9,7 @@ const REMINDER_HOURS = parseInt(
 );
 
 async function sendApprovalReminders() {
-  const RequestApproval = mongoose.model("RequestApproval");
+  const RequestApproval = require("../models/RequestApproval");
   const cutoff = new Date(Date.now() - REMINDER_HOURS * 60 * 60 * 1000);
   const pending = await RequestApproval.find({
     status: "pending",

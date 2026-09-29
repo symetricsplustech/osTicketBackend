@@ -361,10 +361,10 @@ exports.systemInfo = asyncHandler(async (req, res) => {
   res.json({
     success: true,
     info: {
-      name: "osTicket MERN",
+      name: "osTicket",
       version: "1.0.0",
       node: process.version,
-      mongo: require("mongoose").version,
+      database: "postgresql",
       env: process.env.NODE_ENV || "development",
     },
   });

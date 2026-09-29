@@ -1,6 +1,6 @@
 const express = require("express");
-const { protectAdmin } = require("../middleware/auth");
-const ctrl = require("../controllers/admin.controller");
+const { protectAdmin, requirePermission } = require("../middleware/auth");
+const ctrl = require("../controllers/admin");
 const organizationUnits = require("../controllers/admin/organizationUnits");
 const { upload } = require("../config/multer");
 
@@ -34,28 +34,76 @@ router.delete("/notifications/read", ctrl.deleteReadNotifications);
 router.delete("/notifications/:id", ctrl.deleteNotification);
 
 // Agents
-router.get("/agents", ctrl.listAgents);
-router.post("/agents", ctrl.createAgent);
-router.put("/agents/:id", ctrl.updateAgent);
-router.delete("/agents/:id", ctrl.deleteAgent);
+router.get("/agents", requirePermission("tenant.user.read"), ctrl.listAgents);
+router.post(
+  "/agents",
+  requirePermission("tenant.user.create"),
+  ctrl.createAgent,
+);
+router.put(
+  "/agents/:id",
+  requirePermission("tenant.user.update"),
+  ctrl.updateAgent,
+);
+router.delete(
+  "/agents/:id",
+  requirePermission("tenant.user.deactivate"),
+  ctrl.deleteAgent,
+);
 
 // Roles
-router.get("/roles", ctrl.getRoles);
-router.post("/roles", ctrl.createRole);
-router.put("/roles/:id", ctrl.updateRole);
-router.delete("/roles/:id", ctrl.deleteRole);
+router.get("/roles", requirePermission("tenant.role.read"), ctrl.getRoles);
+router.post("/roles", requirePermission("tenant.role.create"), ctrl.createRole);
+router.put(
+  "/roles/:id",
+  requirePermission("tenant.role.update"),
+  ctrl.updateRole,
+);
+router.delete(
+  "/roles/:id",
+  requirePermission("tenant.role.delete"),
+  ctrl.deleteRole,
+);
 
 // Teams
-router.get("/teams", ctrl.listTeams);
-router.post("/teams", ctrl.createTeam);
-router.put("/teams/:id", ctrl.updateTeam);
-router.delete("/teams/:id", ctrl.deleteTeam);
+router.get("/teams", requirePermission("tenant.group.read"), ctrl.listTeams);
+router.post(
+  "/teams",
+  requirePermission("tenant.group.create"),
+  ctrl.createTeam,
+);
+router.put(
+  "/teams/:id",
+  requirePermission("tenant.group.update"),
+  ctrl.updateTeam,
+);
+router.delete(
+  "/teams/:id",
+  requirePermission("tenant.group.delete"),
+  ctrl.deleteTeam,
+);
 
 // Departments
-router.get("/departments", ctrl.listDepartments);
-router.post("/departments", ctrl.createDepartment);
-router.put("/departments/:id", ctrl.updateDepartment);
-router.delete("/departments/:id", ctrl.deleteDepartment);
+router.get(
+  "/departments",
+  requirePermission("tenant.department.read"),
+  ctrl.listDepartments,
+);
+router.post(
+  "/departments",
+  requirePermission("tenant.department.create"),
+  ctrl.createDepartment,
+);
+router.put(
+  "/departments/:id",
+  requirePermission("tenant.department.update"),
+  ctrl.updateDepartment,
+);
+router.delete(
+  "/departments/:id",
+  requirePermission("tenant.department.delete"),
+  ctrl.deleteDepartment,
+);
 
 // Help Topics
 router.get("/help-topics", ctrl.listHelpTopics);
@@ -85,18 +133,51 @@ router.put("/email-templates/:id", ctrl.updateEmailTemplate);
 router.delete("/email-templates/:id", ctrl.deleteEmailTemplate);
 
 // Settings
-router.get("/settings", ctrl.getSettings);
-router.put("/settings", ctrl.updateSettings);
-router.get("/company", ctrl.getCompanySettings);
-router.put("/company", ctrl.updateCompanySettings);
-router.post("/company/logo", upload.single("logo"), ctrl.uploadCompanyLogo);
-router.post("/company/transfer-ownership", ctrl.transferCompanyOwnership);
+router.get(
+  "/settings",
+  requirePermission("tenant.settings.read"),
+  ctrl.getSettings,
+);
+router.put(
+  "/settings",
+  requirePermission("tenant.settings.update"),
+  ctrl.updateSettings,
+);
+router.get(
+  "/company",
+  requirePermission("tenant.settings.read"),
+  ctrl.getCompanySettings,
+);
+router.put(
+  "/company",
+  requirePermission("tenant.settings.update"),
+  ctrl.updateCompanySettings,
+);
+router.post(
+  "/company/logo",
+  requirePermission("tenant.settings.update"),
+  upload.single("logo"),
+  ctrl.uploadCompanyLogo,
+);
+router.post(
+  "/company/transfer-ownership",
+  requirePermission("tenant.user.update"),
+  ctrl.transferCompanyOwnership,
+);
 
 // Users
-router.get("/users", ctrl.listUsers);
-router.post("/users", ctrl.createUser);
-router.put("/users/:id", ctrl.updateUser);
-router.delete("/users/:id", ctrl.deleteUser);
+router.get("/users", requirePermission("tenant.user.read"), ctrl.listUsers);
+router.post("/users", requirePermission("tenant.user.create"), ctrl.createUser);
+router.put(
+  "/users/:id",
+  requirePermission("tenant.user.update"),
+  ctrl.updateUser,
+);
+router.delete(
+  "/users/:id",
+  requirePermission("tenant.user.deactivate"),
+  ctrl.deleteUser,
+);
 
 // Organizations
 router.get("/orgs", ctrl.listOrgs);

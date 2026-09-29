@@ -2,20 +2,17 @@
  * SLA timer background job — checks for breached SLAs on a schedule.
  * Run via: node src/jobs/slaTimer.js
  */
-const mongoose = require("mongoose");
-const config = require("../config/config");
+const { getDB } = require("../config/db");
 const { checkBreaches } = require("../services/taskSla.service");
 const logger = require("../utils/logger");
 
 async function connect() {
-  await mongoose.connect(config.mongoUri);
-  logger.info("SLA timer connected to MongoDB");
+  getDB();
+  logger.info("SLA timer connected to database");
 }
 
 async function run() {
-  const tenants = await mongoose.connection.db
-    .collection("companies")
-    .distinct("_id");
+  const tenants = await getDB()("companies").select("id").distinct("id");
   let total = 0;
   for (const tenantId of tenants) {
     const breached = await checkBreaches(tenantId);

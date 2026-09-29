@@ -1,6 +1,8 @@
 const Problem = require("../models/helpdesk/incidents/Problem");
 const ProblemTask = require("../models/helpdesk/incidents/ProblemTask");
 const ProblemIncident = require("../models/helpdesk/incidents/ProblemIncident");
+const Incident = require("../models/helpdesk/incidents/Incident");
+const IncidentResolution = require("../models/helpdesk/incidents/IncidentResolution");
 const ProblemCI = require("../models/helpdesk/incidents/ProblemCI");
 const ProblemServiceOffering = require("../models/helpdesk/incidents/ProblemServiceOffering");
 const ProblemChange = require("../models/helpdesk/incidents/ProblemChange");
@@ -8,21 +10,25 @@ const ProblemKnowledge = require("../models/helpdesk/incidents/ProblemKnowledge"
 const KnownError = require("../models/helpdesk/incidents/KnownError");
 const ProblemAssignmentHistory = require("../models/helpdesk/incidents/ProblemAssignmentHistory");
 const RootCauseRecord = require("../models/helpdesk/incidents/RootCauseRecord");
+const ConfigurationItem = require("../models/cmdb/ConfigurationItem");
+const ServiceOffering = require("../models/cmdb/ServiceOffering");
+const Change = require("../models/helpdesk/incidents/Change");
+const Faq = require("../models/helpdesk/knowledge/Faq");
 const ApiError = require("../utils/ApiError");
 const { assertTransition } = require("./stateMachine.service");
+const { assertTenantOf } = require("./tenantGuard");
+const { getTenantId } = require("../middleware/tenantScope");
+const { nextNumber } = require("./numbering.service");
 const events = require("./events");
 const auditEventService = require("./auditEventService");
 
 class ProblemService {
   static async generateNumber(tenantId) {
-    const prefix = "PRB";
-    const year = new Date().getFullYear();
-    const count = await Problem.countDocuments({ company: tenantId });
-    const seq = String(count + 1).padStart(4, "0");
-    return `${prefix}-${year}-${seq}`;
+    return nextNumber(tenantId, "PRB");
   }
 
   static async create(data, actorId) {
+    data = { ...data, company: getTenantId() || data.company };
     const number = data.number || (await this.generateNumber(data.company));
 
     const problem = await Problem.create({
@@ -163,6 +169,7 @@ class ProblemService {
       problem.resolvedAt = new Date();
     } else if (targetStatus === "closed") {
       problem.closedAt = new Date();
+      problem.permanentFixVerified = true;
     }
 
     problem.timeline.push({
@@ -172,6 +179,14 @@ class ProblemService {
     });
 
     await problem.save();
+
+    if (targetStatus === "closed") {
+      await this.resolveLinkedIncidentsWithFixContext(
+        problemId,
+        tenantId,
+        actorId,
+      );
+    }
 
     await auditEventService.record({
       tenantId,
@@ -227,9 +242,17 @@ class ProblemService {
   }
 
   static async linkIncident(problemId, incidentId, tenantId, actorId) {
+    const incident = await Incident.findOne({
+      _id: incidentId,
+      company: tenantId,
+      isActive: true,
+    });
+    if (!incident) throw new ApiError(404, "Incident not found");
+
     const existing = await ProblemIncident.findOne({
       problem: problemId,
       incident: incidentId,
+      company: tenantId,
     });
     if (existing) {
       existing.isActive = true;
@@ -262,6 +285,7 @@ class ProblemService {
   }
 
   static async linkCI(problemId, ciId, role, tenantId, actorId) {
+    await assertTenantOf(ConfigurationItem, ciId, tenantId, "configuration item");
     const existing = await ProblemCI.findOne({ problem: problemId, ci: ciId });
     if (existing) {
       existing.role = role || existing.role;
@@ -302,6 +326,7 @@ class ProblemService {
     tenantId,
     actorId,
   ) {
+    await assertTenantOf(ServiceOffering, serviceOfferingId, tenantId, "service offering");
     const existing = await ProblemServiceOffering.findOne({
       problem: problemId,
       serviceOffering: serviceOfferingId,
@@ -329,6 +354,7 @@ class ProblemService {
     tenantId,
     actorId,
   ) {
+    await assertTenantOf(Change, changeId, tenantId, "change");
     const existing = await ProblemChange.findOne({
       problem: problemId,
       change: changeId,
@@ -364,6 +390,7 @@ class ProblemService {
     tenantId,
     actorId,
   ) {
+    await assertTenantOf(Faq, knowledgeArticleId, tenantId, "knowledge article");
     const existing = await ProblemKnowledge.findOne({
       problem: problemId,
       knowledgeArticle: knowledgeArticleId,
@@ -409,11 +436,167 @@ class ProblemService {
     problem.updatedBy = actorId;
     problem.timeline.push({
       at: new Date(),
-      by: String(actorId),
+      by: actorId ? String(actorId) : "system",
       message: "Workaround published",
     });
     await problem.save();
+    const pushed = await this.pushWorkaroundToIncidents(
+      problemId,
+      tenantId,
+      actorId,
+    );
+
+    await auditEventService.record({
+      tenantId,
+      actorId,
+      action: "problem.workaround_published",
+      resourceType: "Problem",
+      resourceId: problem._id,
+      after: { incidentCount: pushed.length },
+    });
+
+    events.emit("problem.updated", { problemId: problem._id, tenantId });
     return problem;
+  }
+
+  static async pushWorkaroundToIncidents(problemId, tenantId, actorId) {
+    const problem = await this.getById(problemId, tenantId);
+    if (!problem.workaround) return [];
+
+    const links = await ProblemIncident.find({
+      problem: problemId,
+      company: tenantId,
+      isActive: true,
+    });
+
+    const updated = [];
+    for (const link of links) {
+      const incident = await Incident.findById(link.incident);
+      if (!incident) continue;
+      if (["resolved", "closed", "canceled"].includes(incident.status)) {
+        continue;
+      }
+
+      await IncidentResolution.create({
+        incident: incident._id,
+        problem: problemId,
+        company: tenantId,
+        resolutionCode: "workaround",
+        notes: `Workaround pushed from Problem ${problem.number}`,
+        workaround: problem.workaround,
+        resolvedBy: actorId,
+        resolvedAt: new Date(),
+        source: "problem_workaround_push",
+      });
+
+      let timeline = incident.timeline;
+      if (typeof timeline === "string") {
+        try {
+          timeline = JSON.parse(timeline);
+        } catch (_) {
+          timeline = [];
+        }
+      }
+      timeline.push({
+        at: new Date(),
+        by: actorId ? String(actorId) : "system",
+        message: `Workaround received from Problem ${problem.number}`,
+      });
+      incident.timeline = timeline;
+      incident.updatedAt = new Date();
+      await incident.save();
+
+      updated.push({
+        incidentId: incident._id,
+        workaround: problem.workaround,
+      });
+    }
+
+    if (updated.length) {
+      await auditEventService.record({
+        tenantId,
+        actorId,
+        action: "problem.workaround_pushed_to_incidents",
+        resourceType: "Problem",
+        resourceId: problem._id,
+        after: { incidentCount: updated.length },
+      });
+    }
+
+    return updated;
+  }
+
+  static async resolveLinkedIncidentsWithFixContext(
+    problemId,
+    tenantId,
+    actorId,
+  ) {
+    const problem = await this.getById(problemId, tenantId);
+
+    const links = await ProblemIncident.find({
+      problem: problemId,
+      company: tenantId,
+      isActive: true,
+    });
+
+    const updated = [];
+    for (const link of links) {
+      const incident = await Incident.findById(link.incident);
+      if (!incident) continue;
+      if (["resolved", "closed", "canceled"].includes(incident.status)) {
+        continue;
+      }
+
+      const resolvedAt = new Date();
+      incident.status = "resolved";
+      incident.resolvedAt = resolvedAt;
+
+      let timeline = incident.timeline;
+      if (typeof timeline === "string") {
+        try {
+          timeline = JSON.parse(timeline);
+        } catch (_) {
+          timeline = [];
+        }
+      }
+      timeline.push({
+        at: resolvedAt,
+        by: actorId ? String(actorId) : "system",
+        message: `Resolved via permanent fix from Problem ${problem.number}`,
+      });
+      incident.timeline = timeline;
+      incident.updatedAt = resolvedAt;
+      await incident.save();
+
+      await IncidentResolution.create({
+        incident: incident._id,
+        problem: problemId,
+        company: tenantId,
+        resolutionCode: "permanent_fix",
+        notes: `Resolved via permanent fix from Problem ${problem.number}`,
+        rootCause: problem.rootCause || "",
+        rootCauseCategory: "permanent_fix",
+        workaround: problem.workaround || "",
+        resolvedBy: actorId,
+        resolvedAt,
+        source: "problem_permanent_fix",
+      });
+
+      updated.push({ incidentId: incident._id });
+    }
+
+    if (updated.length) {
+      await auditEventService.record({
+        tenantId,
+        actorId,
+        action: "problem.permanent_fix_applied_to_incidents",
+        resourceType: "Problem",
+        resourceId: problem._id,
+        after: { incidentCount: updated.length },
+      });
+    }
+
+    return updated;
   }
 
   static async acceptRisk(problemId, reason, tenantId, actorId) {

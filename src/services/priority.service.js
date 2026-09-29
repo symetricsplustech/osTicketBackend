@@ -10,7 +10,7 @@ const DEFAULTS = [
 let seedPromise = null;
 
 async function ensureDefaults(company = null) {
-  const existing = await Priority.find({ company }).countDocuments();
+  const existing = await Priority.countDocuments({ company });
   if (existing > 0) return;
   seedPromise =
     seedPromise ||

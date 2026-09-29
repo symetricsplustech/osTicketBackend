@@ -355,6 +355,18 @@ router.post(
   requirePermission("itsm.request_catalog.fulfillment_plan.create"),
   ctrl.createFulfillmentPlan,
 );
+router.put(
+  "/fulfillment-plans/:id",
+  protectTenantPrincipal,
+  requirePermission("itsm.request_catalog.fulfillment_plan.update"),
+  ctrl.updateFulfillmentPlan,
+);
+router.delete(
+  "/fulfillment-plans/:id",
+  protectTenantPrincipal,
+  requirePermission("itsm.request_catalog.fulfillment_plan.delete"),
+  ctrl.deleteFulfillmentPlan,
+);
 router.post(
   "/fulfillment-plans/:planId/steps",
   protectTenantPrincipal,

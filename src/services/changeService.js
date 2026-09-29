@@ -14,20 +14,23 @@ const CABDefinition = require("../models/helpdesk/incidents/CABDefinition");
 const CABMeeting = require("../models/helpdesk/incidents/CABMeeting");
 const CABAgendaItem = require("../models/helpdesk/incidents/CABAgendaItem");
 const CABAttendee = require("../models/helpdesk/incidents/CABAttendee");
+const ConfigurationItem = require("../models/cmdb/ConfigurationItem");
+const ServiceOffering = require("../models/cmdb/ServiceOffering");
 const ApiError = require("../utils/ApiError");
 const { assertTransition } = require("./stateMachine.service");
+const { getTenantId } = require("../middleware/tenantScope");
+const { nextNumber } = require("./numbering.service");
+const { assertTenantOf } = require("./tenantGuard");
 const events = require("./events");
 const auditEventService = require("./auditEventService");
 
 class ChangeService {
   static async generateNumber(tenantId) {
-    const prefix = "CHG";
-    const year = new Date().getFullYear();
-    const count = await Change.countDocuments({ company: tenantId });
-    return `${prefix}-${year}-${String(count + 1).padStart(4, "0")}`;
+    return nextNumber(tenantId, "CHG");
   }
 
   static async create(data, actorId) {
+    data = { ...data, company: getTenantId() || data.company };
     const number = data.number || (await this.generateNumber(data.company));
     const change = await Change.create({
       ...data,
@@ -160,6 +163,7 @@ class ChangeService {
   }
 
   static async linkCI(changeId, ciId, role, tenantId, actorId) {
+    await assertTenantOf(ConfigurationItem, ciId, tenantId, "configuration item");
     const existing = await ChangeCI.findOne({ change: changeId, ci: ciId });
     if (existing) {
       existing.role = role || existing.role;
@@ -199,6 +203,7 @@ class ChangeService {
     tenantId,
     actorId,
   ) {
+    await assertTenantOf(ServiceOffering, serviceId, tenantId, "service offering");
     const existing = await ChangeServiceLink.findOne({
       change: changeId,
       service: serviceId,
@@ -313,16 +318,23 @@ class ChangeService {
       change: changeId,
       company: tenantId,
     });
+    const payload = { ...data, change: changeId, company: tenantId, implementedBy: actorId };
+    if (Array.isArray(payload.remediationEvidence)) {
+      payload.remediation_evidence = payload.remediationEvidence;
+    }
+    delete payload.remediationEvidence;
     if (existing) {
-      Object.assign(existing, data, { implementedBy: actorId });
+      Object.assign(existing, payload);
       await existing.save();
       return existing;
     }
-    return ChangeImplementationResult.create({
-      ...data,
+    return ChangeImplementationResult.create(payload);
+  }
+
+  static async getImplementationResult(changeId, tenantId) {
+    return ChangeImplementationResult.findOne({
       change: changeId,
       company: tenantId,
-      implementedBy: actorId,
     });
   }
 

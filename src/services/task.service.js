@@ -116,6 +116,14 @@ async function createRelationship({
       "Cannot create relationship between a task and itself",
     );
   }
+  const [source, target] = await Promise.all([
+    Task.findOne({ _id: sourceTaskId, tenantId }),
+    Task.findOne({ _id: targetTaskId, tenantId }),
+  ]);
+  if (!source)
+    throw new ApiError(404, "Source task not found in this tenant");
+  if (!target)
+    throw new ApiError(404, "Target task not found in this tenant");
   const rel = await TaskRelationship.findOneAndUpdate(
     { tenantId, sourceTaskId, targetTaskId, relationshipType },
     {

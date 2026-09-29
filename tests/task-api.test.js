@@ -1,7 +1,8 @@
 /* eslint-disable no-console */
 // Task API integration test (requires DB). Run: npm run test:task-api
 const request = require("supertest");
-const mongoose = require("mongoose");
+const connectDB = require("../src/config/db");
+const { getDB } = require("../src/config/db");
 const app = require("../src/app");
 const Task = require("../src/models/core/Task");
 const TaskActivity = require("../src/models/core/TaskActivity");
@@ -19,27 +20,23 @@ const assert = (condition, message) => {
 let token, tenantId, userId, taskId;
 
 async function setup() {
-  // Create tenant
   const company = await Company.create({
     name: "Test Tenant",
     domain: "test-task-engine.example.com",
   });
-  tenantId = company._id;
+  tenantId = company.id;
 
-  // Create user
   const user = await User.create({
     name: "Task Test User",
     email: `tasktest-${Date.now()}@example.com`,
     password: "password123",
-    company: tenantId,
+    company_id: tenantId,
     role: "admin",
   });
-  userId = user._id;
+  userId = user.id;
 
-  // Reset counter
-  await Counter.deleteOne({ _id: `${tenantId}:TASK` });
+  await Counter.deleteOne({ id: `${tenantId}:TASK` });
 
-  // Login
   const loginRes = await request(app)
     .post("/api/auth/login")
     .send({ email: user.email, password: "password123" });
@@ -47,13 +44,13 @@ async function setup() {
 }
 
 async function cleanup() {
-  await Task.deleteMany({ tenantId });
-  await TaskActivity.deleteMany({ tenantId });
-  await TaskWatcher.deleteMany({ tenantId });
-  await TaskRelationship.deleteMany({ tenantId });
+  await Task.deleteMany({ tenant_id: tenantId });
+  await TaskActivity.deleteMany({ tenant_id: tenantId });
+  await TaskWatcher.deleteMany({ tenant_id: tenantId });
+  await TaskRelationship.deleteMany({});
   await User.deleteMany({ email: { $regex: "tasktest-" } });
   await Company.deleteMany({ domain: "test-task-engine.example.com" });
-  await Counter.deleteOne({ _id: `${tenantId}:TASK` });
+  await Counter.deleteOne({ id: `${tenantId}:TASK` });
 }
 
 async function testCreateTask() {
@@ -71,7 +68,7 @@ async function testCreateTask() {
   assert(res.body.number.startsWith("TASK-"), "task number generated");
   assert(res.body.state === "new", "task starts in new state");
   assert(res.body.title === "Test Task", "task title matches");
-  taskId = res.body._id;
+  taskId = res.body.id || res.body._id;
 }
 
 async function testGetTask() {
@@ -94,7 +91,6 @@ async function testListTasks() {
 }
 
 async function testTransitionTask() {
-  // new -> open
   let res = await request(app)
     .post(`/api/core/tasks/${taskId}/transition`)
     .set("Authorization", `Bearer ${token}`)
@@ -102,7 +98,6 @@ async function testTransitionTask() {
   assert(res.status === 200, "transition new->open returns 200");
   assert(res.body.state === "open", "state is now open");
 
-  // open -> in_progress
   res = await request(app)
     .post(`/api/core/tasks/${taskId}/transition`)
     .set("Authorization", `Bearer ${token}`)
@@ -110,7 +105,6 @@ async function testTransitionTask() {
   assert(res.status === 200, "transition open->in_progress returns 200");
   assert(res.body.state === "in_progress", "state is now in_progress");
 
-  // in_progress -> resolved
   res = await request(app)
     .post(`/api/core/tasks/${taskId}/transition`)
     .set("Authorization", `Bearer ${token}`)
@@ -121,7 +115,6 @@ async function testTransitionTask() {
 }
 
 async function testInvalidTransition() {
-  // resolved -> cancelled should fail
   const res = await request(app)
     .post(`/api/core/tasks/${taskId}/transition`)
     .set("Authorization", `Bearer ${token}`)
@@ -193,6 +186,6 @@ async function testUpdateTask() {
     process.exit(1);
   } finally {
     await cleanup();
-    await mongoose.disconnect();
+    await getDB().destroy();
   }
 })();

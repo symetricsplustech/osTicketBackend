@@ -211,11 +211,9 @@ function registerAllRoutes(app) {
     "./routes/i18n.routes",
     "./routes/remaining.routes",
     "./routes/ops.routes",
-    "./routes/fillgaps.routes",
-    "./routes/fillgaps2.routes",
-    "./routes/fillgaps3.routes",
     "./routes/crud.routes",
-    "./routes/backendGaps.routes",
+    "./routes/itsm/closure-gap.routes",
+    "./routes/itsm/priority-gap.routes",
   ];
 
   for (const routeFile of routeFiles) {

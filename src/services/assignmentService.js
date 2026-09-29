@@ -1,21 +1,19 @@
 /**
  * Assignment / Routing / Advanced Work Distribution service.
  */
-const mongoose = require("mongoose");
 const numberingService = require("./numbering.service");
 const auditEventService = require("./auditEventService");
 const { emitEvent } = require("../realtime/socketManager");
 
-// Register assignment and routing models before retrieving them from Mongoose.
-require("../models/assignment/AssignmentRule");
-require("../models/assignment/Queue");
-require("../models/assignment/AgentPresence");
-require("../models/assignment/AgentCapacity");
-require("../models/assignment/Skill");
-require("../models/assignment/AgentSkill");
-require("../models/assignment/RoutingRule");
-require("../models/assignment/AssignmentEvent");
-require("../models/Agent");
+const AssignmentRule = require("../models/assignment/AssignmentRule");
+const Queue = require("../models/assignment/Queue");
+const AgentPresence = require("../models/assignment/AgentPresence");
+const AgentCapacity = require("../models/assignment/AgentCapacity");
+const Skill = require("../models/assignment/Skill");
+const AgentSkill = require("../models/assignment/AgentSkill");
+const RoutingRule = require("../models/assignment/RoutingRule");
+const AssignmentEvent = require("../models/assignment/AssignmentEvent");
+const Agent = require("../models/Agent");
 
 const requireTenant = (ctx) => {
   if (!ctx.tenantId)
@@ -28,16 +26,6 @@ const pick = (obj, keys) =>
   Object.fromEntries(
     keys.filter((k) => obj[k] !== undefined).map((k) => [k, obj[k]]),
   );
-
-const AssignmentRule = mongoose.model("AssignmentRule");
-const Queue = mongoose.model("Queue");
-const AgentPresence = mongoose.model("AgentPresence");
-const AgentCapacity = mongoose.model("AgentCapacity");
-const Skill = mongoose.model("Skill");
-const AgentSkill = mongoose.model("AgentSkill");
-const RoutingRule = mongoose.model("RoutingRule");
-const AssignmentEvent = mongoose.model("AssignmentEvent");
-const Agent = mongoose.model("Agent");
 
 // ─── Condition Matching ─────────────────────────────────────────────────
 
@@ -422,7 +410,7 @@ exports.setPresence = async (ctx, agentId, data) => {
 
 exports.getPresenceStats = async (ctx) => {
   const tenantId = requireTenant(ctx);
-  const agents = await Agent.find({ tenantId, status: "active" });
+  const agents = await Agent.find({ companyId: tenantId, isActive: true });
   const statusCounts = {};
   for (const a of agents) {
     statusCounts[a.presence || "offline"] =
@@ -460,6 +448,64 @@ exports.getCapacityStats = async (ctx) => {
     overloaded,
     agentCount: caps.length,
   };
+};
+
+/**
+ * Per-agent capacity as a flat list. The UI renders the Capacity Dashboard,
+ * Agent Capacity and Group Capacity screens from a list endpoint, and the only
+ * existing capacity reads were the per-agent GET and the aggregate stats, so
+ * without this the screens had nothing to render.
+ */
+exports.listCapacity = async (ctx) => {
+  const tenantId = requireTenant(ctx);
+  const caps = await AgentCapacity.find({ tenantId });
+  const agents = await Agent.find({ companyId: tenantId, isActive: true });
+  const byAgent = new Map(agents.map((a) => [String(a._id || a.id), a]));
+  return caps.map((cap) => {
+    const agent = byAgent.get(String(cap.agentId));
+    return {
+      id: cap._id || cap.id,
+      agentId: cap.agentId,
+      agentName: agent ? agent.name : null,
+      teamId: agent ? agent.teamId : null,
+      maxCapacity: cap.maxCapacity,
+      currentLoad: cap.currentLoad,
+      isOverloaded: cap.currentLoad > cap.maxCapacity,
+      utilizationPercent:
+        cap.maxCapacity > 0
+          ? Math.round((cap.currentLoad / cap.maxCapacity) * 100)
+          : 0,
+    };
+  });
+};
+
+/**
+ * Current presence for every active agent, as a flat list. Mirrors
+ * listCapacity so the Availability screens have a list-shaped source.
+ */
+exports.listPresence = async (ctx) => {
+  const tenantId = requireTenant(ctx);
+  const agents = await Agent.find({ companyId: tenantId, isActive: true });
+  const presence = await AgentPresence.find({ tenantId });
+  const latest = new Map();
+  for (const entry of presence) {
+    const key = String(entry.agentId);
+    const seen = latest.get(key);
+    if (!seen || new Date(entry.changedAt || 0) > new Date(seen.changedAt || 0)) {
+      latest.set(key, entry);
+    }
+  }
+  return agents.map((agent) => {
+    const entry = latest.get(String(agent._id || agent.id));
+    return {
+      id: String(agent._id || agent.id),
+      agentId: String(agent._id || agent.id),
+      agentName: agent.name,
+      teamId: agent.teamId || null,
+      presence: entry ? entry.status : agent.presence || "offline",
+      changedAt: entry ? entry.changedAt : null,
+    };
+  });
 };
 
 exports.updateCapacity = async (ctx, agentId, data) => {
@@ -653,7 +699,7 @@ exports.evaluateRoutingRules = async (ctx, ticket) => {
 exports.findBestAgent = async (ctx, options = {}) => {
   const tenantId = requireTenant(ctx);
   const { skills = [], department, group, strategy = "round_robin" } = options;
-  const agentFilter = { status: "active" };
+  const agentFilter = { companyId: tenantId, isActive: true };
   if (department) agentFilter.departments = department;
   if (group) agentFilter.teams = group;
   const agents = await Agent.find(agentFilter);
@@ -756,10 +802,12 @@ exports.getDashboard = async (ctx) => {
   const [queues, rules, routingRules, skills, agents, caps] = await Promise.all(
     [
       Queue.find({ tenantId, isDeleted: false }),
-      AssignmentRule.find({ tenantId, isDeleted: false }),
-      RoutingRule.find({ tenantId, isDeleted: false }),
+      // assignment_rules and routing_rules have no is_deleted column (they use
+      // is_active), so filtering on it made the dashboard throw.
+      AssignmentRule.find({ tenantId }),
+      RoutingRule.find({ tenantId }),
       Skill.find({ tenantId, isDeleted: false }),
-      Agent.find({ tenantId, status: "active" }),
+      Agent.find({ companyId: tenantId, isActive: true }),
       AgentCapacity.find({ tenantId }),
     ],
   );

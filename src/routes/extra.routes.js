@@ -14,9 +14,8 @@ const actorId = (req) => req.user?._id || req.agent?._id || null;
 router.get(
   "/change-calendar",
   asyncHandler(async (req, res) => {
-    const mongoose = require("mongoose");
-    const Change = mongoose.model("Change");
-    const BlackoutWindow = mongoose.model("BlackoutWindow");
+    const Change = require("../models/helpdesk/incidents/Change");
+    const BlackoutWindow = require("../models/helpdesk/incidents/BlackoutWindow");
     const q = { company: tenantOf(req) };
     const [changes, blackouts] = await Promise.all([
       Change.find({ ...q, windowStart: { $ne: null }, windowEnd: { $ne: null } })
@@ -49,8 +48,7 @@ router.get(
   "/templates",
   asyncHandler(async (req, res) => {
     const tickets = require("../models/TicketTemplate");
-    const models = require("mongoose");
-    const TicketTemplate = models.model("TicketTemplate") || tickets;
+    const TicketTemplate = tickets;
     const list = await TicketTemplate.find({ company: tenantOf(req) }).sort({ name: 1 });
     res.json(list);
   }),
@@ -59,8 +57,7 @@ router.get(
 router.post(
   "/templates",
   asyncHandler(async (req, res) => {
-    const models = require("mongoose");
-    const TicketTemplate = models.model("TicketTemplate") || require("../models/TicketTemplate");
+    const TicketTemplate = require("../models/TicketTemplate");
     const doc = await TicketTemplate.create({
       company: tenantOf(req),
       name: req.body.name,
@@ -92,8 +89,7 @@ const normPir = (p) => ({
 router.get(
   "/pir",
   asyncHandler(async (req, res) => {
-    const models = require("mongoose");
-    const Pir = models.model("Pir") || require("../models/Pir");
+    const Pir = require("../models/Pir");
     const pirs = await Pir.find({ company: tenantOf(req) })
       .populate("change", "_id title")
       .sort({ createdAt: -1 });
@@ -104,8 +100,7 @@ router.get(
 router.post(
   "/pir",
   asyncHandler(async (req, res) => {
-    const models = require("mongoose");
-    const Pir = models.model("Pir") || require("../models/Pir");
+    const Pir = require("../models/Pir");
     const doc = await Pir.create({
       company: tenantOf(req),
       change: req.body.changeId || null,
@@ -124,8 +119,7 @@ router.post(
 router.put(
   "/pir/:id",
   asyncHandler(async (req, res) => {
-    const models = require("mongoose");
-    const Pir = models.model("Pir") || require("../models/Pir");
+    const Pir = require("../models/Pir");
     const update = { $set: {} };
     const m = update.$set;
     if (req.body.changeId !== undefined) m.change = req.body.changeId;
@@ -169,7 +163,7 @@ const normOutage = (o) => ({
 router.get(
   "/outages",
   asyncHandler(async (req, res) => {
-    const Outage = require("mongoose").model("Outage");
+    const Outage = require("../models/outage/Outage");
     const list = await Outage.find({
       tenantId: tenantScope(req),
       isDeleted: { $ne: true },
@@ -181,7 +175,7 @@ router.get(
 router.post(
   "/outages",
   asyncHandler(async (req, res) => {
-    const Outage = require("mongoose").model("Outage");
+    const Outage = require("../models/outage/Outage");
     const doc = await Outage.create({
       tenantId: tenantScope(req),
       number: `OUT-${Date.now()}`,
@@ -201,7 +195,7 @@ router.post(
 router.post(
   "/outages/:id/timeline",
   asyncHandler(async (req, res) => {
-    const Outage = require("mongoose").model("Outage");
+    const Outage = require("../models/outage/Outage");
     const entry = {
       status: req.body.status || "investigating",
       message: req.body.message || "",
@@ -227,7 +221,7 @@ router.post(
 router.put(
   "/outages/:id",
   asyncHandler(async (req, res) => {
-    const Outage = require("mongoose").model("Outage");
+    const Outage = require("../models/outage/Outage");
     const set = { status: req.body.status || "investigating" };
     if (req.body.status === "resolved") set.actualRestoration = req.body.resolvedAt || new Date();
     if (req.body.rootCause !== undefined) set.rootCause = req.body.rootCause;

@@ -3,7 +3,6 @@
  * improvement opportunities, initiatives, tasks, goals, benefits, costs,
  * baselines, targets, and continuous improvement lifecycle.
  */
-const mongoose = require('mongoose');
 const numberingService = require('./numbering.service');
 const auditEventService = require('./auditEventService');
 const { emitEvent } = require('../realtime/socketManager');
@@ -100,11 +99,11 @@ exports.updateOpportunity = async (ctx, opportunityId, data, actor) => {
   return opp;
 };
 
-exports.transitionOpportunity = async (ctx, opportunityId, targetStatus, actor) => {
+exports.transitionOpportunity = async (ctx, opportunityId, targetStatus, actor, data = {}) => {
   const tenantId = requireTenant(ctx);
   const opp = await ImprovementOpportunity.findOne({ _id: opportunityId, tenantId, isDeleted: false });
   if (!opp) throw Object.assign(new Error('Improvement opportunity not found'), { statusCode: 404 });
-  if (!canTransition(opp.status, targetStatus, { new: ['qualified', 'rejected', 'on_hold'], qualified: ['approved', 'rejected', 'on_hold'], approved: ['on_hold', 'converted', 'implemented'], on_hold: ['qualified', 'approved', 'rejected'], rejected: [], converted: ['implemented'], implemented: [] })) {
+  if (!canTransition(opp.status, targetStatus, { identified: ['qualified', 'rejected', 'on_hold'], new: ['qualified', 'rejected', 'on_hold'], qualified: ['approved', 'rejected', 'on_hold'], approved: ['on_hold', 'converted', 'implemented'], on_hold: ['qualified', 'approved', 'rejected'], rejected: [], converted: ['implemented'], implemented: [] })) {
     throw Object.assign(new Error(`Invalid transition from ${opp.status} to ${targetStatus}`), { statusCode: 422 });
   }
   const oldStatus = opp.status;
@@ -180,6 +179,7 @@ exports.transitionInitiative = async (ctx, initiativeId, targetStatus, actor) =>
   const init = await ImprovementInitiative.findOne({ _id: initiativeId, tenantId, isDeleted: false });
   if (!init) throw Object.assign(new Error('Improvement initiative not found'), { statusCode: 404 });
   const allowed = {
+    proposed: ['approved', 'cancelled', 'deferred'],
     planned: ['approved', 'cancelled', 'deferred'],
     approved: ['in_progress', 'planned', 'cancelled', 'deferred'],
     in_progress: ['review', 'on_hold', 'completed', 'cancelled'],

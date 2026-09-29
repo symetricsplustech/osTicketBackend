@@ -276,7 +276,7 @@ const executeAction = async (action, ctx) => {
       break;
     case "create_task":
       if (t) {
-        const Task = require("../models/Task");
+        const Task = require("../models/core/Task");
         await Task.create({
           ticket: t._id,
           company: ctx.company,

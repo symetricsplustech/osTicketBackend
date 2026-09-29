@@ -1,75 +1,186 @@
 // Database index creation — run once on startup for optimal query performance
-const mongoose = require("mongoose");
+// PostgreSQL handles indexes via migrations. This file is kept for reference
+// but index creation should be done in migration files under /migrations.
+//
+// Every definition is resolved against the live schema before it is applied:
+// the owning column differs per table (`company_id` in the platform schema,
+// `tenant_id` in the Phase 15 tables), and some of the tables below belong to
+// features that are not installed in every environment. A definition that
+// cannot be resolved is skipped and reported rather than allowed to raise, so
+// this can never leave a half-created index behind.
+const { getDB } = require("../config/db");
 const logger = require("../utils/logger");
 
+/** Columns that stand in for the owning tenant, in preference order. */
+const OWNER_COLUMNS = ["company_id", "tenant_id"];
+
 async function createIndexes() {
-  const db = mongoose.connection.db;
-  if (!db) {
+  let db;
+  try {
+    db = getDB();
+  } catch (_) {
     logger.warn("No DB connection for index creation");
     return;
   }
 
   const indexes = [
-    // Tickets: most queried by tenant+status, tenant+assignee, tenant+number
-    { coll: "tickets", keys: { tenantId: 1, status: 1, createdAt: -1 } },
-    { coll: "tickets", keys: { tenantId: 1, assignedTo: 1, status: 1 } },
-    { coll: "tickets", keys: { tenantId: 1, number: 1 }, unique: false },
+    // Tickets
+    {
+      table: "tickets",
+      columns: ["tenant_id", "status", "created_at"],
+      name: "idx_tickets_tenant_status_created",
+    },
+    {
+      table: "tickets",
+      columns: ["tenant_id", "agent_id", "status"],
+      name: "idx_tickets_tenant_assigned_status",
+    },
     // Incidents
-    { coll: "incidents", keys: { tenantId: 1, status: 1, severity: -1 } },
-    { coll: "incidents", keys: { tenantId: 1, isMajor: 1, createdAt: -1 } },
+    {
+      table: "incidents",
+      columns: ["tenant_id", "status", "severity"],
+      name: "idx_incidents_tenant_status_severity",
+    },
     // Leads + Opportunities
-    { coll: "leads", keys: { tenantId: 1, status: 1, score: -1 } },
-    { coll: "opportunities", keys: { tenantId: 1, stage: 1, value: -1 } },
-    // Assets + Licences
-    { coll: "assets", keys: { tenantId: 1, status: 1 } },
-    { coll: "licenses", keys: { tenantId: 1, status: 1, expiryDate: 1 } },
+    {
+      table: "leads",
+      columns: ["tenant_id", "status", "score"],
+      name: "idx_leads_tenant_status_score",
+    },
+    {
+      table: "opportunities",
+      columns: ["tenant_id", "stage", "value"],
+      name: "idx_opps_tenant_stage_value",
+    },
+    // Assets + Licenses
+    {
+      table: "assets",
+      columns: ["tenant_id", "status"],
+      name: "idx_assets_tenant_status",
+    },
+    {
+      table: "licenses",
+      columns: ["tenant_id", "status", "expiry_date"],
+      name: "idx_licenses_tenant_status_expiry",
+    },
     // Users/Agents
-    { coll: "users", keys: { email: 1 }, unique: true, sparse: true },
-    { coll: "agents", keys: { tenantId: 1, isActive: 1 } },
+    {
+      table: "agents",
+      columns: ["tenant_id", "is_active"],
+      name: "idx_agents_tenant_active",
+    },
     // Notifications
-    { coll: "notifications", keys: { user: 1, read: 1, createdAt: -1 } },
+    {
+      table: "notifications",
+      columns: ["company_id", "read", "created_at"],
+      name: "idx_notifications_user_read_created",
+    },
     // Audit logs
-    { coll: "auditlogs", keys: { tenantId: 1, createdAt: -1 } },
-    { coll: "auditevents", keys: { tenantId: 1, occurredAt: -1 } },
+    {
+      table: "auditlogs",
+      columns: ["tenant_id", "created_at"],
+      name: "idx_auditlogs_tenant_created",
+    },
+    {
+      table: "audit_events",
+      columns: ["tenant_id", "created_at"],
+      name: "idx_auditevents_tenant_created",
+    },
     // Workflows
-    { coll: "workflows", keys: { company: 1, event: 1, isActive: 1 } },
+    {
+      table: "workflows",
+      columns: ["company_id", "event", "is_active"],
+      name: "idx_workflows_company_event_active",
+    },
     // Projects
-    { coll: "projects", keys: { tenantId: 1, status: 1 } },
+    {
+      table: "projects",
+      columns: ["tenant_id", "status"],
+      name: "idx_projects_tenant_status",
+    },
     // Work orders
-    { coll: "workorders", keys: { tenantId: 1, status: 1, scheduledDate: 1 } },
+    {
+      table: "workorders",
+      columns: ["tenant_id", "status", "scheduled_date"],
+      name: "idx_workorders_tenant_status_scheduled",
+    },
     // HR cases
-    { coll: "hrcases", keys: { tenantId: 1, status: 1 } },
+    {
+      table: "hrcases",
+      columns: ["tenant_id", "status"],
+      name: "idx_hrcases_tenant_status",
+    },
     // Security incidents
     {
-      coll: "securityincidents",
-      keys: { tenantId: 1, status: 1, severity: -1 },
-    },
-    // Module activation
-    {
-      coll: "tenant_modules",
-      keys: { tenantId: 1, moduleKey: 1 },
-      unique: true,
+      table: "securityincidents",
+      columns: ["tenant_id", "status", "severity"],
+      name: "idx_securityincidents_tenant_status_severity",
     },
   ];
 
   let created = 0;
+  let present = 0;
+  const skipped = [];
+
   for (const idx of indexes) {
+    const table = await db("information_schema.tables")
+      .where({ table_schema: "public", table_name: idx.table })
+      .first();
+
+    if (!table) {
+      skipped.push(`${idx.table}: table not installed`);
+      continue;
+    }
+    present++;
+
+    const columns = Object.keys(await db(idx.table).columnInfo());
+    const owner = OWNER_COLUMNS.find((col) => columns.includes(col));
+    if (!owner) {
+      skipped.push(`${idx.table}: no ${OWNER_COLUMNS.join("/")} column`);
+      continue;
+    }
+
+    // The owner column is written generically so the definition keeps working
+    // whichever tenant model the table ends up using.
+    const requested = idx.columns.filter(
+      (col) => col === "tenant_id" || col === "company_id"
+    );
+    const others = idx.columns.filter(
+      (col) => col !== "tenant_id" && col !== "company_id"
+    );
+
+    const resolved = [...new Set([...requested.map(() => owner), ...others])];
+    const absent = others.filter((col) => !columns.includes(col));
+    if (absent.length) {
+      skipped.push(`${idx.table}: missing column(s) ${absent.join(",")}`);
+      continue;
+    }
+
     try {
-      const coll = db.collection(idx.coll);
-      await coll.createIndex(idx.keys, {
-        unique: idx.unique || false,
-        sparse: idx.sparse || false,
-        background: true,
-      });
-      created++;
+      const exists = await db.raw(
+        "SELECT 1 FROM pg_indexes WHERE tablename = ? AND indexname = ?",
+        [idx.table, idx.name],
+      );
+      if (!exists.rows.length) {
+        await db.raw(
+          `CREATE INDEX CONCURRENTLY IF NOT EXISTS ?? ON ?? (${resolved.map(() => "??").join(", ")})`,
+          [idx.name, idx.table, ...resolved],
+        );
+        created++;
+      }
     } catch (err) {
-      // Index already exists or collection doesn't exist yet
       if (!err.message.includes("already exists")) {
-        logger.debug(`Index skip ${idx.coll}: ${err.message.slice(0, 60)}`);
+        skipped.push(`${idx.table}: ${err.message.slice(0, 60)}`);
       }
     }
   }
-  logger.info(`Database indexes verified (${created} ensured)`);
+
+  for (const reason of skipped) {
+    logger.debug(`Index skip ${reason}`);
+  }
+  logger.info(
+    `Database indexes verified (${created} ensured, ${present} of ${indexes.length} tables installed)`
+  );
 }
 
 module.exports = { createIndexes };

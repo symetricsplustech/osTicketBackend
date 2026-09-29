@@ -1,6 +1,6 @@
 const Ticket = require("../../../models/helpdesk/tickets/Ticket");
 const TicketThread = require("../../../models/helpdesk/tickets/TicketThread");
-const Task = require("../../../models/Task");
+const Task = require("../../../models/core/Task");
 const User = require("../../../models/User");
 const Agent = require("../../../models/Agent");
 const Team = require("../../../models/Team");
@@ -316,24 +316,27 @@ exports.getTicket = asyncHandler(async (req, res) => {
     .populate("assignedTo", "name")
     .populate("createdBy", "name");
   const comp = req.companyId ? { company: req.companyId } : {};
-  const canned = await CannedResponse.find({ status: "active", ...comp }).sort({
-    title: 1,
+  const canned = await CannedResponse.find({
+    isActive: true,
+    tenantId: req.companyId,
+  }).sort({
+    name: 1,
   });
   const agents = await Agent.find({ isActive: true, ...comp })
     .select("name email")
     .sort({ name: 1 });
-  const teams = await Team.find({ status: "active", ...comp })
+  const teams = await Team.find({ isActive: true, ...comp })
     .select("name")
     .sort({ name: 1 });
-  const depts = await Department.find({ status: "active", ...comp })
+  const depts = await Department.find({ isActive: true, ...comp })
     .select("name")
     .sort({ name: 1 });
   const topics = await require("../../../models/HelpTopic")
-    .find({ status: "active", ...comp })
-    .select("topic")
-    .sort({ topic: 1 });
+    .find({ isActive: true, ...comp })
+    .select("name")
+    .sort({ name: 1 });
   const statuses = await TicketStatus.find({ isActive: true })
-    .select("name key color isDefault sortOrder")
+    .select("name color isDefault sortOrder")
     .sort({ sortOrder: 1 });
   res.json({
     success: true,

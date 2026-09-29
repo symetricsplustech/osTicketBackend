@@ -10,6 +10,21 @@ const errorHandler = (err, req, res, next) => {
 
   if (err instanceof ApiError) {
     error = err;
+  } else if (err.code === "22P02" || /invalid input syntax for type uuid/i.test(err.message || "")) {
+    // PostgreSQL invalid UUID (e.g. old Mongo ObjectId token like
+    // "6a92f166dc48b8a5932d5650" hitting a uuid column). Never surface as 500;
+    // treat as an expired/invalid session on auth paths, otherwise 400.
+    const isAuthPath = /\/auth|\/login|\/me|\/modules|\/notifications|\/platform\/overview|\/search/i.test(
+      req.originalUrl || "",
+    );
+    // Log at warn not error to avoid noise from stale frontend tokens
+    logger.warn(`Invalid UUID on ${req.method} ${req.originalUrl}: ${err.message}`);
+    error = new ApiError(
+      isAuthPath ? 401 : 400,
+      isAuthPath
+        ? "Session expired, please login again"
+        : "Invalid identifier format",
+    );
   } else if (err.name === "ValidationError") {
     const messages = Object.values(err.errors).map((e) => e.message);
     error = new ApiError(400, messages.join(", "));
