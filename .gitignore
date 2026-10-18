@@ -10,3 +10,5 @@ uploads/
 .vercel
 .env*
 atlas-credentials*.env
+dist/
+storage/

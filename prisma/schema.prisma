@@ -1,0 +1,3687 @@
+// ---------------------------------------------------------------------------
+// ITSM SaaS Platform — canonical database schema (PostgreSQL)
+// ---------------------------------------------------------------------------
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ===========================================================================
+// Enums
+// ===========================================================================
+
+enum UserType {
+  PLATFORM_STAFF
+  TENANT_USER
+}
+
+enum UserStatus {
+  INVITED
+  ACTIVE
+  SUSPENDED
+  DEACTIVATED
+}
+
+enum MfaFactorType {
+  TOTP
+}
+
+enum TenantStatus {
+  PROVISIONING
+  ACTIVE
+  SUSPENDED
+  ARCHIVED
+  FAILED
+}
+
+enum DomainType {
+  CUSTOM
+  SUBDOMAIN
+}
+
+enum DomainStatus {
+  PENDING_VERIFICATION
+  VERIFIED
+  ACTIVE
+  DISABLED
+  FAILED
+}
+
+enum CertificateStatus {
+  NONE
+  PENDING
+  ISSUED
+  EXPIRED
+  FAILED
+}
+
+enum ProvisioningStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  COMPLETED
+  FAILED
+}
+
+enum AccessPolicySubjectType {
+  USER
+  ROLE
+}
+
+enum ApprovalRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+  EXPIRED
+}
+
+enum ApprovalDecisionType {
+  APPROVED
+  REJECTED
+}
+
+enum CatalogStatus {
+  DRAFT
+  ENABLED
+  DISABLED
+}
+
+enum TemplateStatus {
+  DRAFT
+  PUBLISHED
+  RETIRED
+}
+
+enum WorkflowRunStatus {
+  RUNNING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+enum ProviderStatus {
+  UNVERIFIED
+  ACTIVE
+  DISABLED
+  ERROR
+}
+
+enum IntegrationStatus {
+  UNCONFIGURED
+  ENABLED
+  DISABLED
+  ERROR
+}
+
+enum DeliveryStatus {
+  QUEUED
+  SENT
+  FAILED
+  BOUNCED
+  SUPPRESSED
+}
+
+enum WebhookDeliveryStatus {
+  PENDING
+  SUCCESS
+  FAILED
+}
+
+enum SupportTicketStatus {
+  OPEN
+  IN_PROGRESS
+  PENDING
+  RESOLVED
+  CLOSED
+  REOPENED
+}
+
+enum SupportTicketPriority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+}
+
+enum JobStatus {
+  QUEUED
+  RUNNING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+enum ReportJobKind {
+  REPORT
+  EXPORT
+}
+
+enum AuditOutcome {
+  SUCCESS
+  FAILURE
+  DENIED
+}
+
+enum LoginOutcome {
+  SUCCESS
+  FAILURE
+  MFA_REQUIRED
+  MFA_FAILED
+  LOCKED
+}
+
+enum SecuritySeverity {
+  INFO
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum RetentionAction {
+  DELETE
+  ARCHIVE
+}
+
+// ===========================================================================
+// Customer management (Tenant / Organization Admin)
+// ===========================================================================
+
+enum CustomerStatus {
+  ACTIVE
+  INACTIVE
+  PROSPECT
+}
+
+enum CustomerType {
+  COMPANY
+  INDIVIDUAL
+}
+
+enum CustomerContactRole {
+  PRIMARY
+  TECHNICAL
+  BILLING
+  AUTHORIZED
+}
+
+enum CustomerPortalStatus {
+  NONE
+  INVITED
+  ACTIVE
+  REVOKED
+}
+
+// ===========================================================================
+// Tenant administration (Organization Admin)
+// ===========================================================================
+
+enum PermissionScope {
+  PLATFORM
+  TENANT
+}
+
+enum TenantRoleStatus {
+  ACTIVE
+  ARCHIVED
+}
+
+enum InvitationStatus {
+  PENDING
+  ACCEPTED
+  EXPIRED
+  REVOKED
+}
+
+// ===========================================================================
+// Identity
+// ===========================================================================
+
+model User {
+  id                  String     @id @default(cuid())
+  email               String     @unique
+  passwordHash        String?
+  firstName           String
+  lastName            String
+  displayName         String?
+  phone               String?
+  avatarUrl           String?
+  jobTitle            String?
+  timezone            String     @default("UTC")
+  locale              String     @default("en-US")
+  userType            UserType   @default(PLATFORM_STAFF)
+  status              UserStatus @default(INVITED)
+  emailVerifiedAt     DateTime?
+  lastLoginAt         DateTime?
+  failedLoginAttempts Int        @default(0)
+  lockedUntil         DateTime?
+  mfaEnabled          Boolean    @default(false)
+  invitationTokenHash String?
+  invitationExpiresAt DateTime?
+  metadata            Json?
+  createdById         String?
+  createdAt           DateTime   @default(now())
+  updatedAt           DateTime   @updatedAt
+  deletedAt           DateTime?
+
+  createdBy    User?  @relation("UserCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  createdUsers User[] @relation("UserCreatedBy")
+
+  sessions                       Session[]
+  mfaFactors                     MfaFactor[]
+  recoveryCodes                  MfaRecoveryCode[]
+  passwordResetTokens            PasswordResetToken[]
+  staffRoleAssignments           StaffRoleAssignment[]    @relation("StaffRoleUser")
+  rolesAssigned                  StaffRoleAssignment[]    @relation("StaffRoleAssigner")
+  memberships                    TenantMembership[]
+  managedDepartments             Department[]             @relation("DepartmentManager")
+  ledTeams                       Team[]                   @relation("TeamLead")
+  teamMemberships                TeamMember[]
+  accessPolicyAssignments        AccessPolicyAssignment[]
+  approvalRequests               ApprovalRequest[]        @relation("ApprovalRequester")
+  approvalDecisions              ApprovalDecision[]
+  auditEvents                    AuditEvent[]
+  loginEvents                    LoginEvent[]
+  securityEvents                 SecurityEvent[]
+  supportTicketsCreated          SupportTicket[]          @relation("SupportTicketCreator")
+  supportTicketsAssigned         SupportTicket[]          @relation("SupportTicketAssignee")
+  supportReplies                 SupportReply[]
+  supportAssignments             SupportAssignment[]      @relation("SupportAssignmentTarget")
+  supportAssignmentsMade         SupportAssignment[]      @relation("SupportAssignmentActor")
+  apiKeys                        ApiKey[]
+  integrationsCreated            Integration[]            @relation("IntegrationCreator")
+  webhooksCreated                Webhook[]                @relation("WebhookCreator")
+  emailProviders                 EmailProvider[]
+  reportJobs                     ReportJob[]
+  backgroundJobs                 BackgroundJob[]
+  impersonationRequests          ImpersonationSession[]   @relation("ImpersonationRequester")
+  incidentsCalled                Incident[]               @relation("IncidentCaller")
+  incidentsAssigned              Incident[]               @relation("IncidentAssignee")
+  incidentCommentsAuthored       IncidentComment[]        @relation("IncidentCommentAuthor")
+  problemsAssigned               Problem[]                @relation("ProblemAssignee")
+  problemCommentsAuthored        ProblemComment[]         @relation("ProblemCommentAuthor")
+  changesAssigned                Change[]                 @relation("ChangeAssignee")
+  changesRequested               Change[]                 @relation("ChangeRequester")
+  changeCommentsAuthored         ChangeComment[]          @relation("ChangeCommentAuthor")
+  serviceRequestsAssigned        ServiceRequest[]         @relation("ServiceRequestAssignee")
+  serviceRequestsRequestedFor    ServiceRequest[]         @relation("ServiceRequestRequestedFor")
+  serviceRequestCommentsAuthored ServiceRequestComment[]  @relation("ServiceRequestCommentAuthor")
+  catalogItemVersionsPublished   CatalogItemVersion[]     @relation("CatalogItemVersionPublisher")
+
+  @@index([userType, status])
+  @@index([email])
+  @@map("users")
+}
+
+model Session {
+  id               String    @id @default(cuid())
+  userId           String
+  refreshTokenHash String
+  userAgent        String?
+  ipAddress        String?
+  activeTenantId   String?
+  mfaVerifiedAt    DateTime?
+  lastUsedAt       DateTime  @default(now())
+  expiresAt        DateTime
+  revokedAt        DateTime?
+  revokedReason    String?
+  createdAt        DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, revokedAt])
+  @@index([refreshTokenHash])
+  @@map("sessions")
+}
+
+model MfaFactor {
+  id         String        @id @default(cuid())
+  userId     String
+  type       MfaFactorType @default(TOTP)
+  label      String?
+  secretEnc  String
+  verifiedAt DateTime?
+  lastUsedAt DateTime?
+  createdAt  DateTime      @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, verifiedAt])
+  @@map("mfa_factors")
+}
+
+model MfaRecoveryCode {
+  id        String    @id @default(cuid())
+  userId    String
+  codeHash  String
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("mfa_recovery_codes")
+}
+
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  ipAddress String?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("password_reset_tokens")
+}
+
+// ===========================================================================
+// Platform access control
+// ===========================================================================
+
+model Permission {
+  id          String          @id @default(cuid())
+  code        String          @unique
+  name        String
+  module      String
+  description String?
+  scope       PermissionScope @default(PLATFORM)
+  resource    String?
+  action      String?
+  isSystem    Boolean         @default(true)
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  rolePermissions       RolePermission[]
+  tenantRolePermissions TenantRolePermission[]
+
+  @@index([module])
+  @@index([scope, module])
+  @@map("permissions")
+}
+
+model PlatformRole {
+  id          String    @id @default(cuid())
+  key         String    @unique
+  name        String
+  description String?
+  isSystem    Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  permissions      RolePermission[]
+  staffAssignments StaffRoleAssignment[]
+
+  @@map("platform_roles")
+}
+
+model RolePermission {
+  id           String   @id @default(cuid())
+  roleId       String
+  permissionId String
+  createdAt    DateTime @default(now())
+
+  role       PlatformRole @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission   @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, permissionId])
+  @@map("role_permissions")
+}
+
+model StaffRoleAssignment {
+  id           String   @id @default(cuid())
+  userId       String
+  roleId       String
+  assignedById String?
+  assignedAt   DateTime @default(now())
+
+  user       User         @relation("StaffRoleUser", fields: [userId], references: [id], onDelete: Cascade)
+  role       PlatformRole @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  assignedBy User?        @relation("StaffRoleAssigner", fields: [assignedById], references: [id], onDelete: SetNull)
+
+  @@unique([userId, roleId])
+  @@map("staff_role_assignments")
+}
+
+model AccessPolicy {
+  id          String    @id @default(cuid())
+  name        String
+  description String?
+  policyType  String
+  rules       Json
+  priority    Int       @default(100)
+  isEnabled   Boolean   @default(true)
+  createdById String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  assignments AccessPolicyAssignment[]
+
+  @@index([policyType, isEnabled])
+  @@map("access_policies")
+}
+
+model AccessPolicyAssignment {
+  id          String                  @id @default(cuid())
+  policyId    String
+  subjectType AccessPolicySubjectType
+  subjectId   String
+  createdAt   DateTime                @default(now())
+
+  policy AccessPolicy @relation(fields: [policyId], references: [id], onDelete: Cascade)
+  user   User?        @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+
+  @@unique([policyId, subjectType, subjectId])
+  @@map("access_policy_assignments")
+}
+
+// ===========================================================================
+// Tenants
+// ===========================================================================
+
+model Tenant {
+  id                  String             @id @default(cuid())
+  name                String
+  slug                String             @unique
+  status              TenantStatus       @default(PROVISIONING)
+  primaryContactName  String?
+  primaryContactEmail String?
+  timezone            String             @default("UTC")
+  locale              String             @default("en-US")
+  industry            String?
+  website             String?
+  notes               String?
+  provisioningStatus  ProvisioningStatus @default(NOT_STARTED)
+  provisionAttempts   Int                @default(0)
+  provisionError      String?
+  provisionedAt       DateTime?
+  activatedAt         DateTime?
+  suspendedAt         DateTime?
+  suspendedReason     String?
+  archivedAt          DateTime?
+  archivedReason      String?
+  metadata            Json?
+  createdById         String?
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+  deletedAt           DateTime?
+
+  domains                    TenantDomain[]
+  settings                   TenantSetting[]
+  memberships                TenantMembership[]
+  roles                      TenantRole[]
+  userRoles                  TenantUserRole[]
+  invitations                Invitation[]
+  departments                Department[]
+  locations                  Location[]
+  costCenters                CostCenter[]
+  teams                      Team[]
+  teamMembers                TeamMember[]
+  provisionings              TenantProvisioning[]
+  serviceAssignments         TenantServiceAssignment[]
+  slaAssignments             TenantSlaAssignment[]
+  workflowAssignments        TenantWorkflowAssignment[]
+  itsmConfigurations         TenantItsmConfiguration[]
+  knowledgeSetting           KnowledgeTenantSetting?
+  cmdbConfiguration          TenantCmdbConfiguration?
+  impersonationSessions      ImpersonationSession[]
+  auditEvents                AuditEvent[]
+  securityEvents             SecurityEvent[]
+  supportTickets             SupportTicket[]
+  apiKeys                    ApiKey[]
+  reportJobs                 ReportJob[]
+  incidents                  Incident[]
+  incidentComments           IncidentComment[]
+  problems                   Problem[]
+  problemComments            ProblemComment[]
+  changes                    Change[]
+  changeComments             ChangeComment[]
+  serviceRequests            ServiceRequest[]
+  serviceRequestComments     ServiceRequestComment[]
+  catalogCategories          CatalogCategory[]
+  catalogItems               CatalogItem[]
+  catalogItemVersions        CatalogItemVersion[]
+  knowledgeArticles          KnowledgeArticle[]
+  knowledgeArticleCategories KnowledgeArticleCategory[]
+  knowledgeArticleComments   KnowledgeArticleComment[]
+  configurationItems         ConfigurationItem[]
+  ciRelationships            CiRelationship[]
+  assets                     Asset[]
+  assetMaintenances          AssetMaintenance[]
+  discoveryRuns              DiscoveryRun[]
+  discoveryResults           DiscoveryResult[]
+  onCallSchedules            OnCallSchedule[]
+  onCallShifts               OnCallShift[]
+  releases                   Release[]
+  knownErrors                KnownError[]
+  majorIncidents             MajorIncident[]
+  vendors                    Vendor[]
+  announcements              Announcement[]
+  customers                  Customer[]
+  customerContacts           CustomerContact[]
+  customerSites              CustomerSite[]
+  approvalPolicies           TenantApprovalPolicy[]
+  approvalRequests           TenantApprovalRequest[]
+  approvalDecisions          TenantApprovalDecision[]
+  slaPolicies                TenantSlaPolicy[]
+  slaEscalationRules         TenantSlaEscalationRule[]
+  businessCalendars          TenantBusinessCalendar[]
+  workflows                  TenantWorkflow[]
+  workflowVersions           TenantWorkflowVersion[]
+  workflowRuns               TenantWorkflowRun[]
+  automationRules            TenantAutomationRule[]
+  automationRuns             TenantAutomationRun[]
+  notificationTemplates      TenantNotificationTemplate[]
+  notificationRules          TenantNotificationRule[]
+  notificationLogs           TenantNotificationLog[]
+  operatingHours             TenantOperatingHours[]
+  serviceDeskQueues          TenantServiceDeskQueue[]
+  routingRules               TenantRoutingRule[]
+  tenantIntegrations         TenantIntegration[]
+  tenantIntegrationLogs      TenantIntegrationLog[]
+  tenantApiKeys              TenantApiKey[]
+  tenantApiKeyUsage          TenantApiKeyUsage[]
+  tenantWebhooks             TenantWebhook[]
+  tenantWebhookDeliveries    TenantWebhookDelivery[]
+  attachments                TenantAttachment[]
+  incidentCategories         TenantIncidentCategory[]
+  incidentPriorities         TenantIncidentPriority[]
+  resolutionCodes            TenantResolutionCode[]
+  problemCategories          TenantProblemCategory[]
+  rootCauseCategories        TenantRootCauseCategory[]
+  changeTypes                TenantChangeType[]
+  changeTemplates            TenantChangeTemplate[]
+  changeWindows              TenantChangeWindow[]
+  assetModels                TenantAssetModel[]
+  assetLicenses              TenantAssetLicense[]
+  customFields               TenantCustomField[]
+  delegations                TenantDelegation[]
+  accessReviews              TenantAccessReview[]
+  accessReviewItems          TenantAccessReviewItem[]
+  accessPolicies             TenantAccessPolicy[]
+  accessPolicyAssignments    TenantAccessPolicyAssignment[]
+  importJobs                 TenantImportJob[]
+
+  @@index([status])
+  @@index([createdAt])
+  @@map("tenants")
+}
+
+model TenantDomain {
+  id                String            @id @default(cuid())
+  tenantId          String
+  domain            String            @unique
+  type              DomainType        @default(CUSTOM)
+  status            DomainStatus      @default(PENDING_VERIFICATION)
+  verificationToken String?
+  verifiedAt        DateTime?
+  activatedAt       DateTime?
+  disabledAt        DateTime?
+  certificateStatus CertificateStatus @default(NONE)
+  lastCheckedAt     DateTime?
+  lastError         String?
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, status])
+  @@map("tenant_domains")
+}
+
+model TenantSetting {
+  id          String   @id @default(cuid())
+  tenantId    String
+  key         String
+  value       Json
+  updatedById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, key])
+  @@map("tenant_settings")
+}
+
+model TenantMembership {
+  id          String    @id @default(cuid())
+  tenantId    String
+  userId      String
+  roleKey     String    @default("member")
+  status      String    @default("ACTIVE")
+  invitedById String?
+  joinedAt    DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  tenant          Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  roleAssignments TenantUserRole[]
+
+  @@unique([tenantId, userId])
+  @@index([tenantId])
+  @@index([userId, status])
+  @@map("tenant_memberships")
+}
+
+// ---------------------------------------------------------------------------
+// Tenant (Organization Admin) role-based access control
+// ---------------------------------------------------------------------------
+
+model TenantRole {
+  id          String           @id @default(cuid())
+  tenantId    String
+  key         String
+  name        String
+  description String?
+  isSystem    Boolean          @default(false)
+  status      TenantRoleStatus @default(ACTIVE)
+  createdById String?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  deletedAt   DateTime?
+
+  tenant          Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  permissions     TenantRolePermission[]
+  userAssignments TenantUserRole[]
+
+  @@unique([tenantId, key])
+  @@index([tenantId, status])
+  @@map("tenant_roles")
+}
+
+model TenantRolePermission {
+  id           String   @id @default(cuid())
+  tenantRoleId String
+  permissionId String
+  createdAt    DateTime @default(now())
+
+  role       TenantRole @relation(fields: [tenantRoleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantRoleId, permissionId])
+  @@map("tenant_role_permissions")
+}
+
+model TenantUserRole {
+  id           String   @id @default(cuid())
+  tenantId     String
+  membershipId String
+  tenantRoleId String
+  assignedById String?
+  assignedAt   DateTime @default(now())
+
+  tenant     Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  membership TenantMembership @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+  role       TenantRole       @relation(fields: [tenantRoleId], references: [id], onDelete: Cascade)
+
+  @@unique([membershipId, tenantRoleId])
+  @@index([tenantId])
+  @@index([tenantRoleId])
+  @@map("tenant_user_roles")
+}
+
+model Invitation {
+  id          String           @id @default(cuid())
+  tenantId    String
+  email       String
+  roleKey     String?
+  tokenHash   String           @unique
+  status      InvitationStatus @default(PENDING)
+  invitedById String?
+  expiresAt   DateTime
+  acceptedAt  DateTime?
+  revokedAt   DateTime?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, email])
+  @@index([tenantId, status])
+  @@index([status, expiresAt])
+  @@map("invitations")
+}
+
+// ---------------------------------------------------------------------------
+// Organization structure: departments, locations, cost centers and teams
+// ---------------------------------------------------------------------------
+
+model Department {
+  id          String    @id @default(cuid())
+  tenantId    String
+  name        String
+  code        String?
+  description String?
+  parentId    String?
+  managerId   String?
+  status      String    @default("ACTIVE")
+  createdById String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  tenant    Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  parent    Department?  @relation("DepartmentHierarchy", fields: [parentId], references: [id], onDelete: SetNull)
+  children  Department[] @relation("DepartmentHierarchy")
+  manager   User?        @relation("DepartmentManager", fields: [managerId], references: [id], onDelete: SetNull)
+  teams     Team[]
+  incidents Incident[]
+
+  @@unique([tenantId, code])
+  @@index([tenantId, status])
+  @@index([tenantId, parentId])
+  @@map("departments")
+}
+
+model Location {
+  id           String    @id @default(cuid())
+  tenantId     String
+  name         String
+  code         String?
+  type         String    @default("OFFICE")
+  addressLine1 String?
+  addressLine2 String?
+  city         String?
+  state        String?
+  country      String?
+  postalCode   String?
+  timezone     String    @default("UTC")
+  phone        String?
+  status       String    @default("ACTIVE")
+  createdById  String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  deletedAt    DateTime?
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  incidents Incident[]
+
+  @@unique([tenantId, code])
+  @@index([tenantId, status])
+  @@map("locations")
+}
+
+model CostCenter {
+  id          String    @id @default(cuid())
+  tenantId    String
+  name        String
+  code        String?
+  description String?
+  status      String    @default("ACTIVE")
+  createdById String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, code])
+  @@index([tenantId, status])
+  @@map("cost_centers")
+}
+
+model Team {
+  id           String    @id @default(cuid())
+  tenantId     String
+  name         String
+  code         String?
+  description  String?
+  departmentId String?
+  leadId       String?
+  email        String?
+  status       String    @default("ACTIVE")
+  createdById  String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  deletedAt    DateTime?
+
+  tenant          Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  department      Department?      @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  lead            User?            @relation("TeamLead", fields: [leadId], references: [id], onDelete: SetNull)
+  members         TeamMember[]
+  incidents       Incident[]
+  problems        Problem[]
+  changes         Change[]
+  serviceRequests ServiceRequest[]
+  catalogItems    CatalogItem[]
+
+  @@unique([tenantId, code])
+  @@index([tenantId, status])
+  @@map("teams")
+}
+
+model TeamMember {
+  id        String   @id @default(cuid())
+  tenantId  String
+  teamId    String
+  userId    String
+  role      String   @default("MEMBER")
+  isLead    Boolean  @default(false)
+  joinedAt  DateTime @default(now())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  team   Team   @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([teamId, userId])
+  @@index([tenantId])
+  @@index([userId])
+  @@map("team_members")
+}
+
+model TenantProvisioning {
+  id          String             @id @default(cuid())
+  tenantId    String
+  status      ProvisioningStatus @default(NOT_STARTED)
+  steps       Json?
+  currentStep String?
+  error       String?
+  startedAt   DateTime?
+  completedAt DateTime?
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, status])
+  @@map("tenant_provisionings")
+}
+
+model ImpersonationSession {
+  id            String    @id @default(cuid())
+  tenantId      String
+  requestedById String
+  targetUserId  String?
+  reason        String
+  status        String    @default("REQUESTED")
+  startsAt      DateTime?
+  expiresAt     DateTime
+  endedAt       DateTime?
+  createdAt     DateTime  @default(now())
+
+  tenant      Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  requestedBy User   @relation("ImpersonationRequester", fields: [requestedById], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, status])
+  @@map("impersonation_sessions")
+}
+
+// ===========================================================================
+// Approvals
+// ===========================================================================
+
+model ApprovalPolicy {
+  id              String   @id @default(cuid())
+  name            String
+  description     String?
+  actionScope     String
+  conditions      Json?
+  approverRoleIds Json
+  minApprovals    Int      @default(1)
+  isEnabled       Boolean  @default(true)
+  createdById     String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  requests ApprovalRequest[]
+
+  @@index([actionScope, isEnabled])
+  @@map("approval_policies")
+}
+
+model ApprovalRequest {
+  id            String                @id @default(cuid())
+  policyId      String?
+  actionKey     String
+  resourceType  String
+  resourceId    String?
+  payload       Json?
+  reason        String?
+  requestedById String
+  status        ApprovalRequestStatus @default(PENDING)
+  expiresAt     DateTime?
+  createdAt     DateTime              @default(now())
+  updatedAt     DateTime              @updatedAt
+
+  policy      ApprovalPolicy?    @relation(fields: [policyId], references: [id], onDelete: SetNull)
+  requestedBy User               @relation("ApprovalRequester", fields: [requestedById], references: [id], onDelete: Cascade)
+  decisions   ApprovalDecision[]
+
+  @@index([status])
+  @@index([actionKey])
+  @@map("approval_requests")
+}
+
+model ApprovalDecision {
+  id         String               @id @default(cuid())
+  requestId  String
+  approverId String
+  decision   ApprovalDecisionType
+  reason     String?
+  decidedAt  DateTime             @default(now())
+
+  request  ApprovalRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  approver User            @relation(fields: [approverId], references: [id], onDelete: Cascade)
+
+  @@unique([requestId, approverId])
+  @@map("approval_decisions")
+}
+
+// ===========================================================================
+// Service management
+// ===========================================================================
+
+model ServiceCategory {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  parentId    String?
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  services ServiceDefinition[]
+  children ServiceCategory[]   @relation("ServiceCategoryParent")
+  parent   ServiceCategory?    @relation("ServiceCategoryParent", fields: [parentId], references: [id], onDelete: SetNull)
+
+  @@index([parentId])
+  @@map("service_categories")
+}
+
+model ServiceDefinition {
+  id          String        @id @default(cuid())
+  key         String        @unique
+  name        String
+  description String?
+  categoryId  String?
+  status      CatalogStatus @default(DRAFT)
+  icon        String?
+  owner       String?
+  metadata    Json?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  deletedAt   DateTime?
+
+  category          ServiceCategory?          @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  templates         ServiceTemplate[]
+  tenantAssignments TenantServiceAssignment[]
+
+  @@index([status])
+  @@map("service_definitions")
+}
+
+model ServiceTemplate {
+  id             String         @id @default(cuid())
+  key            String         @unique
+  name           String
+  description    String?
+  serviceId      String?
+  status         TemplateStatus @default(DRAFT)
+  currentVersion Int            @default(0)
+  definition     Json
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  deletedAt      DateTime?
+
+  service  ServiceDefinition?       @relation(fields: [serviceId], references: [id], onDelete: SetNull)
+  versions ServiceTemplateVersion[]
+
+  @@index([status])
+  @@map("service_templates")
+}
+
+model ServiceTemplateVersion {
+  id            String    @id @default(cuid())
+  templateId    String
+  version       Int
+  definition    Json
+  changelog     String?
+  publishedById String?
+  publishedAt   DateTime?
+  createdAt     DateTime  @default(now())
+
+  template ServiceTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  @@unique([templateId, version])
+  @@map("service_template_versions")
+}
+
+model TenantServiceAssignment {
+  id           String   @id @default(cuid())
+  tenantId     String
+  serviceId    String
+  isEnabled    Boolean  @default(true)
+  overrides    Json?
+  assignedById String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  tenant  Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  service ServiceDefinition @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, serviceId])
+  @@map("tenant_service_assignments")
+}
+
+// ===========================================================================
+// SLA management
+// ===========================================================================
+
+model SlaPolicy {
+  id            String        @id @default(cuid())
+  key           String        @unique
+  name          String
+  description   String?
+  status        CatalogStatus @default(DRAFT)
+  serviceLevels Json
+  settings      Json?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  deletedAt     DateTime?
+
+  escalationRules   EscalationRule[]
+  tenantAssignments TenantSlaAssignment[]
+
+  @@index([status])
+  @@map("sla_policies")
+}
+
+model BusinessCalendar {
+  id           String   @id @default(cuid())
+  name         String
+  timezone     String   @default("UTC")
+  workingHours Json
+  holidays     Json?
+  isDefault    Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@map("business_calendars")
+}
+
+model EscalationRule {
+  id               String   @id @default(cuid())
+  name             String
+  slaPolicyId      String?
+  trigger          String
+  thresholdMinutes Int
+  actions          Json
+  isEnabled        Boolean  @default(true)
+  sortOrder        Int      @default(0)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  slaPolicy SlaPolicy? @relation(fields: [slaPolicyId], references: [id], onDelete: Cascade)
+
+  @@index([slaPolicyId])
+  @@map("escalation_rules")
+}
+
+model TenantSlaAssignment {
+  id           String   @id @default(cuid())
+  tenantId     String
+  slaPolicyId  String
+  isActive     Boolean  @default(true)
+  assignedById String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  tenant    Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  slaPolicy SlaPolicy @relation(fields: [slaPolicyId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, slaPolicyId])
+  @@map("tenant_sla_assignments")
+}
+
+// ===========================================================================
+// Workflows
+// ===========================================================================
+
+model WorkflowTemplate {
+  id             String         @id @default(cuid())
+  key            String         @unique
+  name           String
+  description    String?
+  status         TemplateStatus @default(DRAFT)
+  currentVersion Int            @default(0)
+  definition     Json
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  deletedAt      DateTime?
+
+  versions          WorkflowVersion[]
+  runs              WorkflowRun[]
+  tenantAssignments TenantWorkflowAssignment[]
+
+  @@index([status])
+  @@map("workflow_templates")
+}
+
+model WorkflowVersion {
+  id            String    @id @default(cuid())
+  templateId    String
+  version       Int
+  definition    Json
+  validation    Json?
+  changelog     String?
+  publishedById String?
+  publishedAt   DateTime?
+  createdAt     DateTime  @default(now())
+
+  template WorkflowTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  @@unique([templateId, version])
+  @@map("workflow_versions")
+}
+
+model WorkflowRun {
+  id            String            @id @default(cuid())
+  templateId    String?
+  templateKey   String
+  version       Int?
+  tenantId      String?
+  resourceType  String
+  resourceId    String?
+  status        WorkflowRunStatus @default(RUNNING)
+  context       Json?
+  steps         Json?
+  error         String?
+  startedAt     DateTime          @default(now())
+  completedAt   DateTime?
+  cancelledById String?
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+
+  template WorkflowTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
+
+  @@index([status])
+  @@index([tenantId])
+  @@index([templateKey])
+  @@map("workflow_runs")
+}
+
+model TenantWorkflowAssignment {
+  id           String   @id @default(cuid())
+  tenantId     String
+  templateId   String
+  moduleKey    String   @default("global")
+  isActive     Boolean  @default(true)
+  assignedById String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  tenant   Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  template WorkflowTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, templateId, moduleKey])
+  @@map("tenant_workflow_assignments")
+}
+
+// ===========================================================================
+// Global ITSM configuration
+// ===========================================================================
+
+model ItsmModuleConfig {
+  id              String   @id @default(cuid())
+  moduleKey       String   @unique
+  name            String
+  description     String?
+  isEnabled       Boolean  @default(true)
+  defaultSettings Json
+  updatedById     String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@map("itsm_module_configs")
+}
+
+model PriorityDefinition {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  name      String
+  rank      Int
+  color     String?
+  isDefault Boolean  @default(false)
+  settings  Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([rank])
+  @@map("priority_definitions")
+}
+
+model StatusDefinition {
+  id        String   @id @default(cuid())
+  key       String
+  name      String
+  moduleKey String   @default("global")
+  category  String
+  color     String?
+  sortOrder Int      @default(0)
+  isDefault Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([moduleKey, key])
+  @@map("status_definitions")
+}
+
+model ClassificationCategory {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  moduleKey   String   @default("global")
+  parentId    String?
+  sortOrder   Int      @default(0)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  children  ClassificationCategory[] @relation("ClassificationParent")
+  parent    ClassificationCategory?  @relation("ClassificationParent", fields: [parentId], references: [id], onDelete: SetNull)
+  incidents Incident[]
+  problems  Problem[]
+  changes   Change[]
+
+  @@index([moduleKey])
+  @@map("classification_categories")
+}
+
+model NumberingRule {
+  id          String   @id @default(cuid())
+  moduleKey   String   @unique
+  prefix      String
+  suffix      String?
+  padding     Int      @default(5)
+  nextNumber  Int      @default(1)
+  resetPolicy String   @default("NEVER")
+  isActive    Boolean  @default(true)
+  updatedById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("numbering_rules")
+}
+
+model TenantItsmConfiguration {
+  id          String   @id @default(cuid())
+  tenantId    String
+  moduleKey   String
+  overrides   Json
+  updatedById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, moduleKey])
+  @@map("tenant_itsm_configurations")
+}
+
+// ===========================================================================
+// Knowledge management
+// ===========================================================================
+
+model KnowledgePolicy {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  settings    Json
+  isEnabled   Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("knowledge_policies")
+}
+
+model KnowledgeCategory {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  parentId    String?
+  sortOrder   Int      @default(0)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  children    KnowledgeCategory[]   @relation("KnowledgeCategoryParent")
+  parent      KnowledgeCategory?    @relation("KnowledgeCategoryParent", fields: [parentId], references: [id], onDelete: SetNull)
+  templates   KnowledgeTemplate[]
+  reviewRules KnowledgeReviewRule[]
+
+  @@map("knowledge_categories")
+}
+
+model KnowledgeTemplate {
+  id          String        @id @default(cuid())
+  key         String        @unique
+  name        String
+  description String?
+  categoryId  String?
+  body        String
+  fields      Json?
+  status      CatalogStatus @default(DRAFT)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  category KnowledgeCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+
+  @@map("knowledge_templates")
+}
+
+model KnowledgeReviewRule {
+  id               String   @id @default(cuid())
+  name             String
+  categoryId       String?
+  intervalDays     Int
+  notifyBeforeDays Int      @default(7)
+  action           String   @default("REVIEW")
+  isEnabled        Boolean  @default(true)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  category KnowledgeCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+
+  @@map("knowledge_review_rules")
+}
+
+model KnowledgeTenantSetting {
+  id          String   @id @default(cuid())
+  tenantId    String   @unique
+  settings    Json
+  updatedById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("knowledge_tenant_settings")
+}
+
+// ===========================================================================
+// CMDB & assets configuration
+// ===========================================================================
+
+model CiType {
+  id          String   @id @default(cuid())
+  key         String   @unique
+  name        String
+  description String?
+  icon        String?
+  fields      Json
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("ci_types")
+}
+
+model CiRelationshipType {
+  id            String   @id @default(cuid())
+  key           String   @unique
+  name          String
+  description   String?
+  sourceTypeKey String?
+  targetTypeKey String?
+  isDirectional Boolean  @default(true)
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@map("ci_relationship_types")
+}
+
+model AssetCategory {
+  id           String   @id @default(cuid())
+  key          String   @unique
+  name         String
+  description  String?
+  parentId     String?
+  depreciation String?
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  children AssetCategory[] @relation("AssetCategoryParent")
+  parent   AssetCategory?  @relation("AssetCategoryParent", fields: [parentId], references: [id], onDelete: SetNull)
+
+  @@map("asset_categories")
+}
+
+model DiscoveryProfile {
+  id             String   @id @default(cuid())
+  key            String   @unique
+  name           String
+  description    String?
+  mode           String   @default("AGENTLESS")
+  schedule       String?
+  credentialsRef String?
+  settings       Json?
+  isEnabled      Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@map("discovery_profiles")
+}
+
+model TenantCmdbConfiguration {
+  id          String   @id @default(cuid())
+  tenantId    String   @unique
+  settings    Json
+  updatedById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("tenant_cmdb_configurations")
+}
+
+// ===========================================================================
+// ITSM operational records (tenant-scoped)
+// ===========================================================================
+
+model Customer {
+  id           String         @id @default(cuid())
+  tenantId     String
+  name         String
+  code         String?
+  type         CustomerType   @default(COMPANY)
+  status       CustomerStatus @default(ACTIVE)
+  industry     String?
+  website      String?
+  phone        String?
+  email        String?
+  description  String?
+  addressLine1 String?
+  addressLine2 String?
+  city         String?
+  state        String?
+  postalCode   String?
+  country      String?
+  timezone     String?
+  slaPolicyId  String?
+  isDataCenter Boolean        @default(false)
+  metadata     Json?
+  createdById  String?
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+  deletedAt    DateTime?
+
+  tenant    Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  contacts  CustomerContact[]
+  sites     CustomerSite[]
+  incidents Incident[]
+
+  @@unique([tenantId, code])
+  @@index([tenantId, status])
+  @@index([tenantId, name])
+  @@map("customers")
+}
+
+model CustomerContact {
+  id                String               @id @default(cuid())
+  tenantId          String
+  customerId        String
+  firstName         String
+  lastName          String
+  email             String
+  phone             String?
+  jobTitle          String?
+  role              CustomerContactRole  @default(AUTHORIZED)
+  portalStatus      CustomerPortalStatus @default(NONE)
+  invitedAt         DateTime?
+  portalActivatedAt DateTime?
+  isPrimary         Boolean              @default(false)
+  notes             String?
+  createdById       String?
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+  deletedAt         DateTime?
+
+  tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@unique([customerId, email])
+  @@index([tenantId, customerId])
+  @@index([tenantId, portalStatus])
+  @@map("customer_contacts")
+}
+
+model CustomerSite {
+  id           String    @id @default(cuid())
+  tenantId     String
+  customerId   String
+  name         String
+  code         String?
+  siteType     String    @default("SITE")
+  isDataCenter Boolean   @default(false)
+  addressLine1 String?
+  addressLine2 String?
+  city         String?
+  state        String?
+  postalCode   String?
+  country      String?
+  timezone     String?
+  status       String    @default("ACTIVE")
+  notes        String?
+  createdById  String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  deletedAt    DateTime?
+
+  tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@unique([customerId, code])
+  @@index([tenantId, customerId])
+  @@map("customer_sites")
+}
+
+model Incident {
+  id              String    @id @default(cuid())
+  tenantId        String
+  number          String
+  title           String
+  description     String?
+  statusKey       String    @default("new")
+  priorityKey     String    @default("medium")
+  impact          String    @default("MEDIUM")
+  urgency         String    @default("MEDIUM")
+  categoryId      String?
+  source          String    @default("PORTAL")
+  channel         String?
+  callerId        String?
+  assigneeId      String?
+  teamId          String?
+  departmentId    String?
+  locationId      String?
+  customerId      String?
+  tags            String[]  @default([])
+  resolutionCode  String?
+  resolutionNotes String?
+  firstResponseAt DateTime?
+  resolvedAt      DateTime?
+  closedAt        DateTime?
+  dueAt           DateTime?
+  slaBreached     Boolean   @default(false)
+  reopenedCount   Int       @default(0)
+  metadata        Json?
+  createdById     String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  deletedAt       DateTime?
+
+  tenant     Tenant                  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  category   ClassificationCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  caller     User?                   @relation("IncidentCaller", fields: [callerId], references: [id], onDelete: SetNull)
+  assignee   User?                   @relation("IncidentAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+  team       Team?                   @relation(fields: [teamId], references: [id], onDelete: SetNull)
+  department Department?             @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  location   Location?               @relation(fields: [locationId], references: [id], onDelete: SetNull)
+  customer   Customer?               @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  comments   IncidentComment[]
+
+  @@unique([tenantId, number])
+  @@index([tenantId, statusKey])
+  @@index([tenantId, priorityKey])
+  @@index([tenantId, assigneeId])
+  @@index([tenantId, teamId])
+  @@index([tenantId, customerId])
+  @@map("incidents")
+}
+
+model IncidentComment {
+  id         String   @id @default(cuid())
+  tenantId   String
+  incidentId String
+  authorId   String?
+  body       String
+  isInternal Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  incident Incident @relation(fields: [incidentId], references: [id], onDelete: Cascade)
+  author   User?    @relation("IncidentCommentAuthor", fields: [authorId], references: [id], onDelete: SetNull)
+
+  @@index([incidentId])
+  @@map("incident_comments")
+}
+
+model Problem {
+  id              String    @id @default(cuid())
+  tenantId        String
+  number          String
+  title           String
+  description     String?
+  statusKey       String    @default("new")
+  priorityKey     String    @default("medium")
+  impact          String    @default("MEDIUM")
+  categoryId      String?
+  assigneeId      String?
+  teamId          String?
+  rootCause       String?
+  workaround      String?
+  resolutionNotes String?
+  isKnownError    Boolean   @default(false)
+  resolvedAt      DateTime?
+  closedAt        DateTime?
+  createdById     String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  deletedAt       DateTime?
+
+  tenant   Tenant                  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  category ClassificationCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  assignee User?                   @relation("ProblemAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+  team     Team?                   @relation(fields: [teamId], references: [id], onDelete: SetNull)
+  comments ProblemComment[]
+
+  @@unique([tenantId, number])
+  @@index([tenantId, statusKey])
+  @@index([tenantId, assigneeId])
+  @@map("problems")
+}
+
+model ProblemComment {
+  id         String   @id @default(cuid())
+  tenantId   String
+  problemId  String
+  authorId   String?
+  body       String
+  isInternal Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  tenant  Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  problem Problem @relation(fields: [problemId], references: [id], onDelete: Cascade)
+  author  User?   @relation("ProblemCommentAuthor", fields: [authorId], references: [id], onDelete: SetNull)
+
+  @@index([problemId])
+  @@map("problem_comments")
+}
+
+model Change {
+  id                 String    @id @default(cuid())
+  tenantId           String
+  number             String
+  title              String
+  description        String?
+  statusKey          String    @default("new")
+  priorityKey        String    @default("medium")
+  changeTypeKey      String    @default("normal")
+  riskKey            String    @default("medium")
+  impact             String    @default("MEDIUM")
+  categoryId         String?
+  assigneeId         String?
+  teamId             String?
+  requestedById      String?
+  implementationPlan String?
+  rollbackPlan       String?
+  testPlan           String?
+  approvalStatus     String    @default("PENDING")
+  plannedStartAt     DateTime?
+  plannedEndAt       DateTime?
+  actualStartAt      DateTime?
+  actualEndAt        DateTime?
+  closedAt           DateTime?
+  createdById        String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+  deletedAt          DateTime?
+
+  tenant      Tenant                  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  category    ClassificationCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  assignee    User?                   @relation("ChangeAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+  requestedBy User?                   @relation("ChangeRequester", fields: [requestedById], references: [id], onDelete: SetNull)
+  team        Team?                   @relation(fields: [teamId], references: [id], onDelete: SetNull)
+  comments    ChangeComment[]
+
+  @@unique([tenantId, number])
+  @@index([tenantId, statusKey])
+  @@index([tenantId, assigneeId])
+  @@map("changes")
+}
+
+model ChangeComment {
+  id         String   @id @default(cuid())
+  tenantId   String
+  changeId   String
+  authorId   String?
+  body       String
+  isInternal Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  change Change @relation(fields: [changeId], references: [id], onDelete: Cascade)
+  author User?  @relation("ChangeCommentAuthor", fields: [authorId], references: [id], onDelete: SetNull)
+
+  @@index([changeId])
+  @@map("change_comments")
+}
+
+model ServiceRequest {
+  id             String    @id @default(cuid())
+  tenantId       String
+  number         String
+  title          String
+  description    String?
+  statusKey      String    @default("new")
+  priorityKey    String    @default("medium")
+  catalogItemId  String?
+  requestedForId String?
+  assigneeId     String?
+  teamId         String?
+  approvalStatus String    @default("PENDING")
+  fulfilledAt    DateTime?
+  closedAt       DateTime?
+  createdById    String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  deletedAt      DateTime?
+
+  tenant       Tenant                  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  assignee     User?                   @relation("ServiceRequestAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+  requestedFor User?                   @relation("ServiceRequestRequestedFor", fields: [requestedForId], references: [id], onDelete: SetNull)
+  team         Team?                   @relation(fields: [teamId], references: [id], onDelete: SetNull)
+  comments     ServiceRequestComment[]
+
+  @@unique([tenantId, number])
+  @@index([tenantId, statusKey])
+  @@index([tenantId, assigneeId])
+  @@map("service_requests")
+}
+
+model ServiceRequestComment {
+  id               String   @id @default(cuid())
+  tenantId         String
+  serviceRequestId String
+  authorId         String?
+  body             String
+  isInternal       Boolean  @default(false)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  tenant         Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  serviceRequest ServiceRequest @relation(fields: [serviceRequestId], references: [id], onDelete: Cascade)
+  author         User?          @relation("ServiceRequestCommentAuthor", fields: [authorId], references: [id], onDelete: SetNull)
+
+  @@index([serviceRequestId])
+  @@map("service_request_comments")
+}
+
+model CatalogCategory {
+  id          String    @id @default(cuid())
+  tenantId    String
+  name        String
+  description String?
+  parentId    String?
+  sortOrder   Int       @default(0)
+  icon        String?
+  status      String    @default("ACTIVE")
+  createdById String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  tenant   Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  parent   CatalogCategory?  @relation("CatalogCategoryParent", fields: [parentId], references: [id], onDelete: SetNull)
+  children CatalogCategory[] @relation("CatalogCategoryParent")
+  items    CatalogItem[]
+
+  @@index([tenantId, status])
+  @@index([tenantId, parentId])
+  @@map("catalog_categories")
+}
+
+model CatalogItem {
+  id                String    @id @default(cuid())
+  tenantId          String
+  categoryId        String?
+  name              String
+  slug              String
+  shortDescription  String?
+  description       String?
+  itemType          String    @default("SERVICE")
+  status            String    @default("DRAFT")
+  price             Decimal?  @db.Decimal(12, 2)
+  currency          String    @default("USD")
+  fulfillmentTeamId String?
+  approvalRequired  Boolean   @default(false)
+  formSchema        Json?
+  currentVersion    Int       @default(0)
+  tags              String[]  @default([])
+  createdById       String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  deletedAt         DateTime?
+
+  tenant          Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  category        CatalogCategory?     @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  fulfillmentTeam Team?                @relation(fields: [fulfillmentTeamId], references: [id], onDelete: SetNull)
+  versions        CatalogItemVersion[]
+
+  @@unique([tenantId, slug])
+  @@index([tenantId, status])
+  @@index([tenantId, categoryId])
+  @@map("catalog_items")
+}
+
+model CatalogItemVersion {
+  id            String    @id @default(cuid())
+  tenantId      String
+  itemId        String
+  version       Int
+  snapshot      Json
+  status        String    @default("PUBLISHED")
+  publishedAt   DateTime  @default(now())
+  publishedById String?
+  retiredAt     DateTime?
+  createdAt     DateTime  @default(now())
+
+  tenant      Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  item        CatalogItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  publishedBy User?       @relation("CatalogItemVersionPublisher", fields: [publishedById], references: [id], onDelete: SetNull)
+
+  @@unique([itemId, version])
+  @@index([tenantId])
+  @@map("catalog_item_versions")
+}
+
+// ===========================================================================
+// ITSM operational records — knowledge, CMDB, assets, discovery, on-call
+// (tenant-scoped). Cross-entity references are stored as plain ids; only the
+// tenant relation is enforced, to keep the operational surface decoupled from
+// platform config tables.
+// ===========================================================================
+
+model KnowledgeArticleCategory {
+  id          String    @id @default(cuid())
+  tenantId    String
+  name        String
+  description String?
+  parentId    String?
+  sortOrder   Int       @default(0)
+  status      String    @default("ACTIVE")
+  createdById String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  tenant   Tenant                     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  parent   KnowledgeArticleCategory?  @relation("KnowledgeArticleCategoryParent", fields: [parentId], references: [id], onDelete: SetNull)
+  children KnowledgeArticleCategory[] @relation("KnowledgeArticleCategoryParent")
+  articles KnowledgeArticle[]
+
+  @@unique([tenantId, name])
+  @@index([tenantId, status])
+  @@map("knowledge_article_categories")
+}
+
+model KnowledgeArticle {
+  id              String    @id @default(cuid())
+  tenantId        String
+  number          String?
+  title           String
+  summary         String?
+  body            String?
+  categoryId      String?
+  status          String    @default("DRAFT")
+  visibility      String    @default("INTERNAL")
+  tags            String[]  @default([])
+  authorId        String?
+  reviewerId      String?
+  publishedAt     DateTime?
+  reviewedAt      DateTime?
+  archivedAt      DateTime?
+  viewCount       Int       @default(0)
+  helpfulCount    Int       @default(0)
+  notHelpfulCount Int       @default(0)
+  metadata        Json?
+  createdById     String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  deletedAt       DateTime?
+
+  tenant   Tenant                    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  category KnowledgeArticleCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  comments KnowledgeArticleComment[]
+
+  @@unique([tenantId, number])
+  @@index([tenantId, status])
+  @@index([tenantId, categoryId])
+  @@map("knowledge_articles")
+}
+
+model KnowledgeArticleComment {
+  id         String   @id @default(cuid())
+  tenantId   String
+  articleId  String
+  body       String
+  isInternal Boolean  @default(false)
+  authorId   String?
+  createdAt  DateTime @default(now())
+
+  tenant  Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  article KnowledgeArticle @relation(fields: [articleId], references: [id], onDelete: Cascade)
+
+  @@index([articleId])
+  @@map("knowledge_article_comments")
+}
+
+model ConfigurationItem {
+  id            String    @id @default(cuid())
+  tenantId      String
+  name          String
+  ciTypeKey     String    @default("server")
+  status        String    @default("ACTIVE")
+  criticality   String    @default("MEDIUM")
+  environment   String    @default("PRODUCTION")
+  ownerId       String?
+  supportTeamId String?
+  serialNumber  String?
+  assetTag      String?
+  ipAddress     String?
+  hostname      String?
+  locationId    String?
+  attributes    Json?
+  tags          String[]  @default([])
+  createdById   String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  deletedAt     DateTime?
+
+  tenant   Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  outgoing CiRelationship[] @relation("CiRelationshipSource")
+  incoming CiRelationship[] @relation("CiRelationshipTarget")
+
+  @@unique([tenantId, name])
+  @@index([tenantId, status])
+  @@index([tenantId, ciTypeKey])
+  @@map("configuration_items")
+}
+
+model CiRelationship {
+  id          String    @id @default(cuid())
+  tenantId    String
+  sourceCiId  String
+  targetCiId  String
+  typeKey     String    @default("depends_on")
+  description String?
+  createdById String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  tenant Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  source ConfigurationItem @relation("CiRelationshipSource", fields: [sourceCiId], references: [id], onDelete: Cascade)
+  target ConfigurationItem @relation("CiRelationshipTarget", fields: [targetCiId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, sourceCiId, targetCiId, typeKey])
+  @@index([tenantId])
+  @@map("ci_relationships")
+}
+
+model Asset {
+  id             String    @id @default(cuid())
+  tenantId       String
+  assetTag       String
+  name           String
+  categoryKey    String    @default("hardware")
+  status         String    @default("IN_STOCK")
+  condition      String    @default("GOOD")
+  serialNumber   String?
+  model          String?
+  manufacturer   String?
+  purchaseDate   DateTime?
+  warrantyExpiry DateTime?
+  cost           Decimal?  @db.Decimal(12, 2)
+  currency       String    @default("USD")
+  assignedToId   String?
+  locationId     String?
+  ciId           String?
+  vendorId       String?
+  notes          String?
+  attributes     Json?
+  createdById    String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  deletedAt      DateTime?
+
+  tenant      Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  maintenance AssetMaintenance[]
+
+  @@unique([tenantId, assetTag])
+  @@index([tenantId, status])
+  @@index([tenantId, categoryKey])
+  @@map("assets")
+}
+
+model AssetMaintenance {
+  id            String    @id @default(cuid())
+  tenantId      String
+  assetId       String
+  kind          String    @default("MAINTENANCE")
+  status        String    @default("SCHEDULED")
+  summary       String
+  description   String?
+  scheduledAt   DateTime?
+  completedAt   DateTime?
+  cost          Decimal?  @db.Decimal(12, 2)
+  performedById String?
+  createdById   String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  deletedAt     DateTime?
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  asset  Asset  @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  @@index([assetId])
+  @@index([tenantId, status])
+  @@map("asset_maintenance")
+}
+
+model DiscoveryRun {
+  id          String    @id @default(cuid())
+  tenantId    String
+  profileKey  String?
+  name        String?
+  status      String    @default("QUEUED")
+  mode        String    @default("AGENTLESS")
+  startedAt   DateTime?
+  completedAt DateTime?
+  discovered  Int       @default(0)
+  created     Int       @default(0)
+  updated     Int       @default(0)
+  failed      Int       @default(0)
+  summary     Json?
+  error       String?
+  createdById String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  tenant  Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  results DiscoveryResult[]
+
+  @@index([tenantId, status])
+  @@map("discovery_runs")
+}
+
+model DiscoveryResult {
+  id          String    @id @default(cuid())
+  tenantId    String
+  runId       String
+  ciTypeKey   String?
+  name        String
+  hostname    String?
+  ipAddress   String?
+  status      String    @default("PENDING")
+  action      String    @default("REVIEW")
+  matchedCiId String?
+  payload     Json?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  tenant Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  run    DiscoveryRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  @@index([runId])
+  @@index([tenantId, status])
+  @@map("discovery_results")
+}
+
+model OnCallSchedule {
+  id               String    @id @default(cuid())
+  tenantId         String
+  name             String
+  description      String?
+  timezone         String    @default("UTC")
+  rotationType     String    @default("WEEKLY")
+  status           String    @default("ACTIVE")
+  teamId           String?
+  escalationPolicy Json?
+  createdById      String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  deletedAt        DateTime?
+
+  tenant Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  shifts OnCallShift[]
+
+  @@unique([tenantId, name])
+  @@index([tenantId, status])
+  @@map("on_call_schedules")
+}
+
+model OnCallShift {
+  id          String    @id @default(cuid())
+  tenantId    String
+  scheduleId  String
+  userId      String
+  kind        String    @default("SHIFT")
+  startAt     DateTime
+  endAt       DateTime
+  note        String?
+  status      String    @default("SCHEDULED")
+  createdById String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  tenant   Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  schedule OnCallSchedule @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+
+  @@index([scheduleId])
+  @@index([tenantId, startAt])
+  @@map("on_call_shifts")
+}
+
+model Release {
+  id             String    @id @default(cuid())
+  tenantId       String
+  number         String?
+  name           String
+  version        String?
+  type           String    @default("STANDARD")
+  status         String    @default("PLANNED")
+  description    String?
+  plannedStartAt DateTime?
+  plannedEndAt   DateTime?
+  actualStartAt  DateTime?
+  actualEndAt    DateTime?
+  ownerId        String?
+  teamId         String?
+  tags           String[]  @default([])
+  metadata       Json?
+  createdById    String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  deletedAt      DateTime?
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, number])
+  @@index([tenantId, status])
+  @@map("releases")
+}
+
+model KnownError {
+  id          String    @id @default(cuid())
+  tenantId    String
+  number      String?
+  title       String
+  description String?
+  status      String    @default("OPEN")
+  problemId   String?
+  workaround  String?
+  rootCause   String?
+  resolvedAt  DateTime?
+  ownerId     String?
+  tags        String[]  @default([])
+  metadata    Json?
+  createdById String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, number])
+  @@index([tenantId, status])
+  @@map("known_errors")
+}
+
+model MajorIncident {
+  id                String    @id @default(cuid())
+  tenantId          String
+  number            String?
+  title             String
+  description       String?
+  status            String    @default("DECLARED")
+  severity          String    @default("HIGH")
+  incidentId        String?
+  commanderId       String?
+  impactSummary     String?
+  communicationPlan String?
+  startedAt         DateTime?
+  resolvedAt        DateTime?
+  tags              String[]  @default([])
+  metadata          Json?
+  createdById       String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  deletedAt         DateTime?
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, number])
+  @@index([tenantId, status])
+  @@map("major_incidents")
+}
+
+model Vendor {
+  id           String    @id @default(cuid())
+  tenantId     String
+  name         String
+  code         String?
+  type         String    @default("SUPPLIER")
+  status       String    @default("ACTIVE")
+  contactName  String?
+  email        String?
+  phone        String?
+  website      String?
+  addressLine1 String?
+  addressLine2 String?
+  city         String?
+  state        String?
+  postalCode   String?
+  country      String?
+  rating       Int?
+  notes        String?
+  metadata     Json?
+  createdById  String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  deletedAt    DateTime?
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, code])
+  @@unique([tenantId, name])
+  @@index([tenantId, status])
+  @@map("vendors")
+}
+
+model Announcement {
+  id          String    @id @default(cuid())
+  tenantId    String
+  title       String
+  body        String?
+  type        String    @default("INFO")
+  status      String    @default("DRAFT")
+  audience    String    @default("ALL")
+  pinned      Boolean   @default(false)
+  publishAt   DateTime?
+  expireAt    DateTime?
+  metadata    Json?
+  createdById String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, status])
+  @@map("announcements")
+}
+
+// ===========================================================================
+// Tenant ITSM: approvals / SLA / workflows / automation / notifications
+// ===========================================================================
+
+model TenantApprovalPolicy {
+  id              String    @id @default(cuid())
+  tenantId        String
+  name            String
+  description     String?
+  actionScope     String
+  conditions      Json?
+  approverRoleIds Json      @default("[]")
+  minApprovals    Int       @default(1)
+  isEnabled       Boolean   @default(true)
+  createdById     String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  deletedAt       DateTime?
+
+  tenant   Tenant                  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  requests TenantApprovalRequest[]
+
+  @@unique([tenantId, name])
+  @@index([tenantId, actionScope, isEnabled])
+  @@map("tenant_approval_policies")
+}
+
+model TenantApprovalRequest {
+  id            String    @id @default(cuid())
+  tenantId      String
+  policyId      String?
+  actionKey     String
+  resourceType  String
+  resourceId    String?
+  payload       Json?
+  reason        String?
+  requestedById String?
+  status        String    @default("PENDING")
+  expiresAt     DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  tenant    Tenant                   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  policy    TenantApprovalPolicy?    @relation(fields: [policyId], references: [id], onDelete: SetNull)
+  decisions TenantApprovalDecision[]
+
+  @@index([tenantId, status])
+  @@index([tenantId, actionKey])
+  @@map("tenant_approval_requests")
+}
+
+model TenantApprovalDecision {
+  id         String   @id @default(cuid())
+  tenantId   String
+  requestId  String
+  approverId String?
+  decision   String
+  reason     String?
+  decidedAt  DateTime @default(now())
+
+  tenant  Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  request TenantApprovalRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+
+  @@unique([requestId, approverId])
+  @@index([tenantId, decision])
+  @@map("tenant_approval_decisions")
+}
+
+model TenantSlaPolicy {
+  id            String    @id @default(cuid())
+  tenantId      String
+  name          String
+  description   String?
+  status        String    @default("DRAFT")
+  serviceLevels Json      @default("[]")
+  settings      Json?
+  isDefault     Boolean   @default(false)
+  createdById   String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  deletedAt     DateTime?
+
+  tenant          Tenant                    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  escalationRules TenantSlaEscalationRule[]
+
+  @@unique([tenantId, name])
+  @@index([tenantId, status])
+  @@map("tenant_sla_policies")
+}
+
+model TenantSlaEscalationRule {
+  id               String   @id @default(cuid())
+  tenantId         String
+  slaPolicyId      String?
+  name             String
+  trigger          String
+  thresholdMinutes Int
+  actions          Json     @default("[]")
+  isEnabled        Boolean  @default(true)
+  sortOrder        Int      @default(0)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  tenant    Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  slaPolicy TenantSlaPolicy? @relation(fields: [slaPolicyId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, slaPolicyId])
+  @@map("tenant_sla_escalation_rules")
+}
+
+model TenantBusinessCalendar {
+  id           String    @id @default(cuid())
+  tenantId     String
+  name         String
+  timezone     String    @default("UTC")
+  workingHours Json      @default("{}")
+  holidays     Json?
+  isDefault    Boolean   @default(false)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  deletedAt    DateTime?
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, name])
+  @@map("tenant_business_calendars")
+}
+
+model TenantWorkflow {
+  id             String    @id @default(cuid())
+  tenantId       String
+  name           String
+  description    String?
+  moduleKey      String    @default("global")
+  status         String    @default("DRAFT")
+  trigger        String    @default("manual")
+  conditions     Json?
+  definition     Json      @default("{}")
+  currentVersion Int       @default(0)
+  createdById    String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  deletedAt      DateTime?
+
+  tenant   Tenant                  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  versions TenantWorkflowVersion[]
+  runs     TenantWorkflowRun[]
+
+  @@unique([tenantId, name])
+  @@index([tenantId, status])
+  @@map("tenant_workflows")
+}
+
+model TenantWorkflowVersion {
+  id            String    @id @default(cuid())
+  tenantId      String
+  workflowId    String
+  version       Int
+  definition    Json
+  changelog     String?
+  publishedById String?
+  publishedAt   DateTime?
+  createdAt     DateTime  @default(now())
+
+  tenant   Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  workflow TenantWorkflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+
+  @@unique([workflowId, version])
+  @@map("tenant_workflow_versions")
+}
+
+model TenantWorkflowRun {
+  id           String    @id @default(cuid())
+  tenantId     String
+  workflowId   String?
+  resourceType String
+  resourceId   String?
+  status       String    @default("RUNNING")
+  context      Json?
+  steps        Json?
+  error        String?
+  startedAt    DateTime  @default(now())
+  completedAt  DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  tenant   Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  workflow TenantWorkflow? @relation(fields: [workflowId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, status])
+  @@map("tenant_workflow_runs")
+}
+
+model TenantAutomationRule {
+  id          String    @id @default(cuid())
+  tenantId    String
+  name        String
+  description String?
+  moduleKey   String    @default("global")
+  trigger     String    @default("event")
+  eventKey    String?
+  schedule    String?
+  conditions  Json?
+  actions     Json      @default("[]")
+  isEnabled   Boolean   @default(true)
+  status      String    @default("ACTIVE")
+  lastRunAt   DateTime?
+  runCount    Int       @default(0)
+  createdById String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  tenant Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  runs   TenantAutomationRun[]
+
+  @@unique([tenantId, name])
+  @@index([tenantId, status])
+  @@map("tenant_automation_rules")
+}
+
+model TenantAutomationRun {
+  id          String    @id @default(cuid())
+  tenantId    String
+  ruleId      String?
+  status      String    @default("RUNNING")
+  trigger     String    @default("manual")
+  context     Json?
+  result      Json?
+  error       String?
+  startedAt   DateTime  @default(now())
+  completedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  tenant Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  rule   TenantAutomationRule? @relation(fields: [ruleId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, status])
+  @@map("tenant_automation_runs")
+}
+
+model TenantNotificationTemplate {
+  id          String    @id @default(cuid())
+  tenantId    String
+  name        String
+  eventKey    String
+  channel     String    @default("EMAIL")
+  subject     String?
+  body        String
+  format      String    @default("TEXT")
+  locale      String    @default("en")
+  isEnabled   Boolean   @default(true)
+  status      String    @default("ACTIVE")
+  createdById String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  tenant Tenant                   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  rules  TenantNotificationRule[]
+
+  @@unique([tenantId, name])
+  @@index([tenantId, eventKey])
+  @@map("tenant_notification_templates")
+}
+
+model TenantNotificationRule {
+  id          String    @id @default(cuid())
+  tenantId    String
+  name        String
+  eventKey    String
+  templateId  String?
+  channel     String    @default("EMAIL")
+  recipients  Json      @default("[]")
+  conditions  Json?
+  isEnabled   Boolean   @default(true)
+  createdById String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  tenant   Tenant                      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  template TenantNotificationTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  logs     TenantNotificationLog[]
+
+  @@unique([tenantId, name])
+  @@map("tenant_notification_rules")
+}
+
+model TenantNotificationLog {
+  id        String    @id @default(cuid())
+  tenantId  String
+  ruleId    String?
+  channel   String
+  recipient String
+  subject   String?
+  status    String    @default("PENDING")
+  error     String?
+  payload   Json?
+  sentAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  tenant Tenant                  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  rule   TenantNotificationRule? @relation(fields: [ruleId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, status])
+  @@map("tenant_notification_logs")
+}
+
+// ===========================================================================
+// Tenant ITSM: service desk / integrations / API keys / webhooks / attachments
+// ===========================================================================
+
+model TenantOperatingHours {
+  id        String    @id @default(cuid())
+  tenantId  String
+  name      String
+  timezone  String    @default("UTC")
+  schedule  Json      @default("{}")
+  holidays  Json?
+  isDefault Boolean   @default(false)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, name])
+  @@map("tenant_operating_hours")
+}
+
+model TenantServiceDeskQueue {
+  id               String    @id @default(cuid())
+  tenantId         String
+  name             String
+  email            String?
+  description      String?
+  operatingHoursId String?
+  teamId           String?
+  isDefault        Boolean   @default(false)
+  status           String    @default("ACTIVE")
+  settings         Json?
+  metadata         Json?
+  createdById      String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  deletedAt        DateTime?
+
+  tenant       Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  routingRules TenantRoutingRule[]
+
+  @@unique([tenantId, name])
+  @@index([tenantId, status])
+  @@index([tenantId, teamId])
+  @@map("tenant_service_desk_queues")
+}
+
+model TenantRoutingRule {
+  id          String    @id @default(cuid())
+  tenantId    String
+  name        String
+  queueId     String?
+  priority    Int       @default(0)
+  conditions  Json?
+  actions     Json      @default("[]")
+  isEnabled   Boolean   @default(true)
+  sortOrder   Int       @default(0)
+  createdById String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  tenant Tenant                  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  queue  TenantServiceDeskQueue? @relation(fields: [queueId], references: [id], onDelete: SetNull)
+
+  @@unique([tenantId, name])
+  @@index([tenantId, isEnabled])
+  @@map("tenant_routing_rules")
+}
+
+model TenantIntegration {
+  id             String    @id @default(cuid())
+  tenantId       String
+  name           String
+  provider       String
+  category       String    @default("GENERAL")
+  description    String?
+  configEnc      String?
+  status         String    @default("UNCONFIGURED")
+  isEnabled      Boolean   @default(false)
+  lastTestedAt   DateTime?
+  lastTestResult String?
+  createdById    String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  deletedAt      DateTime?
+
+  tenant Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  logs   TenantIntegrationLog[]
+
+  @@unique([tenantId, name])
+  @@index([tenantId, status])
+  @@map("tenant_integrations")
+}
+
+model TenantIntegrationLog {
+  id            String   @id @default(cuid())
+  tenantId      String
+  integrationId String
+  level         String   @default("info")
+  action        String
+  message       String
+  context       Json?
+  createdAt     DateTime @default(now())
+
+  tenant      Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  integration TenantIntegration @relation(fields: [integrationId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, integrationId, createdAt])
+  @@map("tenant_integration_logs")
+}
+
+model TenantApiKey {
+  id            String    @id @default(cuid())
+  tenantId      String
+  name          String
+  keyPrefix     String
+  keyHash       String    @unique
+  scopes        Json      @default("[]")
+  createdById   String?
+  rotatedFromId String?
+  expiresAt     DateTime?
+  lastUsedAt    DateTime?
+  revokedAt     DateTime?
+  revokedReason String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  tenant Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  usage  TenantApiKeyUsage[]
+
+  @@index([tenantId, keyPrefix])
+  @@map("tenant_api_keys")
+}
+
+model TenantApiKeyUsage {
+  id         String   @id @default(cuid())
+  tenantId   String
+  apiKeyId   String
+  method     String
+  path       String
+  statusCode Int
+  ipAddress  String?
+  createdAt  DateTime @default(now())
+
+  tenant Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  apiKey TenantApiKey @relation(fields: [apiKeyId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, apiKeyId, createdAt])
+  @@map("tenant_api_key_usage")
+}
+
+model TenantWebhook {
+  id             String    @id @default(cuid())
+  tenantId       String
+  name           String
+  description    String?
+  url            String
+  eventKeys      Json      @default("[]")
+  secretEnc      String
+  isEnabled      Boolean   @default(true)
+  failureCount   Int       @default(0)
+  lastDeliveryAt DateTime?
+  createdById    String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  deletedAt      DateTime?
+
+  tenant     Tenant                  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  deliveries TenantWebhookDelivery[]
+
+  @@unique([tenantId, name])
+  @@map("tenant_webhooks")
+}
+
+model TenantWebhookDelivery {
+  id             String    @id @default(cuid())
+  tenantId       String
+  webhookId      String
+  eventKey       String
+  payload        Json
+  status         String    @default("PENDING")
+  responseStatus Int?
+  responseBody   String?
+  attempts       Int       @default(0)
+  nextRetryAt    DateTime?
+  lastError      String?
+  isTest         Boolean   @default(false)
+  deliveredAt    DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  tenant  Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  webhook TenantWebhook @relation(fields: [webhookId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, webhookId, status])
+  @@map("tenant_webhook_deliveries")
+}
+
+model TenantAttachment {
+  id           String    @id @default(cuid())
+  tenantId     String
+  name         String
+  filename     String
+  mimeType     String
+  size         Int
+  storageKey   String
+  resourceType String?
+  resourceId   String?
+  uploadedById String?
+  metadata     Json?
+  createdAt    DateTime  @default(now())
+  deletedAt    DateTime?
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, resourceType, resourceId])
+  @@map("tenant_attachments")
+}
+
+// ===========================================================================
+// Tenant configuration — incident / problem / change / asset (batch 5)
+// ===========================================================================
+
+model TenantIncidentCategory {
+  id          String    @id @default(cuid())
+  tenantId    String
+  name        String
+  code        String
+  description String?
+  parentId    String?
+  isActive    Boolean   @default(true)
+  sortOrder   Int       @default(0)
+  createdById String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  tenant   Tenant                  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  parent   TenantIncidentCategory? @relation("TenantIncidentCategoryParent", fields: [parentId], references: [id], onDelete: SetNull)
+  children TenantIncidentCategory[] @relation("TenantIncidentCategoryParent")
+
+  @@unique([tenantId, code])
+  @@index([tenantId, isActive])
+  @@map("tenant_incident_categories")
+}
+
+model TenantIncidentPriority {
+  id              String    @id @default(cuid())
+  tenantId        String
+  name            String
+  key             String
+  level           Int       @default(3)
+  responseMinutes Int?
+  resolveMinutes  Int?
+  color           String?
+  description     String?
+  isActive        Boolean   @default(true)
+  createdById     String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  deletedAt       DateTime?
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, key])
+  @@map("tenant_incident_priorities")
+}
+
+model TenantResolutionCode {
+  id          String    @id @default(cuid())
+  tenantId    String
+  code        String
+  label       String
+  description String?
+  isActive    Boolean   @default(true)
+  createdById String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, code])
+  @@map("tenant_resolution_codes")
+}
+
+model TenantProblemCategory {
+  id          String    @id @default(cuid())
+  tenantId    String
+  name        String
+  code        String
+  description String?
+  isActive    Boolean   @default(true)
+  createdById String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, code])
+  @@map("tenant_problem_categories")
+}
+
+model TenantRootCauseCategory {
+  id          String    @id @default(cuid())
+  tenantId    String
+  name        String
+  code        String
+  description String?
+  isActive    Boolean   @default(true)
+  createdById String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, code])
+  @@map("tenant_root_cause_categories")
+}
+
+model TenantChangeType {
+  id               String    @id @default(cuid())
+  tenantId         String
+  name             String
+  code             String
+  description      String?
+  riskLevel        String    @default("MEDIUM")
+  requiresApproval Boolean   @default(false)
+  isActive         Boolean   @default(true)
+  createdById      String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  deletedAt        DateTime?
+
+  tenant    Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  templates TenantChangeTemplate[]
+
+  @@unique([tenantId, code])
+  @@map("tenant_change_types")
+}
+
+model TenantChangeTemplate {
+  id           String    @id @default(cuid())
+  tenantId     String
+  name         String
+  changeTypeId String?
+  description  String?
+  template     Json      @default("{}")
+  isActive     Boolean   @default(true)
+  createdById  String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  deletedAt    DateTime?
+
+  tenant     Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  changeType TenantChangeType? @relation(fields: [changeTypeId], references: [id], onDelete: SetNull)
+
+  @@unique([tenantId, name])
+  @@map("tenant_change_templates")
+}
+
+model TenantChangeWindow {
+  id          String    @id @default(cuid())
+  tenantId    String
+  name        String
+  windowType  String    @default("MAINTENANCE")
+  startAt     DateTime
+  endAt       DateTime
+  recurrence  String?
+  description String?
+  isActive    Boolean   @default(true)
+  createdById String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, name])
+  @@index([tenantId, windowType])
+  @@map("tenant_change_windows")
+}
+
+model TenantAssetModel {
+  id           String    @id @default(cuid())
+  tenantId     String
+  name         String
+  manufacturer String?
+  category     String?
+  description  String?
+  isActive     Boolean   @default(true)
+  createdById  String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  deletedAt    DateTime?
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, name])
+  @@map("tenant_asset_models")
+}
+
+model TenantAssetLicense {
+  id            String    @id @default(cuid())
+  tenantId      String
+  name          String
+  vendor        String?
+  licenseKeyEnc String?
+  seats         Int       @default(0)
+  usedSeats     Int       @default(0)
+  expiresAt     DateTime?
+  status        String    @default("ACTIVE")
+  createdById   String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  deletedAt     DateTime?
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, name])
+  @@map("tenant_asset_licenses")
+}
+
+model TenantCustomField {
+  id           String    @id @default(cuid())
+  tenantId     String
+  name         String
+  key          String
+  resourceType String
+  fieldType    String    @default("TEXT")
+  options      Json?
+  isRequired   Boolean   @default(false)
+  isActive     Boolean   @default(true)
+  createdById  String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  deletedAt    DateTime?
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, resourceType, key])
+  @@map("tenant_custom_fields")
+}
+
+// ===========================================================================
+// Tenant governance — delegations / access reviews / access policies (batch 5)
+// ===========================================================================
+
+model TenantDelegation {
+  id          String    @id @default(cuid())
+  tenantId    String
+  delegatorId String
+  delegateeId String
+  scope       Json?
+  reason      String?
+  status      String    @default("ACTIVE")
+  startsAt    DateTime  @default(now())
+  endsAt      DateTime?
+  revokedAt   DateTime?
+  createdById String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, status])
+  @@map("tenant_delegations")
+}
+
+model TenantAccessReview {
+  id          String    @id @default(cuid())
+  tenantId    String
+  name        String
+  description String?
+  scope       String    @default("ALL")
+  status      String    @default("DRAFT")
+  dueAt       DateTime?
+  startedAt   DateTime?
+  completedAt DateTime?
+  createdById String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  tenant Tenant                   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  items  TenantAccessReviewItem[]
+
+  @@index([tenantId, status])
+  @@map("tenant_access_reviews")
+}
+
+model TenantAccessReviewItem {
+  id          String    @id @default(cuid())
+  tenantId    String
+  reviewId    String
+  subjectType String
+  subjectId   String
+  decision    String    @default("PENDING")
+  notes       String?
+  decidedById String?
+  decidedAt   DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  tenant Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  review TenantAccessReview @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, reviewId, decision])
+  @@map("tenant_access_review_items")
+}
+
+model TenantAccessPolicy {
+  id          String    @id @default(cuid())
+  tenantId    String
+  name        String
+  description String?
+  policyType  String    @default("CUSTOM")
+  rules       Json      @default("{}")
+  priority    Int       @default(0)
+  isEnabled   Boolean   @default(true)
+  createdById String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  tenant      Tenant                          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  assignments TenantAccessPolicyAssignment[]
+
+  @@unique([tenantId, name])
+  @@map("tenant_access_policies")
+}
+
+model TenantAccessPolicyAssignment {
+  id          String   @id @default(cuid())
+  tenantId    String
+  policyId    String
+  subjectType String
+  subjectId   String
+  createdAt   DateTime @default(now())
+
+  tenant Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  policy TenantAccessPolicy @relation(fields: [policyId], references: [id], onDelete: Cascade)
+
+  @@unique([policyId, subjectType, subjectId])
+  @@map("tenant_access_policy_assignments")
+}
+
+model TenantImportJob {
+  id           String    @id @default(cuid())
+  tenantId     String
+  resourceType String
+  format       String    @default("CSV")
+  status       String    @default("QUEUED")
+  fileName     String?
+  totalRows    Int       @default(0)
+  createdRows  Int       @default(0)
+  updatedRows  Int       @default(0)
+  failedRows   Int       @default(0)
+  errors       Json?
+  error        String?
+  startedAt    DateTime?
+  completedAt  DateTime?
+  createdById  String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, status])
+  @@map("tenant_import_jobs")
+}
+
+// ===========================================================================
+// Email & notifications
+// ===========================================================================
+
+model EmailProvider {
+  id             String         @id @default(cuid())
+  key            String         @unique
+  name           String
+  providerType   String
+  fromName       String?
+  fromEmail      String
+  replyTo        String?
+  configEnc      String
+  status         ProviderStatus @default(UNVERIFIED)
+  isDefault      Boolean        @default(false)
+  lastTestedAt   DateTime?
+  lastTestResult String?
+  createdById    String?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  createdBy    User?         @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  deliveryLogs DeliveryLog[]
+
+  @@index([status])
+  @@map("email_providers")
+}
+
+model NotificationTemplate {
+  id          String        @id @default(cuid())
+  key         String        @unique
+  name        String
+  description String?
+  channel     String        @default("EMAIL")
+  subject     String?
+  body        String
+  bodyFormat  String        @default("HTML")
+  variables   Json?
+  status      CatalogStatus @default(DRAFT)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  rules        NotificationRule[]
+  deliveryLogs DeliveryLog[]
+
+  @@map("notification_templates")
+}
+
+model NotificationRule {
+  id         String   @id @default(cuid())
+  name       String
+  eventKey   String
+  channel    String   @default("EMAIL")
+  templateId String?
+  conditions Json?
+  recipients Json
+  isEnabled  Boolean  @default(true)
+  priority   Int      @default(100)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  template NotificationTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
+
+  @@index([eventKey, isEnabled])
+  @@map("notification_rules")
+}
+
+model DeliveryLog {
+  id          String         @id @default(cuid())
+  providerId  String?
+  ruleId      String?
+  templateId  String?
+  channel     String         @default("EMAIL")
+  recipient   String
+  subject     String?
+  status      DeliveryStatus @default(QUEUED)
+  attempts    Int            @default(0)
+  lastError   String?
+  payloadMeta Json?
+  sentAt      DateTime?
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  provider EmailProvider?        @relation(fields: [providerId], references: [id], onDelete: SetNull)
+  template NotificationTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
+
+  @@index([status])
+  @@index([createdAt])
+  @@map("delivery_logs")
+}
+
+// ===========================================================================
+// Integrations, API keys, webhooks
+// ===========================================================================
+
+model Integration {
+  id             String            @id @default(cuid())
+  key            String            @unique
+  name           String
+  provider       String
+  description    String?
+  category       String            @default("GENERAL")
+  configEnc      String?
+  status         IntegrationStatus @default(UNCONFIGURED)
+  isEnabled      Boolean           @default(false)
+  lastTestedAt   DateTime?
+  lastTestResult String?
+  createdById    String?
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  createdBy User?            @relation("IntegrationCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  logs      IntegrationLog[]
+
+  @@index([status])
+  @@map("integrations")
+}
+
+model IntegrationLog {
+  id            String   @id @default(cuid())
+  integrationId String
+  level         String   @default("info")
+  action        String
+  message       String
+  context       Json?
+  createdAt     DateTime @default(now())
+
+  integration Integration @relation(fields: [integrationId], references: [id], onDelete: Cascade)
+
+  @@index([integrationId, createdAt])
+  @@map("integration_logs")
+}
+
+model ApiKey {
+  id            String    @id @default(cuid())
+  name          String
+  keyPrefix     String
+  keyHash       String    @unique
+  scopes        Json
+  tenantId      String?
+  createdById   String?
+  rotatedFromId String?
+  expiresAt     DateTime?
+  lastUsedAt    DateTime?
+  revokedAt     DateTime?
+  revokedReason String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  tenant    Tenant?       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  createdBy User?         @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  usage     ApiKeyUsage[]
+
+  @@index([keyPrefix])
+  @@map("api_keys")
+}
+
+model ApiKeyUsage {
+  id         String   @id @default(cuid())
+  apiKeyId   String
+  method     String
+  path       String
+  statusCode Int
+  ipAddress  String?
+  createdAt  DateTime @default(now())
+
+  apiKey ApiKey @relation(fields: [apiKeyId], references: [id], onDelete: Cascade)
+
+  @@index([apiKeyId, createdAt])
+  @@map("api_key_usage")
+}
+
+model Webhook {
+  id             String    @id @default(cuid())
+  name           String
+  description    String?
+  url            String
+  eventKeys      Json
+  secretEnc      String
+  isEnabled      Boolean   @default(true)
+  failureCount   Int       @default(0)
+  lastDeliveryAt DateTime?
+  createdById    String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  createdBy  User?             @relation("WebhookCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  deliveries WebhookDelivery[]
+
+  @@map("webhooks")
+}
+
+model WebhookDelivery {
+  id             String                @id @default(cuid())
+  webhookId      String
+  eventKey       String
+  payload        Json
+  status         WebhookDeliveryStatus @default(PENDING)
+  responseStatus Int?
+  responseBody   String?
+  attempts       Int                   @default(0)
+  nextRetryAt    DateTime?
+  lastError      String?
+  isTest         Boolean               @default(false)
+  deliveredAt    DateTime?
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
+
+  webhook Webhook @relation(fields: [webhookId], references: [id], onDelete: Cascade)
+
+  @@index([webhookId, status])
+  @@index([status, nextRetryAt])
+  @@map("webhook_deliveries")
+}
+
+// ===========================================================================
+// Support
+// ===========================================================================
+
+model SupportQueue {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  email       String?
+  isDefault   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tickets SupportTicket[]
+
+  @@map("support_queues")
+}
+
+model SupportTicket {
+  id             String                @id @default(cuid())
+  ticketNumber   String                @unique
+  subject        String
+  description    String
+  status         SupportTicketStatus   @default(OPEN)
+  priority       SupportTicketPriority @default(NORMAL)
+  category       String?
+  requesterName  String
+  requesterEmail String
+  tenantId       String?
+  queueId        String?
+  assigneeId     String?
+  createdById    String?
+  tags           Json?
+  resolvedAt     DateTime?
+  closedAt       DateTime?
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
+
+  tenant      Tenant?             @relation(fields: [tenantId], references: [id], onDelete: SetNull)
+  queue       SupportQueue?       @relation(fields: [queueId], references: [id], onDelete: SetNull)
+  assignee    User?               @relation("SupportTicketAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+  createdBy   User?               @relation("SupportTicketCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  replies     SupportReply[]
+  assignments SupportAssignment[]
+
+  @@index([status])
+  @@index([tenantId])
+  @@map("support_tickets")
+}
+
+model SupportReply {
+  id         String   @id @default(cuid())
+  ticketId   String
+  authorId   String
+  body       String
+  isInternal Boolean  @default(false)
+  createdAt  DateTime @default(now())
+
+  ticket SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  author User          @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  @@index([ticketId, createdAt])
+  @@map("support_replies")
+}
+
+model SupportAssignment {
+  id           String   @id @default(cuid())
+  ticketId     String
+  assignedToId String
+  assignedById String
+  note         String?
+  createdAt    DateTime @default(now())
+
+  ticket     SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  assignedTo User          @relation("SupportAssignmentTarget", fields: [assignedToId], references: [id], onDelete: Cascade)
+  assignedBy User          @relation("SupportAssignmentActor", fields: [assignedById], references: [id], onDelete: Cascade)
+
+  @@index([ticketId, createdAt])
+  @@map("support_assignments")
+}
+
+// ===========================================================================
+// Auditing
+// ===========================================================================
+
+model AuditEvent {
+  id           String       @id @default(cuid())
+  actorId      String?
+  actorEmail   String?
+  actorType    String       @default("PLATFORM_STAFF")
+  action       String
+  resourceType String
+  resourceId   String?
+  tenantId     String?
+  outcome      AuditOutcome @default(SUCCESS)
+  before       Json?
+  after        Json?
+  metadata     Json?
+  ipAddress    String?
+  userAgent    String?
+  requestId    String?
+  createdAt    DateTime     @default(now())
+
+  actor  User?   @relation(fields: [actorId], references: [id], onDelete: SetNull)
+  tenant Tenant? @relation(fields: [tenantId], references: [id], onDelete: SetNull)
+
+  @@index([action])
+  @@index([resourceType, resourceId])
+  @@index([tenantId])
+  @@index([createdAt])
+  @@map("audit_events")
+}
+
+model SecurityEvent {
+  id        String           @id @default(cuid())
+  eventType String
+  severity  SecuritySeverity @default(INFO)
+  userId    String?
+  tenantId  String?
+  ipAddress String?
+  userAgent String?
+  details   Json?
+  createdAt DateTime         @default(now())
+
+  user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+  tenant Tenant? @relation(fields: [tenantId], references: [id], onDelete: SetNull)
+
+  @@index([eventType])
+  @@index([severity])
+  @@index([createdAt])
+  @@map("security_events")
+}
+
+model LoginEvent {
+  id            String       @id @default(cuid())
+  userId        String?
+  email         String
+  outcome       LoginOutcome
+  failureReason String?
+  ipAddress     String?
+  userAgent     String?
+  createdAt     DateTime     @default(now())
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([email])
+  @@index([outcome])
+  @@index([createdAt])
+  @@map("login_events")
+}
+
+// ===========================================================================
+// Platform settings
+// ===========================================================================
+
+model PlatformSetting {
+  id          String   @id @default(cuid())
+  key         String   @unique
+  value       Json
+  group       String   @default("general")
+  description String?
+  updatedById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([group])
+  @@map("platform_settings")
+}
+
+model FeatureFlag {
+  id                String   @id @default(cuid())
+  key               String   @unique
+  name              String
+  description       String?
+  isEnabled         Boolean  @default(false)
+  rolloutPercentage Int      @default(100)
+  rules             Json?
+  updatedById       String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@map("feature_flags")
+}
+
+model RetentionPolicy {
+  id            String          @id @default(cuid())
+  resourceKey   String          @unique
+  retentionDays Int
+  action        RetentionAction @default(ARCHIVE)
+  isEnabled     Boolean         @default(true)
+  updatedById   String?
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  @@map("retention_policies")
+}
+
+// ===========================================================================
+// Reports & background jobs
+// ===========================================================================
+
+model ReportJob {
+  id            String        @id @default(cuid())
+  kind          ReportJobKind @default(REPORT)
+  reportKey     String
+  format        String        @default("JSON")
+  filters       Json?
+  status        JobStatus     @default(QUEUED)
+  requestedById String?
+  tenantScope   String?
+  rowCount      Int?
+  filePath      String?
+  error         String?
+  startedAt     DateTime?
+  completedAt   DateTime?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  requestedBy User?   @relation(fields: [requestedById], references: [id], onDelete: SetNull)
+  tenant      Tenant? @relation(fields: [tenantScope], references: [id], onDelete: SetNull)
+
+  @@index([status])
+  @@index([reportKey])
+  @@map("report_jobs")
+}
+
+model BackgroundJob {
+  id           String    @id @default(cuid())
+  type         String
+  status       JobStatus @default(QUEUED)
+  payload      Json?
+  result       Json?
+  error        String?
+  attempts     Int       @default(0)
+  maxAttempts  Int       @default(3)
+  scheduledFor DateTime  @default(now())
+  startedAt    DateTime?
+  completedAt  DateTime?
+  createdById  String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  createdBy User? @relation(fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([status, scheduledFor])
+  @@index([type])
+  @@map("background_jobs")
+}
