@@ -1,7 +1,9 @@
-import { z } from 'zod';
+import { z } from "zod";
 
 export const ciIdParamSchema = z.object({ ciId: z.string().min(1) });
-export const ciRelationshipIdParamSchema = z.object({ relationshipId: z.string().min(1) });
+export const ciRelationshipIdParamSchema = z.object({
+  relationshipId: z.string().min(1),
+});
 
 const optionalId = z.string().min(1).nullable().optional();
 
@@ -10,7 +12,7 @@ export const createCiSchema = z
     name: z.string().trim().min(1).max(300),
     ciTypeKey: z.string().trim().max(80).optional(),
     status: z.string().trim().max(40).optional(),
-    criticality: z.enum(['LOW', 'MEDIUM', 'HIGH', 'CRITICAL']).optional(),
+    criticality: z.enum(["LOW", "MEDIUM", "HIGH", "CRITICAL"]).optional(),
     environment: z.string().trim().max(40).optional(),
     ownerId: optionalId,
     supportTeamId: optionalId,
@@ -33,4 +35,6 @@ export const createCiRelationshipSchema = z
     description: z.string().trim().max(2000).optional(),
   })
   .strict();
-export const updateCiRelationshipSchema = createCiRelationshipSchema.partial().strict();
+export const updateCiRelationshipSchema = createCiRelationshipSchema
+  .partial()
+  .strict();

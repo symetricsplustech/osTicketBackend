@@ -1,5 +1,5 @@
-import nodemailer, { type Transporter } from 'nodemailer';
-import { env } from './env';
+import nodemailer, { type Transporter } from "nodemailer";
+import { env } from "./env";
 
 export interface SmtpConfig {
   host: string;
@@ -26,7 +26,7 @@ export function createSmtpTransport(config: SmtpConfig): Transporter {
         }
       : undefined,
     tls: {
-      rejectUnauthorized: env.NODE_ENV === 'production',
+      rejectUnauthorized: env.NODE_ENV === "production",
     },
     connectionTimeout: 10_000,
     greetingTimeout: 10_000,

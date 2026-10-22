@@ -1,18 +1,31 @@
-import type { Request } from 'express';
-import { Prisma, type WorkflowRun, type WorkflowTemplate } from '@prisma/client';
-import { prisma } from '../../config/database';
-import { ConflictError, NotFoundError, PreconditionFailedError, ValidationError } from '../../shared/errors';
-import { createCrudService } from '../../shared/crud';
-import { buildPaginationMeta, paginationArgs, parseListQuery } from '../../shared/pagination';
-import { recordAudit } from '../../shared/audit';
-import { publishEvent } from '../../shared/events';
-import { validateWorkflowDefinition } from '../../validators/saasadmin/workflow-management.validators';
+import type { Request } from "express";
+import {
+  Prisma,
+  type WorkflowRun,
+  type WorkflowTemplate,
+} from "@prisma/client";
+import { prisma } from "../../config/database";
+import {
+  ConflictError,
+  NotFoundError,
+  PreconditionFailedError,
+  ValidationError,
+} from "../../shared/errors";
+import { createCrudService } from "../../shared/crud";
+import {
+  buildPaginationMeta,
+  paginationArgs,
+  parseListQuery,
+} from "../../shared/pagination";
+import { recordAudit } from "../../shared/audit";
+import { publishEvent } from "../../shared/events";
+import { validateWorkflowDefinition } from "../../validators/saasadmin/workflow-management.validators";
 import type {
   CreateWorkflowTemplateInput,
   TenantWorkflowAssignmentEntryInput,
   UpdateWorkflowTemplateInput,
   WorkflowDefinitionInput,
-} from '../../validators/saasadmin/workflow-management.validators';
+} from "../../validators/saasadmin/workflow-management.validators";
 
 export interface ActorContext {
   actorId?: string | null;
@@ -20,16 +33,23 @@ export interface ActorContext {
 }
 
 function definitionErrors(messages: string[]) {
-  return messages.map((message) => ({ field: 'definition', message }));
+  return messages.map((message) => ({ field: "definition", message }));
 }
 
 export const workflowTemplateCrud = createCrudService<WorkflowTemplate>({
   model: prisma.workflowTemplate as never,
-  resourceType: 'workflow-template',
-  searchFields: ['key', 'name'],
-  filterableFields: ['status'],
-  allowedSortFields: ['key', 'name', 'status', 'currentVersion', 'createdAt', 'updatedAt'],
-  defaultOrderBy: { createdAt: 'desc' },
+  resourceType: "workflow-template",
+  searchFields: ["key", "name"],
+  filterableFields: ["status"],
+  allowedSortFields: [
+    "key",
+    "name",
+    "status",
+    "currentVersion",
+    "createdAt",
+    "updatedAt",
+  ],
+  defaultOrderBy: { createdAt: "desc" },
   softDelete: true,
   include: {
     _count: { select: { versions: true, runs: true, tenantAssignments: true } },
@@ -38,11 +58,18 @@ export const workflowTemplateCrud = createCrudService<WorkflowTemplate>({
 
 export const workflowRunCrud = createCrudService<WorkflowRun>({
   model: prisma.workflowRun as never,
-  resourceType: 'workflow-run',
-  searchFields: ['resourceId'],
-  filterableFields: ['status', 'templateKey', 'tenantId', 'resourceType'],
-  allowedSortFields: ['startedAt', 'completedAt', 'createdAt', 'updatedAt', 'status', 'templateKey'],
-  defaultOrderBy: { startedAt: 'desc' },
+  resourceType: "workflow-run",
+  searchFields: ["resourceId"],
+  filterableFields: ["status", "templateKey", "tenantId", "resourceType"],
+  allowedSortFields: [
+    "startedAt",
+    "completedAt",
+    "createdAt",
+    "updatedAt",
+    "status",
+    "templateKey",
+  ],
+  defaultOrderBy: { startedAt: "desc" },
   include: {
     template: { select: { id: true, key: true, name: true } },
   },
@@ -55,8 +82,8 @@ export async function listWorkflowTemplates(req: Request) {
   const currentVersions = templateIds.length
     ? await prisma.workflowVersion.findMany({
         where: { templateId: { in: templateIds } },
-        orderBy: { version: 'desc' },
-        distinct: ['templateId'],
+        orderBy: { version: "desc" },
+        distinct: ["templateId"],
         select: {
           id: true,
           templateId: true,
@@ -68,7 +95,9 @@ export async function listWorkflowTemplates(req: Request) {
       })
     : [];
 
-  const versionByTemplate = new Map(currentVersions.map((version) => [version.templateId, version]));
+  const versionByTemplate = new Map(
+    currentVersions.map((version) => [version.templateId, version]),
+  );
 
   return {
     ...result,
@@ -83,12 +112,21 @@ export async function createWorkflowTemplate(
   input: CreateWorkflowTemplateInput,
   actor: ActorContext,
 ): Promise<WorkflowTemplate> {
-  const duplicate = await prisma.workflowTemplate.findUnique({ where: { key: input.key }, select: { id: true } });
-  if (duplicate) throw new ConflictError(`A workflow template with the key "${input.key}" already exists.`);
+  const duplicate = await prisma.workflowTemplate.findUnique({
+    where: { key: input.key },
+    select: { id: true },
+  });
+  if (duplicate)
+    throw new ConflictError(
+      `A workflow template with the key "${input.key}" already exists.`,
+    );
 
   const validation = validateWorkflowDefinition(input.definition);
   if (!validation.valid) {
-    throw new ValidationError('The workflow definition is invalid.', definitionErrors(validation.errors));
+    throw new ValidationError(
+      "The workflow definition is invalid.",
+      definitionErrors(validation.errors),
+    );
   }
 
   const template = await prisma.workflowTemplate.create({
@@ -97,14 +135,14 @@ export async function createWorkflowTemplate(
       name: input.name,
       description: input.description ?? null,
       definition: input.definition as unknown as Prisma.InputJsonValue,
-      status: 'DRAFT',
+      status: "DRAFT",
       currentVersion: 0,
     },
   });
 
   await recordAudit({
-    action: 'workflow-template.created',
-    resourceType: 'workflow-template',
+    action: "workflow-template.created",
+    resourceType: "workflow-template",
     resourceId: template.id,
     after: template,
     actorId: actor.actorId ?? null,
@@ -119,7 +157,7 @@ export async function getWorkflowTemplate(templateId: string) {
     where: { id: templateId, deletedAt: null },
     include: {
       versions: {
-        orderBy: { version: 'desc' },
+        orderBy: { version: "desc" },
         select: {
           id: true,
           version: true,
@@ -129,10 +167,12 @@ export async function getWorkflowTemplate(templateId: string) {
           createdAt: true,
         },
       },
-      _count: { select: { versions: true, runs: true, tenantAssignments: true } },
+      _count: {
+        select: { versions: true, runs: true, tenantAssignments: true },
+      },
     },
   });
-  if (!template) throw new NotFoundError('Workflow template');
+  if (!template) throw new NotFoundError("Workflow template");
 
   return {
     ...template,
@@ -154,10 +194,14 @@ export async function updateWorkflowTemplate(
   input: UpdateWorkflowTemplateInput,
   actor: ActorContext,
 ): Promise<WorkflowTemplate> {
-  const existing = await prisma.workflowTemplate.findFirst({ where: { id: templateId, deletedAt: null } });
-  if (!existing) throw new NotFoundError('Workflow template');
-  if (existing.status === 'RETIRED') {
-    throw new PreconditionFailedError('Retired workflow templates cannot be updated.');
+  const existing = await prisma.workflowTemplate.findFirst({
+    where: { id: templateId, deletedAt: null },
+  });
+  if (!existing) throw new NotFoundError("Workflow template");
+  if (existing.status === "RETIRED") {
+    throw new PreconditionFailedError(
+      "Retired workflow templates cannot be updated.",
+    );
   }
 
   const data: Prisma.WorkflowTemplateUncheckedUpdateInput = {};
@@ -166,16 +210,22 @@ export async function updateWorkflowTemplate(
   if (input.definition !== undefined) {
     const validation = validateWorkflowDefinition(input.definition);
     if (!validation.valid) {
-      throw new ValidationError('The workflow definition is invalid.', definitionErrors(validation.errors));
+      throw new ValidationError(
+        "The workflow definition is invalid.",
+        definitionErrors(validation.errors),
+      );
     }
     data.definition = input.definition as unknown as Prisma.InputJsonValue;
   }
 
-  const updated = await prisma.workflowTemplate.update({ where: { id: templateId }, data });
+  const updated = await prisma.workflowTemplate.update({
+    where: { id: templateId },
+    data,
+  });
 
   await recordAudit({
-    action: 'workflow-template.updated',
-    resourceType: 'workflow-template',
+    action: "workflow-template.updated",
+    resourceType: "workflow-template",
     resourceId: templateId,
     before: existing,
     after: updated,
@@ -186,12 +236,15 @@ export async function updateWorkflowTemplate(
   return updated;
 }
 
-export async function validateWorkflowTemplate(templateId: string, bodyDefinition?: WorkflowDefinitionInput) {
+export async function validateWorkflowTemplate(
+  templateId: string,
+  bodyDefinition?: WorkflowDefinitionInput,
+) {
   const template = await prisma.workflowTemplate.findFirst({
     where: { id: templateId, deletedAt: null },
     select: { id: true, key: true, definition: true },
   });
-  if (!template) throw new NotFoundError('Workflow template');
+  if (!template) throw new NotFoundError("Workflow template");
 
   const source = bodyDefinition ?? template.definition;
   const result = validateWorkflowDefinition(source);
@@ -199,22 +252,31 @@ export async function validateWorkflowTemplate(templateId: string, bodyDefinitio
   return {
     templateId: template.id,
     templateKey: template.key,
-    definitionSource: bodyDefinition ? ('request' as const) : ('stored' as const),
+    definitionSource: bodyDefinition
+      ? ("request" as const)
+      : ("stored" as const),
     ...result,
   };
 }
 
-export async function publishWorkflowTemplate(templateId: string, actor: ActorContext) {
-  const template = await prisma.workflowTemplate.findFirst({ where: { id: templateId, deletedAt: null } });
-  if (!template) throw new NotFoundError('Workflow template');
-  if (template.status === 'RETIRED') {
-    throw new PreconditionFailedError('Retired workflow templates cannot be published.');
+export async function publishWorkflowTemplate(
+  templateId: string,
+  actor: ActorContext,
+) {
+  const template = await prisma.workflowTemplate.findFirst({
+    where: { id: templateId, deletedAt: null },
+  });
+  if (!template) throw new NotFoundError("Workflow template");
+  if (template.status === "RETIRED") {
+    throw new PreconditionFailedError(
+      "Retired workflow templates cannot be published.",
+    );
   }
 
   const validation = validateWorkflowDefinition(template.definition);
   if (!validation.valid) {
     throw new ValidationError(
-      'The workflow definition must be valid before it can be published.',
+      "The workflow definition must be valid before it can be published.",
       definitionErrors(validation.errors),
     );
   }
@@ -240,17 +302,20 @@ export async function publishWorkflowTemplate(templateId: string, actor: ActorCo
 
     const updated = await tx.workflowTemplate.update({
       where: { id: templateId },
-      data: { status: 'PUBLISHED', currentVersion: nextVersion },
+      data: { status: "PUBLISHED", currentVersion: nextVersion },
     });
 
     return { version, template: updated };
   });
 
   await recordAudit({
-    action: 'workflow-template.published',
-    resourceType: 'workflow-template',
+    action: "workflow-template.published",
+    resourceType: "workflow-template",
     resourceId: templateId,
-    before: { status: template.status, currentVersion: template.currentVersion },
+    before: {
+      status: template.status,
+      currentVersion: template.currentVersion,
+    },
     after: {
       status: result.template.status,
       currentVersion: result.template.currentVersion,
@@ -260,7 +325,7 @@ export async function publishWorkflowTemplate(templateId: string, actor: ActorCo
     req: actor.req,
   });
   void publishEvent({
-    eventKey: 'workflow.published',
+    eventKey: "workflow.published",
     tenantId: null,
     payload: {
       templateId,
@@ -273,21 +338,28 @@ export async function publishWorkflowTemplate(templateId: string, actor: ActorCo
   return { template: result.template, version: result.version };
 }
 
-export async function retireWorkflowTemplate(templateId: string, actor: ActorContext): Promise<WorkflowTemplate> {
-  const template = await prisma.workflowTemplate.findFirst({ where: { id: templateId, deletedAt: null } });
-  if (!template) throw new NotFoundError('Workflow template');
-  if (template.status === 'RETIRED') {
-    throw new PreconditionFailedError('This workflow template is already retired.');
+export async function retireWorkflowTemplate(
+  templateId: string,
+  actor: ActorContext,
+): Promise<WorkflowTemplate> {
+  const template = await prisma.workflowTemplate.findFirst({
+    where: { id: templateId, deletedAt: null },
+  });
+  if (!template) throw new NotFoundError("Workflow template");
+  if (template.status === "RETIRED") {
+    throw new PreconditionFailedError(
+      "This workflow template is already retired.",
+    );
   }
 
   const updated = await prisma.workflowTemplate.update({
     where: { id: templateId },
-    data: { status: 'RETIRED' },
+    data: { status: "RETIRED" },
   });
 
   await recordAudit({
-    action: 'workflow-template.retired',
-    resourceType: 'workflow-template',
+    action: "workflow-template.retired",
+    resourceType: "workflow-template",
     resourceId: templateId,
     before: { status: template.status },
     after: { status: updated.status },
@@ -298,19 +370,22 @@ export async function retireWorkflowTemplate(templateId: string, actor: ActorCon
   return updated;
 }
 
-export async function listWorkflowTemplateVersions(templateId: string, req: Request) {
+export async function listWorkflowTemplateVersions(
+  templateId: string,
+  req: Request,
+) {
   const template = await prisma.workflowTemplate.findFirst({
     where: { id: templateId, deletedAt: null },
     select: { id: true },
   });
-  if (!template) throw new NotFoundError('Workflow template');
+  if (!template) throw new NotFoundError("Workflow template");
 
   const query = parseListQuery(req);
   const where = { templateId };
   const [rows, total] = await Promise.all([
     prisma.workflowVersion.findMany({
       where,
-      orderBy: { version: 'desc' },
+      orderBy: { version: "desc" },
       ...paginationArgs(query),
     }),
     prisma.workflowVersion.count({ where }),
@@ -328,18 +403,27 @@ export async function getWorkflowRun(runId: string) {
     where: { id: runId },
     include: {
       template: {
-        select: { id: true, key: true, name: true, status: true, currentVersion: true },
+        select: {
+          id: true,
+          key: true,
+          name: true,
+          status: true,
+          currentVersion: true,
+        },
       },
     },
   });
-  if (!run) throw new NotFoundError('Workflow run');
+  if (!run) throw new NotFoundError("Workflow run");
   return run;
 }
 
-export async function cancelWorkflowRun(runId: string, actor: ActorContext): Promise<WorkflowRun> {
+export async function cancelWorkflowRun(
+  runId: string,
+  actor: ActorContext,
+): Promise<WorkflowRun> {
   const run = await prisma.workflowRun.findUnique({ where: { id: runId } });
-  if (!run) throw new NotFoundError('Workflow run');
-  if (run.status !== 'RUNNING') {
+  if (!run) throw new NotFoundError("Workflow run");
+  if (run.status !== "RUNNING") {
     throw new PreconditionFailedError(
       `Only running workflow runs can be cancelled (current status: ${run.status}).`,
     );
@@ -348,15 +432,15 @@ export async function cancelWorkflowRun(runId: string, actor: ActorContext): Pro
   const updated = await prisma.workflowRun.update({
     where: { id: runId },
     data: {
-      status: 'CANCELLED',
+      status: "CANCELLED",
       completedAt: new Date(),
       cancelledById: actor.actorId ?? null,
     },
   });
 
   await recordAudit({
-    action: 'workflow-run.cancelled',
-    resourceType: 'workflow-run',
+    action: "workflow-run.cancelled",
+    resourceType: "workflow-run",
     resourceId: runId,
     tenantId: run.tenantId,
     before: { status: run.status },
@@ -368,16 +452,27 @@ export async function cancelWorkflowRun(runId: string, actor: ActorContext): Pro
   return updated;
 }
 
-export async function listTenantWorkflowAssignments(tenantId: string, req: Request) {
+export async function listTenantWorkflowAssignments(
+  tenantId: string,
+  req: Request,
+) {
   const query = parseListQuery(req);
   const where = { tenantId };
   const [rows, total] = await Promise.all([
     prisma.tenantWorkflowAssignment.findMany({
       where,
       include: {
-        template: { select: { id: true, key: true, name: true, status: true, currentVersion: true } },
+        template: {
+          select: {
+            id: true,
+            key: true,
+            name: true,
+            status: true,
+            currentVersion: true,
+          },
+        },
       },
-      orderBy: { createdAt: 'asc' },
+      orderBy: { createdAt: "asc" },
       ...paginationArgs(query),
     }),
     prisma.tenantWorkflowAssignment.count({ where }),
@@ -393,12 +488,17 @@ export async function replaceTenantWorkflowAssignments(
 ) {
   const unique = new Map<string, { templateId: string; moduleKey: string }>();
   for (const entry of assignments) {
-    const moduleKey = entry.moduleKey ?? 'global';
-    unique.set(`${entry.templateId}::${moduleKey}`, { templateId: entry.templateId, moduleKey });
+    const moduleKey = entry.moduleKey ?? "global";
+    unique.set(`${entry.templateId}::${moduleKey}`, {
+      templateId: entry.templateId,
+      moduleKey,
+    });
   }
   const wanted = Array.from(unique.values());
 
-  const templateIds = Array.from(new Set(wanted.map((entry) => entry.templateId)));
+  const templateIds = Array.from(
+    new Set(wanted.map((entry) => entry.templateId)),
+  );
   const templates = templateIds.length
     ? await prisma.workflowTemplate.findMany({
         where: { id: { in: templateIds }, deletedAt: null },
@@ -409,8 +509,11 @@ export async function replaceTenantWorkflowAssignments(
   const missing = templateIds.filter((id) => !foundIds.has(id));
   if (missing.length > 0) {
     throw new ValidationError(
-      'One or more workflow templates could not be found.',
-      missing.map((id) => ({ field: 'assignments', message: `Workflow template "${id}" was not found.` })),
+      "One or more workflow templates could not be found.",
+      missing.map((id) => ({
+        field: "assignments",
+        message: `Workflow template "${id}" was not found.`,
+      })),
     );
   }
 
@@ -422,7 +525,10 @@ export async function replaceTenantWorkflowAssignments(
         where: {
           tenantId,
           NOT: {
-            OR: wanted.map(({ templateId, moduleKey }) => ({ templateId, moduleKey })),
+            OR: wanted.map(({ templateId, moduleKey }) => ({
+              templateId,
+              moduleKey,
+            })),
           },
         },
       });
@@ -450,8 +556,8 @@ export async function replaceTenantWorkflowAssignments(
   });
 
   await recordAudit({
-    action: 'tenant.workflow-assignments.updated',
-    resourceType: 'tenant-workflow-assignment',
+    action: "tenant.workflow-assignments.updated",
+    resourceType: "tenant-workflow-assignment",
     resourceId: tenantId,
     tenantId,
     metadata: { assignments: wanted },
@@ -462,8 +568,16 @@ export async function replaceTenantWorkflowAssignments(
   return prisma.tenantWorkflowAssignment.findMany({
     where: { tenantId },
     include: {
-      template: { select: { id: true, key: true, name: true, status: true, currentVersion: true } },
+      template: {
+        select: {
+          id: true,
+          key: true,
+          name: true,
+          status: true,
+          currentVersion: true,
+        },
+      },
     },
-    orderBy: { createdAt: 'asc' },
+    orderBy: { createdAt: "asc" },
   });
 }

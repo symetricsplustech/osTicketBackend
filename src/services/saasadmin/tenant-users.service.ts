@@ -1,13 +1,16 @@
-import type { Request } from 'express';
-import type { Prisma } from '@prisma/client';
-import { prisma } from '../../config/database';
-import { ConflictError } from '../../shared/errors';
-import { recordAudit } from '../../shared/audit';
-import { publishEvent } from '../../shared/events';
-import { hashPassword } from '../../shared/utils/passwords';
-import { normaliseEmail } from '../../shared/utils/sanitize';
-import { inviteUser } from '../tenantadmin/users.service';
-import type { CreateTenantUserInput } from '../../validators/saasadmin/tenants.validators';
+import type { Request } from "express";
+import type { Prisma } from "@prisma/client";
+import { prisma } from "../../config/database";
+import { ConflictError, ValidationError } from "../../shared/errors";
+import { recordAudit } from "../../shared/audit";
+import { publishEvent } from "../../shared/events";
+import { hashPassword } from "../../shared/utils/passwords";
+import { normaliseEmail } from "../../shared/utils/sanitize";
+import {
+  inviteUser,
+  assertNotPlatformStaff,
+} from "../tenantadmin/users.service";
+import type { CreateTenantUserInput } from "../../validators/saasadmin/tenants.validators";
 
 const USER_SUMMARY_SELECT = {
   id: true,
@@ -29,14 +32,18 @@ export interface TenantOrgUserActor {
 }
 
 async function resolveTenantRolesByKey(tenantId: string, roleKeys?: string[]) {
-  const unique = Array.from(new Set((roleKeys ?? []).map((key) => key.trim()).filter(Boolean)));
+  const unique = Array.from(
+    new Set((roleKeys ?? []).map((key) => key.trim()).filter(Boolean)),
+  );
   if (unique.length === 0) return [];
   const roles = await prisma.tenantRole.findMany({
-    where: { tenantId, key: { in: unique }, deletedAt: null, status: 'ACTIVE' },
+    where: { tenantId, key: { in: unique }, deletedAt: null, status: "ACTIVE" },
     select: { id: true, key: true },
   });
   if (roles.length !== unique.length) {
-    throw new ConflictError('One or more of the selected roles could not be found in this organization.');
+    throw new ConflictError(
+      "One or more of the selected roles could not be found in this organization.",
+    );
   }
   return roles;
 }
@@ -50,14 +57,26 @@ export async function createTenantOrgUser(
   const roles = await resolveTenantRolesByKey(tenantId, input.roleKeys);
 
   const existingUser = await prisma.user.findUnique({ where: { email } });
-  if (existingUser?.deletedAt) throw new ConflictError('A user with this email address already exists.');
+  if (existingUser?.deletedAt)
+    throw new ConflictError("A user with this email address already exists.");
+  assertNotPlatformStaff(existingUser);
 
   if (existingUser) {
     const existingMembership = await prisma.tenantMembership.findFirst({
       where: { tenantId, userId: existingUser.id },
       select: { id: true },
     });
-    if (existingMembership) throw new ConflictError('This user is already a member of the organization.');
+    if (existingMembership)
+      throw new ConflictError(
+        "This user is already a member of the organization.",
+      );
+    if (existingUser.status !== "ACTIVE") {
+      throw new ConflictError(
+        existingUser.status === "INVITED"
+          ? "This email has a pending invitation that must be accepted or revoked first."
+          : `This account is ${existingUser.status.toLowerCase()} and cannot be added. Manage it through the organization users screen.`,
+      );
+    }
   }
 
   if (!input.password) {
@@ -75,38 +94,37 @@ export async function createTenantOrgUser(
         tenantId,
         actorId: actor.actorId ?? null,
         actorEmail: actor.actorEmail ?? null,
-        actorType: 'PLATFORM_ADMIN',
+        actorType: "PLATFORM_ADMIN",
         req: actor.req,
       },
     );
-    return { ...invited, status: 'INVITED' as const };
+    return { ...invited, status: "INVITED" as const };
   }
 
-  const passwordHash = await hashPassword(input.password);
+  // An existing ACTIVE tenant user keeps their own credentials: linking the
+  // membership must never reset a password on an account we did not create.
+  const reusedExistingAccount = Boolean(existingUser);
+  const passwordHash = reusedExistingAccount
+    ? null
+    : await hashPassword(input.password);
 
   const { user, membership } = await prisma.$transaction(async (tx) => {
     const createdUser = existingUser
-      ? await tx.user.update({
+      ? await tx.user.findUniqueOrThrow({
           where: { id: existingUser.id },
-          data: {
-            passwordHash,
-            status: 'ACTIVE',
-            invitationTokenHash: null,
-            invitationExpiresAt: null,
-          },
           select: USER_SUMMARY_SELECT,
         })
       : await tx.user.create({
           data: {
             email,
-            passwordHash,
+            passwordHash: passwordHash!,
             firstName: input.firstName,
             lastName: input.lastName,
             displayName: `${input.firstName} ${input.lastName}`.trim(),
             jobTitle: input.jobTitle ?? null,
             phone: input.phone ?? null,
-            userType: 'TENANT_USER',
-            status: 'ACTIVE',
+            userType: "TENANT_USER",
+            status: "ACTIVE",
             emailVerifiedAt: new Date(),
             createdById: actor.actorId ?? null,
           },
@@ -117,7 +135,7 @@ export async function createTenantOrgUser(
       data: {
         tenantId,
         userId: createdUser.id,
-        status: 'ACTIVE',
+        status: "ACTIVE",
         joinedAt: new Date(),
         invitedById: actor.actorId ?? null,
       },
@@ -139,8 +157,8 @@ export async function createTenantOrgUser(
   });
 
   await recordAudit({
-    action: 'tenant.user.created',
-    resourceType: 'tenant-membership',
+    action: "tenant.user.created",
+    resourceType: "tenant-membership",
     resourceId: membership.id,
     tenantId,
     after: {
@@ -149,18 +167,24 @@ export async function createTenantOrgUser(
       membershipStatus: membership.status,
       roleKeys: roles.map((role) => role.key),
     },
+    metadata: { reusedExistingAccount },
     actorId: actor.actorId ?? null,
     actorEmail: actor.actorEmail ?? null,
-    actorType: 'PLATFORM_ADMIN',
+    actorType: "PLATFORM_ADMIN",
     req: actor.req,
   });
-  void publishEvent({ eventKey: 'tenant.user.created', tenantId, payload: { userId: user.id, email: user.email } });
+  void publishEvent({
+    eventKey: "tenant.user.created",
+    tenantId,
+    payload: { userId: user.id, email: user.email },
+  });
 
   return {
     userId: user.id,
     membershipId: membership.id,
     email: user.email,
-    status: 'ACTIVE' as const,
+    status: "ACTIVE" as const,
     roles: roles.map((role) => role.key),
+    reusedExistingAccount,
   };
 }

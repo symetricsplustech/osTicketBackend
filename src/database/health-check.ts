@@ -1,6 +1,6 @@
-import { prisma } from '../config/database';
-import { redisHealth } from '../config/redis';
-import { storage } from '../config/storage';
+import { prisma } from "../config/database";
+import { redisHealth } from "../config/redis";
+import { storage } from "../config/storage";
 
 export interface DatabaseHealth {
   ok: boolean;
@@ -17,7 +17,7 @@ export async function checkDatabase(): Promise<DatabaseHealth> {
     return {
       ok: false,
       latencyMs: Date.now() - started,
-      error: error instanceof Error ? error.message : 'Database check failed',
+      error: error instanceof Error ? error.message : "Database check failed",
     };
   }
 }

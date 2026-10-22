@@ -1,9 +1,9 @@
-import type { NextFunction, Request, RequestHandler, Response } from 'express';
-import { ForbiddenError, UnauthorizedError } from '../../shared/errors';
+import type { NextFunction, Request, RequestHandler, Response } from "express";
+import { ForbiddenError, UnauthorizedError } from "../../shared/errors";
 import {
   assertAnyTenantPermission,
   assertTenantPermission,
-} from '../../shared/permissions/guard';
+} from "../../shared/permissions/guard";
 
 /**
  * Ensures the request is bound to an authenticated organization membership.
@@ -16,12 +16,20 @@ export const requireTenantMembership: RequestHandler = (
   next: NextFunction,
 ) => {
   try {
-    if (!req.auth) throw new UnauthorizedError('Authentication is required.');
-    if (req.auth.userType !== 'TENANT_USER') {
-      throw new ForbiddenError('This endpoint is only available to organization members.');
+    if (!req.auth) throw new UnauthorizedError("Authentication is required.");
+    if (req.auth.userType !== "TENANT_USER") {
+      throw new ForbiddenError(
+        "This endpoint is only available to organization members.",
+      );
     }
-    if (!req.auth.activeTenantId || !req.auth.membershipId || !req.tenantContext) {
-      throw new ForbiddenError('No active organization is selected for this session.');
+    if (
+      !req.auth.activeTenantId ||
+      !req.auth.membershipId ||
+      !req.tenantContext
+    ) {
+      throw new ForbiddenError(
+        "No active organization is selected for this session.",
+      );
     }
     next();
   } catch (error) {

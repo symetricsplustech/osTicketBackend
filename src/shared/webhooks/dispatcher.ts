@@ -1,10 +1,10 @@
-import { prisma } from '../../config/database';
-import { env } from '../../config/env';
-import { logger } from '../../config/logger';
-import { decryptSecret } from '../encryption';
-import { hmacSha256 } from '../utils/crypto';
-import { truncate } from '../utils/sanitize';
-import { assertSafeOutboundUrl } from './ssrf';
+import { prisma } from "../../config/database";
+import { env } from "../../config/env";
+import { logger } from "../../config/logger";
+import { decryptSecret } from "../encryption";
+import { hmacSha256 } from "../utils/crypto";
+import { truncate } from "../utils/sanitize";
+import { assertSafeOutboundUrl } from "./ssrf";
 
 function backoffSeconds(attempt: number): number {
   return Math.min(3600, 30 * 2 ** Math.max(0, attempt - 1));
@@ -15,13 +15,17 @@ export async function dispatchDelivery(deliveryId: string): Promise<void> {
     where: { id: deliveryId },
     include: { webhook: true },
   });
-  if (!delivery || delivery.status !== 'PENDING') return;
+  if (!delivery || delivery.status !== "PENDING") return;
 
   const webhook = delivery.webhook;
   if (!webhook.isEnabled) {
     await prisma.webhookDelivery.update({
       where: { id: delivery.id },
-      data: { status: 'FAILED', lastError: 'Webhook is disabled.', nextRetryAt: null },
+      data: {
+        status: "FAILED",
+        lastError: "Webhook is disabled.",
+        nextRetryAt: null,
+      },
     });
     return;
   }
@@ -36,36 +40,41 @@ export async function dispatchDelivery(deliveryId: string): Promise<void> {
   });
 
   try {
-    await assertSafeOutboundUrl(webhook.url, { allowHttp: env.NODE_ENV !== 'production' });
+    await assertSafeOutboundUrl(webhook.url, {
+      allowHttp: env.NODE_ENV !== "production",
+    });
     const secret = decryptSecret(webhook.secretEnc);
     const signature = hmacSha256(`${timestamp}.${body}`, secret);
 
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), env.WEBHOOK_TIMEOUT_MS);
+    const timeout = setTimeout(
+      () => controller.abort(),
+      env.WEBHOOK_TIMEOUT_MS,
+    );
     const response = await fetch(webhook.url, {
-      method: 'POST',
+      method: "POST",
       headers: {
-        'Content-Type': 'application/json',
-        'User-Agent': 'ITSM-SaaS-Webhooks/1.0',
-        'X-Webhook-Event': delivery.eventKey,
-        'X-Webhook-Delivery': delivery.id,
-        'X-Webhook-Timestamp': String(timestamp),
-        'X-Webhook-Signature': `sha256=${signature}`,
+        "Content-Type": "application/json",
+        "User-Agent": "ITSM-SaaS-Webhooks/1.0",
+        "X-Webhook-Event": delivery.eventKey,
+        "X-Webhook-Delivery": delivery.id,
+        "X-Webhook-Timestamp": String(timestamp),
+        "X-Webhook-Signature": `sha256=${signature}`,
       },
       body,
       signal: controller.signal,
-      redirect: 'manual',
+      redirect: "manual",
     });
     clearTimeout(timeout);
 
-    const responseText = truncate(await response.text().catch(() => ''), 1000);
+    const responseText = truncate(await response.text().catch(() => ""), 1000);
 
     if (response.status >= 200 && response.status < 300) {
       await prisma.$transaction([
         prisma.webhookDelivery.update({
           where: { id: delivery.id },
           data: {
-            status: 'SUCCESS',
+            status: "SUCCESS",
             attempts: delivery.attempts + 1,
             responseStatus: response.status,
             responseBody: responseText,
@@ -82,20 +91,27 @@ export async function dispatchDelivery(deliveryId: string): Promise<void> {
       return;
     }
 
-    throw new Error(`Destination responded with HTTP ${response.status}: ${truncate(responseText, 300)}`);
+    throw new Error(
+      `Destination responded with HTTP ${response.status}: ${truncate(responseText, 300)}`,
+    );
   } catch (error) {
     const attempts = delivery.attempts + 1;
     const exhausted = attempts >= env.WEBHOOK_MAX_ATTEMPTS;
-    const message = truncate(error instanceof Error ? error.message : String(error), 500);
+    const message = truncate(
+      error instanceof Error ? error.message : String(error),
+      500,
+    );
 
     await prisma.$transaction([
       prisma.webhookDelivery.update({
         where: { id: delivery.id },
         data: {
-          status: exhausted ? 'FAILED' : 'PENDING',
+          status: exhausted ? "FAILED" : "PENDING",
           attempts,
           lastError: message,
-          nextRetryAt: exhausted ? null : new Date(Date.now() + backoffSeconds(attempts) * 1000),
+          nextRetryAt: exhausted
+            ? null
+            : new Date(Date.now() + backoffSeconds(attempts) * 1000),
         },
       }),
       prisma.webhook.update({
@@ -105,20 +121,28 @@ export async function dispatchDelivery(deliveryId: string): Promise<void> {
     ]);
 
     if (!exhausted) {
-      logger.warn({ deliveryId, attempts, error: message }, 'Webhook delivery failed — scheduled for retry');
+      logger.warn(
+        { deliveryId, attempts, error: message },
+        "Webhook delivery failed — scheduled for retry",
+      );
     } else {
-      logger.error({ deliveryId, attempts, error: message }, 'Webhook delivery permanently failed');
+      logger.error(
+        { deliveryId, attempts, error: message },
+        "Webhook delivery permanently failed",
+      );
     }
   }
 }
 
-export async function processPendingWebhookDeliveries(limit = 25): Promise<number> {
+export async function processPendingWebhookDeliveries(
+  limit = 25,
+): Promise<number> {
   const deliveries = await prisma.webhookDelivery.findMany({
     where: {
-      status: 'PENDING',
+      status: "PENDING",
       OR: [{ nextRetryAt: null }, { nextRetryAt: { lte: new Date() } }],
     },
-    orderBy: { createdAt: 'asc' },
+    orderBy: { createdAt: "asc" },
     take: limit,
     select: { id: true },
   });

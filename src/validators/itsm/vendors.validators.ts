@@ -1,4 +1,4 @@
-import { z } from 'zod';
+import { z } from "zod";
 
 export const vendorIdParamSchema = z.object({ vendorId: z.string().min(1) });
 
@@ -6,8 +6,12 @@ export const createVendorSchema = z
   .object({
     name: z.string().trim().min(1).max(300),
     code: z.string().trim().min(1).max(80).nullable().optional(),
-    type: z.enum(['SUPPLIER', 'MANUFACTURER', 'PARTNER', 'CONTRACTOR', 'OTHER']).optional(),
-    status: z.enum(['ACTIVE', 'INACTIVE', 'PROSPECT', 'BLACKLISTED']).optional(),
+    type: z
+      .enum(["SUPPLIER", "MANUFACTURER", "PARTNER", "CONTRACTOR", "OTHER"])
+      .optional(),
+    status: z
+      .enum(["ACTIVE", "INACTIVE", "PROSPECT", "BLACKLISTED"])
+      .optional(),
     contactName: z.string().trim().max(200).optional(),
     email: z.string().trim().email().max(320).optional(),
     phone: z.string().trim().max(60).optional(),

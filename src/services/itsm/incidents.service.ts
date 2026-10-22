@@ -1,10 +1,15 @@
-import type { Request } from 'express';
-import type { Prisma } from '@prisma/client';
-import { prisma } from '../../config/database';
-import { NotFoundError } from '../../shared/errors';
-import { buildOrderBy, buildPaginationMeta, paginationArgs, parseListQuery } from '../../shared/pagination';
-import { recordAudit } from '../../shared/audit';
-import { publishEvent } from '../../shared/events';
+import type { Request } from "express";
+import type { Prisma } from "@prisma/client";
+import { prisma } from "../../config/database";
+import { NotFoundError } from "../../shared/errors";
+import {
+  buildOrderBy,
+  buildPaginationMeta,
+  paginationArgs,
+  parseListQuery,
+} from "../../shared/pagination";
+import { recordAudit } from "../../shared/audit";
+import { publishEvent } from "../../shared/events";
 import {
   USER_SUMMARY,
   assertTenantCategory,
@@ -13,8 +18,9 @@ import {
   assertTenantTeam,
   assertTenantUser,
   generateTicketNumber,
-} from './shared';
-import type { TenantActorContext } from '../tenantadmin/roles.service';
+} from "./shared";
+import { createSlaInstancesForIncident } from "./slaEngine.service";
+import type { TenantActorContext } from "../tenantadmin/roles.service";
 import type {
   AssignIncidentInput,
   CreateIncidentCommentInput,
@@ -23,7 +29,7 @@ import type {
   ReopenIncidentInput,
   ResolveIncidentInput,
   UpdateIncidentInput,
-} from '../../validators/itsm/incidents.validators';
+} from "../../validators/itsm/incidents.validators";
 
 const INCIDENT_INCLUDE = {
   caller: { select: USER_SUMMARY },
@@ -39,7 +45,7 @@ async function findIncidentOrThrow(tenantId: string, incidentId: string) {
     where: { id: incidentId, tenantId, deletedAt: null },
     include: INCIDENT_INCLUDE,
   });
-  if (!incident) throw new NotFoundError('Incident');
+  if (!incident) throw new NotFoundError("Incident");
   return incident;
 }
 
@@ -47,12 +53,26 @@ export async function listIncidents(tenantId: string, req: Request) {
   const query = parseListQuery(req, { maxLimit: 100 });
   const where: Prisma.IncidentWhereInput = { tenantId, deletedAt: null };
 
-  const statusKey = typeof query.status === 'string' && query.status ? query.status : undefined;
-  const priorityKey = typeof query.priorityKey === 'string' && query.priorityKey ? query.priorityKey : undefined;
-  const assigneeId = typeof query.assigneeId === 'string' && query.assigneeId ? query.assigneeId : undefined;
-  const callerId = typeof query.callerId === 'string' && query.callerId ? query.callerId : undefined;
-  const teamId = typeof query.teamId === 'string' && query.teamId ? query.teamId : undefined;
-  const customerId = typeof query.customerId === 'string' && query.customerId ? query.customerId : undefined;
+  const statusKey =
+    typeof query.status === "string" && query.status ? query.status : undefined;
+  const priorityKey =
+    typeof query.priorityKey === "string" && query.priorityKey
+      ? query.priorityKey
+      : undefined;
+  const assigneeId =
+    typeof query.assigneeId === "string" && query.assigneeId
+      ? query.assigneeId
+      : undefined;
+  const callerId =
+    typeof query.callerId === "string" && query.callerId
+      ? query.callerId
+      : undefined;
+  const teamId =
+    typeof query.teamId === "string" && query.teamId ? query.teamId : undefined;
+  const customerId =
+    typeof query.customerId === "string" && query.customerId
+      ? query.customerId
+      : undefined;
 
   if (statusKey) where.statusKey = statusKey;
   if (priorityKey) where.priorityKey = priorityKey;
@@ -62,19 +82,32 @@ export async function listIncidents(tenantId: string, req: Request) {
   if (customerId) where.customerId = customerId;
   if (query.search) {
     where.OR = [
-      { number: { contains: query.search, mode: 'insensitive' } },
-      { title: { contains: query.search, mode: 'insensitive' } },
-      { description: { contains: query.search, mode: 'insensitive' } },
+      { number: { contains: query.search, mode: "insensitive" } },
+      { title: { contains: query.search, mode: "insensitive" } },
+      { description: { contains: query.search, mode: "insensitive" } },
     ];
   }
 
   const orderBy = buildOrderBy(
     query,
-    ['number', 'title', 'statusKey', 'priorityKey', 'createdAt', 'updatedAt', 'dueAt'],
-    { createdAt: 'desc' } as Prisma.IncidentOrderByWithRelationInput,
+    [
+      "number",
+      "title",
+      "statusKey",
+      "priorityKey",
+      "createdAt",
+      "updatedAt",
+      "dueAt",
+    ],
+    { createdAt: "desc" } as Prisma.IncidentOrderByWithRelationInput,
   );
   const [rows, total] = await Promise.all([
-    prisma.incident.findMany({ where, orderBy, ...paginationArgs(query), include: INCIDENT_INCLUDE }),
+    prisma.incident.findMany({
+      where,
+      orderBy,
+      ...paginationArgs(query),
+      include: INCIDENT_INCLUDE,
+    }),
     prisma.incident.count({ where }),
   ]);
 
@@ -97,21 +130,28 @@ async function validateReferences(
   },
 ) {
   await assertTenantCategory(tenantId, input.categoryId);
-  await assertTenantUser(tenantId, input.callerId, 'caller');
-  await assertTenantUser(tenantId, input.assigneeId, 'assignee');
+  await assertTenantUser(tenantId, input.callerId, "caller");
+  await assertTenantUser(tenantId, input.assigneeId, "assignee");
   await assertTenantTeam(tenantId, input.teamId);
   await assertTenantDepartment(tenantId, input.departmentId);
   await assertTenantLocation(tenantId, input.locationId);
 }
 
-export async function createIncident(tenantId: string, input: CreateIncidentInput, actor: TenantActorContext) {
+export async function createIncident(
+  tenantId: string,
+  input: CreateIncidentInput,
+  actor: TenantActorContext,
+) {
   await validateReferences(tenantId, input);
 
   const count = await prisma.incident.count({ where: { tenantId } });
   const number = await generateTicketNumber(
-    'incidents',
-    'INC',
-    async (candidate) => (await prisma.incident.count({ where: { tenantId, number: candidate } })) > 0,
+    "incidents",
+    "INC",
+    async (candidate) =>
+      (await prisma.incident.count({
+        where: { tenantId, number: candidate },
+      })) > 0,
     count + 1,
   );
 
@@ -121,12 +161,12 @@ export async function createIncident(tenantId: string, input: CreateIncidentInpu
       number,
       title: input.title,
       description: input.description ?? null,
-      statusKey: input.statusKey ?? 'new',
-      priorityKey: input.priorityKey ?? 'medium',
-      impact: input.impact ?? 'MEDIUM',
-      urgency: input.urgency ?? 'MEDIUM',
+      statusKey: input.statusKey ?? "new",
+      priorityKey: input.priorityKey ?? "medium",
+      impact: input.impact ?? "MEDIUM",
+      urgency: input.urgency ?? "MEDIUM",
       categoryId: input.categoryId ?? null,
-      source: input.source ?? 'PORTAL',
+      source: input.source ?? "PORTAL",
       channel: input.channel ?? null,
       callerId: input.callerId ?? actor.actorId ?? null,
       assigneeId: input.assigneeId ?? null,
@@ -135,24 +175,91 @@ export async function createIncident(tenantId: string, input: CreateIncidentInpu
       locationId: input.locationId ?? null,
       tags: input.tags ?? [],
       dueAt: input.dueAt ?? null,
-      metadata: (input.metadata ?? undefined) as Prisma.InputJsonValue | undefined,
+      metadata: (input.metadata ?? undefined) as
+        Prisma.InputJsonValue | undefined,
       createdById: actor.actorId ?? null,
     },
     include: INCIDENT_INCLUDE,
   });
 
   await recordAudit({
-    action: 'incident.created',
-    resourceType: 'incident',
+    action: "incident.created",
+    resourceType: "incident",
     resourceId: incident.id,
     tenantId,
     after: incident,
     actorId: actor.actorId ?? null,
     actorEmail: actor.actorEmail ?? null,
-    actorType: actor.actorType ?? 'TENANT_USER',
+    actorType: actor.actorType ?? "TENANT_USER",
     req: actor.req,
   });
-  void publishEvent({ eventKey: 'incident.created', tenantId, payload: { incidentId: incident.id, number } });
+  void publishEvent({
+    eventKey: "incident.created",
+    tenantId,
+    payload: { incidentId: incident.id, number },
+  });
+
+  // Start SLA clocks for the new incident (response + resolution milestones).
+  void createSlaInstancesForIncident(
+    tenantId,
+    incident.id,
+    input.priorityKey ?? "medium",
+    actor,
+  );
+
+  // Auto-assign to a team matching the category when no team/assignee was set.
+  // A "Network" category ticket routes to the "Network Team", etc.
+  if (!incident.teamId && !incident.assigneeId && input.categoryId) {
+    const category = await prisma.classificationCategory.findFirst({
+      where: { id: input.categoryId },
+      select: { id: true, name: true },
+    });
+    if (category) {
+      const team = await prisma.team.findFirst({
+        where: {
+          tenantId,
+          deletedAt: null,
+          name: { contains: category.name, mode: "insensitive" },
+        },
+        include: {
+          lead: { select: { id: true, firstName: true, lastName: true } },
+          members: {
+            where: { isLead: true },
+            include: { user: { select: { id: true } } },
+            take: 1,
+          },
+        },
+      });
+      if (team) {
+        const targetUserId =
+          team.lead?.id ??
+          team.members[0]?.userId ??
+          null;
+        if (targetUserId) {
+          await prisma.incident.update({
+            where: { id: incident.id },
+            data: {
+              teamId: team.id,
+              assigneeId: targetUserId,
+              firstResponseAt: incident.firstResponseAt ?? new Date(),
+            },
+          });
+          await recordAudit({
+            action: "incident.auto-assigned",
+            resourceType: "incident",
+            resourceId: incident.id,
+            tenantId,
+            before: { teamId: null, assigneeId: null },
+            after: { teamId: team.id, assigneeId: targetUserId },
+            actorId: actor.actorId ?? null,
+            actorEmail: actor.actorEmail ?? null,
+            actorType: actor.actorType ?? "TENANT_USER",
+            req: actor.req,
+          });
+        }
+      }
+    }
+  }
 
   return incident;
 }
@@ -172,58 +279,78 @@ export async function updateIncident(
       (data as Record<string, unknown>)[key] = input[key];
     }
   };
-  assign('title');
-  assign('description');
-  assign('statusKey');
-  assign('priorityKey');
-  assign('impact');
-  assign('urgency');
-  assign('categoryId');
-  assign('source');
-  assign('channel');
-  assign('callerId');
-  assign('teamId');
-  assign('departmentId');
-  assign('locationId');
-  assign('tags');
-  assign('dueAt');
-  if (input.metadata !== undefined) data.metadata = input.metadata as Prisma.InputJsonValue;
+  assign("title");
+  assign("description");
+  assign("statusKey");
+  assign("priorityKey");
+  assign("impact");
+  assign("urgency");
+  assign("categoryId");
+  assign("source");
+  assign("channel");
+  assign("callerId");
+  assign("teamId");
+  assign("departmentId");
+  assign("locationId");
+  assign("tags");
+  assign("dueAt");
+  if (input.metadata !== undefined)
+    data.metadata = input.metadata as Prisma.InputJsonValue;
 
-  const incident = await prisma.incident.update({ where: { id: incidentId }, data, include: INCIDENT_INCLUDE });
+  const incident = await prisma.incident.update({
+    where: { id: incidentId },
+    data,
+    include: INCIDENT_INCLUDE,
+  });
 
   await recordAudit({
-    action: 'incident.updated',
-    resourceType: 'incident',
+    action: "incident.updated",
+    resourceType: "incident",
     resourceId: incidentId,
     tenantId,
     before,
     after: incident,
     actorId: actor.actorId ?? null,
     actorEmail: actor.actorEmail ?? null,
-    actorType: actor.actorType ?? 'TENANT_USER',
+    actorType: actor.actorType ?? "TENANT_USER",
     req: actor.req,
   });
-  void publishEvent({ eventKey: 'incident.updated', tenantId, payload: { incidentId } });
+  void publishEvent({
+    eventKey: "incident.updated",
+    tenantId,
+    payload: { incidentId },
+  });
 
   return incident;
 }
 
-export async function deleteIncident(tenantId: string, incidentId: string, actor: TenantActorContext) {
+export async function deleteIncident(
+  tenantId: string,
+  incidentId: string,
+  actor: TenantActorContext,
+) {
   const before = await findIncidentOrThrow(tenantId, incidentId);
-  await prisma.incident.update({ where: { id: incidentId }, data: { deletedAt: new Date() } });
+  await prisma.incident.update({
+    where: { id: incidentId },
+    data: { deletedAt: new Date() },
+  });
 
   await recordAudit({
-    action: 'incident.deleted',
-    resourceType: 'incident',
+    action: "incident.deleted",
+    resourceType: "incident",
     resourceId: incidentId,
     tenantId,
     before,
     actorId: actor.actorId ?? null,
     actorEmail: actor.actorEmail ?? null,
-    actorType: actor.actorType ?? 'TENANT_USER',
+    actorType: actor.actorType ?? "TENANT_USER",
     req: actor.req,
   });
-  void publishEvent({ eventKey: 'incident.deleted', tenantId, payload: { incidentId } });
+  void publishEvent({
+    eventKey: "incident.deleted",
+    tenantId,
+    payload: { incidentId },
+  });
 }
 
 export async function assignIncident(
@@ -233,13 +360,15 @@ export async function assignIncident(
   actor: TenantActorContext,
 ) {
   const before = await findIncidentOrThrow(tenantId, incidentId);
-  await assertTenantUser(tenantId, input.assigneeId, 'assignee');
+  await assertTenantUser(tenantId, input.assigneeId, "assignee");
   await assertTenantTeam(tenantId, input.teamId);
 
   const incident = await prisma.incident.update({
     where: { id: incidentId },
     data: {
-      ...(input.assigneeId !== undefined ? { assigneeId: input.assigneeId } : {}),
+      ...(input.assigneeId !== undefined
+        ? { assigneeId: input.assigneeId }
+        : {}),
       ...(input.teamId !== undefined ? { teamId: input.teamId } : {}),
       ...(before.firstResponseAt ? {} : { firstResponseAt: new Date() }),
     },
@@ -247,18 +376,22 @@ export async function assignIncident(
   });
 
   await recordAudit({
-    action: 'incident.assigned',
-    resourceType: 'incident',
+    action: "incident.assigned",
+    resourceType: "incident",
     resourceId: incidentId,
     tenantId,
     before: { assigneeId: before.assigneeId, teamId: before.teamId },
     after: { assigneeId: incident.assigneeId, teamId: incident.teamId },
     actorId: actor.actorId ?? null,
     actorEmail: actor.actorEmail ?? null,
-    actorType: actor.actorType ?? 'TENANT_USER',
+    actorType: actor.actorType ?? "TENANT_USER",
     req: actor.req,
   });
-  void publishEvent({ eventKey: 'incident.assigned', tenantId, payload: { incidentId } });
+  void publishEvent({
+    eventKey: "incident.assigned",
+    tenantId,
+    payload: { incidentId },
+  });
 
   return incident;
 }
@@ -270,15 +403,24 @@ export async function escalateIncident(
   actor: TenantActorContext,
 ) {
   const before = await findIncidentOrThrow(tenantId, incidentId);
-  const priorityKey = input.priorityKey ?? (before.priorityKey === 'critical' ? 'critical' : 'high');
+  const priorityKey =
+    input.priorityKey ??
+    (before.priorityKey === "critical" ? "critical" : "high");
 
   const metadata = (before.metadata as Record<string, unknown> | null) ?? {};
-  const escalations = Array.isArray(metadata['escalations']) ? (metadata['escalations'] as unknown[]) : [];
+  const escalations = Array.isArray(metadata["escalations"])
+    ? (metadata["escalations"] as unknown[])
+    : [];
   const nextMetadata = {
     ...metadata,
     escalations: [
       ...escalations,
-      { at: new Date().toISOString(), by: actor.actorId ?? null, priorityKey, reason: input.reason ?? null },
+      {
+        at: new Date().toISOString(),
+        by: actor.actorId ?? null,
+        priorityKey,
+        reason: input.reason ?? null,
+      },
     ],
   };
 
@@ -289,18 +431,22 @@ export async function escalateIncident(
   });
 
   await recordAudit({
-    action: 'incident.escalated',
-    resourceType: 'incident',
+    action: "incident.escalated",
+    resourceType: "incident",
     resourceId: incidentId,
     tenantId,
     before: { priorityKey: before.priorityKey },
     after: { priorityKey: incident.priorityKey, reason: input.reason ?? null },
     actorId: actor.actorId ?? null,
     actorEmail: actor.actorEmail ?? null,
-    actorType: actor.actorType ?? 'TENANT_USER',
+    actorType: actor.actorType ?? "TENANT_USER",
     req: actor.req,
   });
-  void publishEvent({ eventKey: 'incident.escalated', tenantId, payload: { incidentId, priorityKey } });
+  void publishEvent({
+    eventKey: "incident.escalated",
+    tenantId,
+    payload: { incidentId, priorityKey },
+  });
 
   return incident;
 }
@@ -317,7 +463,7 @@ export async function resolveIncident(
   const incident = await prisma.incident.update({
     where: { id: incidentId },
     data: {
-      statusKey: 'resolved',
+      statusKey: "resolved",
       resolutionNotes: input.resolutionNotes,
       resolutionCode: input.resolutionCode ?? null,
       resolvedAt: now,
@@ -327,18 +473,25 @@ export async function resolveIncident(
   });
 
   await recordAudit({
-    action: 'incident.resolved',
-    resourceType: 'incident',
+    action: "incident.resolved",
+    resourceType: "incident",
     resourceId: incidentId,
     tenantId,
     before: { statusKey: before.statusKey },
-    after: { statusKey: incident.statusKey, resolutionCode: incident.resolutionCode },
+    after: {
+      statusKey: incident.statusKey,
+      resolutionCode: incident.resolutionCode,
+    },
     actorId: actor.actorId ?? null,
     actorEmail: actor.actorEmail ?? null,
-    actorType: actor.actorType ?? 'TENANT_USER',
+    actorType: actor.actorType ?? "TENANT_USER",
     req: actor.req,
   });
-  void publishEvent({ eventKey: 'incident.resolved', tenantId, payload: { incidentId } });
+  void publishEvent({
+    eventKey: "incident.resolved",
+    tenantId,
+    payload: { incidentId },
+  });
 
   return incident;
 }
@@ -354,7 +507,7 @@ export async function reopenIncident(
   const incident = await prisma.incident.update({
     where: { id: incidentId },
     data: {
-      statusKey: 'reopened',
+      statusKey: "reopened",
       resolvedAt: null,
       closedAt: null,
       reopenedCount: { increment: 1 },
@@ -363,23 +516,31 @@ export async function reopenIncident(
   });
 
   await recordAudit({
-    action: 'incident.reopened',
-    resourceType: 'incident',
+    action: "incident.reopened",
+    resourceType: "incident",
     resourceId: incidentId,
     tenantId,
     before: { statusKey: before.statusKey },
     after: { statusKey: incident.statusKey, reason: input.reason ?? null },
     actorId: actor.actorId ?? null,
     actorEmail: actor.actorEmail ?? null,
-    actorType: actor.actorType ?? 'TENANT_USER',
+    actorType: actor.actorType ?? "TENANT_USER",
     req: actor.req,
   });
-  void publishEvent({ eventKey: 'incident.reopened', tenantId, payload: { incidentId } });
+  void publishEvent({
+    eventKey: "incident.reopened",
+    tenantId,
+    payload: { incidentId },
+  });
 
   return incident;
 }
 
-export async function listIncidentComments(tenantId: string, incidentId: string, req: Request) {
+export async function listIncidentComments(
+  tenantId: string,
+  incidentId: string,
+  req: Request,
+) {
   await findIncidentOrThrow(tenantId, incidentId);
   const query = parseListQuery(req, { maxLimit: 100 });
 
@@ -388,7 +549,7 @@ export async function listIncidentComments(tenantId: string, incidentId: string,
     prisma.incidentComment.findMany({
       where,
       include: { author: { select: USER_SUMMARY } },
-      orderBy: { createdAt: 'asc' },
+      orderBy: { createdAt: "asc" },
       ...paginationArgs(query),
     }),
     prisma.incidentComment.count({ where }),
@@ -417,17 +578,21 @@ export async function addIncidentComment(
   });
 
   await recordAudit({
-    action: 'incident.comment.added',
-    resourceType: 'incident',
+    action: "incident.comment.added",
+    resourceType: "incident",
     resourceId: incidentId,
     tenantId,
     after: { commentId: comment.id, isInternal: comment.isInternal },
     actorId: actor.actorId ?? null,
     actorEmail: actor.actorEmail ?? null,
-    actorType: actor.actorType ?? 'TENANT_USER',
+    actorType: actor.actorType ?? "TENANT_USER",
     req: actor.req,
   });
-  void publishEvent({ eventKey: 'incident.comment.added', tenantId, payload: { incidentId, commentId: comment.id } });
+  void publishEvent({
+    eventKey: "incident.comment.added",
+    tenantId,
+    payload: { incidentId, commentId: comment.id },
+  });
 
   return comment;
 }

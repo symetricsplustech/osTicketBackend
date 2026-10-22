@@ -1,4 +1,4 @@
-import { z } from 'zod';
+import { z } from "zod";
 
 export const workflowKeySchema = z
   .string()
@@ -6,40 +6,58 @@ export const workflowKeySchema = z
   .toLowerCase()
   .regex(
     /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/,
-    'Key must contain only lowercase letters, numbers and hyphens.',
+    "Key must contain only lowercase letters, numbers and hyphens.",
   );
 
 export const workflowNodeTypeSchema = z.enum([
-  'START',
-  'CONDITION',
-  'ACTION',
-  'APPROVAL',
-  'NOTIFICATION',
-  'END',
+  "START",
+  "CONDITION",
+  "ACTION",
+  "APPROVAL",
+  "NOTIFICATION",
+  "END",
 ]);
 
 export const workflowNodeSchema = z.object({
-  id: z.string().trim().min(1, 'Node id is required.').max(120),
+  id: z.string().trim().min(1, "Node id is required.").max(120),
   type: workflowNodeTypeSchema,
-  name: z.string().trim().min(1, 'Node name is required.').max(200),
+  name: z.string().trim().min(1, "Node name is required.").max(200),
   config: z.record(z.unknown()).optional(),
-  next: z.array(z.string().trim().min(1, 'Transition targets must be non-empty node ids.')).optional(),
+  next: z
+    .array(
+      z
+        .string()
+        .trim()
+        .min(1, "Transition targets must be non-empty node ids."),
+    )
+    .optional(),
 });
 
 export const workflowDefinitionSchema = z.object({
-  nodes: z.array(workflowNodeSchema).min(1, 'A workflow definition requires at least one node.'),
-  initialNodeId: z.string().trim().min(1, 'An initial node id is required.'),
+  nodes: z
+    .array(workflowNodeSchema)
+    .min(1, "A workflow definition requires at least one node."),
+  initialNodeId: z.string().trim().min(1, "An initial node id is required."),
 });
 
 export const createWorkflowTemplateSchema = z.object({
   key: workflowKeySchema,
-  name: z.string().trim().min(2, 'Template name must be at least 2 characters.').max(160),
+  name: z
+    .string()
+    .trim()
+    .min(2, "Template name must be at least 2 characters.")
+    .max(160),
   description: z.string().trim().max(2000).optional(),
   definition: workflowDefinitionSchema,
 });
 
 export const updateWorkflowTemplateSchema = z.object({
-  name: z.string().trim().min(2, 'Template name must be at least 2 characters.').max(160).optional(),
+  name: z
+    .string()
+    .trim()
+    .min(2, "Template name must be at least 2 characters.")
+    .max(160)
+    .optional(),
   description: z.string().trim().max(2000).nullable().optional(),
   definition: workflowDefinitionSchema.optional(),
 });
@@ -49,36 +67,46 @@ export const validateWorkflowDefinitionBodySchema = z.object({
 });
 
 export const workflowTemplateIdParamSchema = z.object({
-  templateId: z.string().min(1, 'Template identifier is required.'),
+  templateId: z.string().min(1, "Template identifier is required."),
 });
 
 export const workflowRunIdParamSchema = z.object({
-  runId: z.string().min(1, 'Run identifier is required.'),
+  runId: z.string().min(1, "Run identifier is required."),
 });
 
 export const workflowTenantParamSchema = z.object({
-  tenantId: z.string().min(1, 'Tenant identifier is required.'),
+  tenantId: z.string().min(1, "Tenant identifier is required."),
 });
 
 export const tenantWorkflowAssignmentEntrySchema = z.object({
-  templateId: z.string().min(1, 'Template identifier is required.'),
+  templateId: z.string().min(1, "Template identifier is required."),
   moduleKey: z.string().trim().min(1).max(60).optional(),
 });
 
 export const tenantWorkflowAssignmentsSchema = z.object({
   assignments: z
     .array(tenantWorkflowAssignmentEntrySchema)
-    .max(500, 'At most 500 workflow assignments can be set at once.'),
+    .max(500, "At most 500 workflow assignments can be set at once."),
 });
 
 export type WorkflowNodeType = z.infer<typeof workflowNodeTypeSchema>;
 export type WorkflowNodeInput = z.infer<typeof workflowNodeSchema>;
 export type WorkflowDefinitionInput = z.infer<typeof workflowDefinitionSchema>;
-export type CreateWorkflowTemplateInput = z.infer<typeof createWorkflowTemplateSchema>;
-export type UpdateWorkflowTemplateInput = z.infer<typeof updateWorkflowTemplateSchema>;
-export type ValidateWorkflowDefinitionBodyInput = z.infer<typeof validateWorkflowDefinitionBodySchema>;
-export type TenantWorkflowAssignmentEntryInput = z.infer<typeof tenantWorkflowAssignmentEntrySchema>;
-export type TenantWorkflowAssignmentsInput = z.infer<typeof tenantWorkflowAssignmentsSchema>;
+export type CreateWorkflowTemplateInput = z.infer<
+  typeof createWorkflowTemplateSchema
+>;
+export type UpdateWorkflowTemplateInput = z.infer<
+  typeof updateWorkflowTemplateSchema
+>;
+export type ValidateWorkflowDefinitionBodyInput = z.infer<
+  typeof validateWorkflowDefinitionBodySchema
+>;
+export type TenantWorkflowAssignmentEntryInput = z.infer<
+  typeof tenantWorkflowAssignmentEntrySchema
+>;
+export type TenantWorkflowAssignmentsInput = z.infer<
+  typeof tenantWorkflowAssignmentsSchema
+>;
 
 export interface WorkflowValidationResult {
   valid: boolean;
@@ -97,14 +125,22 @@ interface ParsedNode {
  * Validates a workflow definition graph. Accepts unknown input so stored JSON
  * definitions can be validated in addition to request payloads.
  */
-export function validateWorkflowDefinition(definition: unknown): WorkflowValidationResult {
+export function validateWorkflowDefinition(
+  definition: unknown,
+): WorkflowValidationResult {
   const errors: string[] = [];
   const warnings: string[] = [];
 
-  if (definition === null || typeof definition !== 'object' || Array.isArray(definition)) {
+  if (
+    definition === null ||
+    typeof definition !== "object" ||
+    Array.isArray(definition)
+  ) {
     return {
       valid: false,
-      errors: ['Workflow definition must be an object with "nodes" and "initialNodeId".'],
+      errors: [
+        'Workflow definition must be an object with "nodes" and "initialNodeId".',
+      ],
       warnings,
     };
   }
@@ -123,14 +159,24 @@ export function validateWorkflowDefinition(definition: unknown): WorkflowValidat
   const duplicateIds = new Set<string>();
 
   candidate.nodes.forEach((rawNode, index) => {
-    if (rawNode === null || typeof rawNode !== 'object' || Array.isArray(rawNode)) {
+    if (
+      rawNode === null ||
+      typeof rawNode !== "object" ||
+      Array.isArray(rawNode)
+    ) {
       errors.push(`Node at index ${index} must be an object.`);
       return;
     }
 
-    const node = rawNode as { id?: unknown; type?: unknown; name?: unknown; config?: unknown; next?: unknown };
+    const node = rawNode as {
+      id?: unknown;
+      type?: unknown;
+      name?: unknown;
+      config?: unknown;
+      next?: unknown;
+    };
 
-    if (typeof node.id !== 'string' || node.id.trim().length === 0) {
+    if (typeof node.id !== "string" || node.id.trim().length === 0) {
       errors.push(`Node at index ${index} is missing a valid "id".`);
       return;
     }
@@ -141,18 +187,23 @@ export function validateWorkflowDefinition(definition: unknown): WorkflowValidat
       return;
     }
 
-    if (typeof node.type !== 'string' || !validTypes.has(node.type)) {
+    if (typeof node.type !== "string" || !validTypes.has(node.type)) {
       errors.push(`Node "${id}" has an invalid type.`);
       return;
     }
 
-    if (typeof node.name !== 'string' || node.name.trim().length === 0) {
+    if (typeof node.name !== "string" || node.name.trim().length === 0) {
       errors.push(`Node "${id}" is missing a valid "name".`);
     }
 
     let next: string[] = [];
     if (node.next !== undefined) {
-      if (!Array.isArray(node.next) || node.next.some((entry) => typeof entry !== 'string' || entry.trim().length === 0)) {
+      if (
+        !Array.isArray(node.next) ||
+        node.next.some(
+          (entry) => typeof entry !== "string" || entry.trim().length === 0,
+        )
+      ) {
         errors.push(`Node "${id}" has an invalid "next" list.`);
       } else {
         next = (node.next as string[]).map((entry) => entry.trim());
@@ -166,8 +217,10 @@ export function validateWorkflowDefinition(definition: unknown): WorkflowValidat
       hasConfig:
         node.config !== undefined &&
         node.config !== null &&
-        typeof node.config === 'object' &&
-        (Array.isArray(node.config) ? node.config.length > 0 : Object.keys(node.config).length > 0),
+        typeof node.config === "object" &&
+        (Array.isArray(node.config)
+          ? node.config.length > 0
+          : Object.keys(node.config).length > 0),
     });
   });
 
@@ -175,24 +228,33 @@ export function validateWorkflowDefinition(definition: unknown): WorkflowValidat
     errors.push(`Node id "${id}" is used more than once.`);
   }
 
-  const startNodes = Array.from(nodeById.values()).filter((node) => node.type === 'START');
-  const endNodes = Array.from(nodeById.values()).filter((node) => node.type === 'END');
+  const startNodes = Array.from(nodeById.values()).filter(
+    (node) => node.type === "START",
+  );
+  const endNodes = Array.from(nodeById.values()).filter(
+    (node) => node.type === "END",
+  );
 
   if (startNodes.length !== 1) {
-    errors.push(`Workflow definition must contain exactly one START node (found ${startNodes.length}).`);
+    errors.push(
+      `Workflow definition must contain exactly one START node (found ${startNodes.length}).`,
+    );
   }
   if (endNodes.length === 0) {
-    errors.push('Workflow definition must contain at least one END node.');
+    errors.push("Workflow definition must contain at least one END node.");
   }
 
-  const initialNodeId = typeof candidate.initialNodeId === 'string' ? candidate.initialNodeId.trim() : '';
+  const initialNodeId =
+    typeof candidate.initialNodeId === "string"
+      ? candidate.initialNodeId.trim()
+      : "";
   if (initialNodeId.length === 0) {
     errors.push('An "initialNodeId" is required.');
   } else {
     const initialNode = nodeById.get(initialNodeId);
     if (!initialNode) {
       errors.push(`Initial node "${initialNodeId}" does not exist.`);
-    } else if (initialNode.type !== 'START') {
+    } else if (initialNode.type !== "START") {
       errors.push(`Initial node "${initialNodeId}" must be of type START.`);
     }
   }
@@ -200,21 +262,31 @@ export function validateWorkflowDefinition(definition: unknown): WorkflowValidat
   for (const node of nodeById.values()) {
     for (const target of node.next) {
       if (!nodeById.has(target)) {
-        errors.push(`Node "${node.id}" references unknown node "${target}" in "next".`);
+        errors.push(
+          `Node "${node.id}" references unknown node "${target}" in "next".`,
+        );
       }
     }
-    if (node.type !== 'END' && node.next.length === 0) {
-      errors.push(`Node "${node.id}" (${node.type}) must have at least one outgoing transition in "next".`);
+    if (node.type !== "END" && node.next.length === 0) {
+      errors.push(
+        `Node "${node.id}" (${node.type}) must have at least one outgoing transition in "next".`,
+      );
     }
-    if (node.type === 'END' && node.next.length > 0) {
-      warnings.push(`Node "${node.id}" is an END node but declares outgoing transitions; they will be ignored.`);
+    if (node.type === "END" && node.next.length > 0) {
+      warnings.push(
+        `Node "${node.id}" is an END node but declares outgoing transitions; they will be ignored.`,
+      );
     }
-    if (node.type === 'CONDITION' && !node.hasConfig) {
-      warnings.push(`Node "${node.id}" is a CONDITION node without configuration.`);
+    if (node.type === "CONDITION" && !node.hasConfig) {
+      warnings.push(
+        `Node "${node.id}" is a CONDITION node without configuration.`,
+      );
     }
   }
 
-  const traversalStartId = nodeById.has(initialNodeId) ? initialNodeId : startNodes[0]?.id;
+  const traversalStartId = nodeById.has(initialNodeId)
+    ? initialNodeId
+    : startNodes[0]?.id;
   if (traversalStartId) {
     const visited = new Set<string>();
     const queue: string[] = [traversalStartId];
@@ -229,9 +301,13 @@ export function validateWorkflowDefinition(definition: unknown): WorkflowValidat
       }
     }
 
-    const unreachable = Array.from(nodeById.keys()).filter((id) => !visited.has(id));
+    const unreachable = Array.from(nodeById.keys()).filter(
+      (id) => !visited.has(id),
+    );
     if (unreachable.length > 0) {
-      errors.push(`Nodes unreachable from the START node: ${unreachable.join(', ')}.`);
+      errors.push(
+        `Nodes unreachable from the START node: ${unreachable.join(", ")}.`,
+      );
     }
   }
 

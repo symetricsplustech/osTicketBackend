@@ -1,4 +1,7 @@
-import { makeStructureController } from './structure.controller';
-import { departmentService } from '../../services/tenantadmin/departments.service';
+import { makeStructureController } from "./structure.controller";
+import { departmentService } from "../../services/tenantadmin/departments.service";
 
-export const departmentController = makeStructureController(departmentService, 'departmentId');
+export const departmentController = makeStructureController(
+  departmentService,
+  "departmentId",
+);

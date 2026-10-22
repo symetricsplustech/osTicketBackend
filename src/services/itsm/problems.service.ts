@@ -1,19 +1,30 @@
-import type { Request } from 'express';
-import type { Prisma } from '@prisma/client';
-import { prisma } from '../../config/database';
-import { NotFoundError } from '../../shared/errors';
-import { buildOrderBy, buildPaginationMeta, paginationArgs, parseListQuery } from '../../shared/pagination';
-import { recordAudit } from '../../shared/audit';
-import { publishEvent } from '../../shared/events';
-import { USER_SUMMARY, assertTenantCategory, assertTenantTeam, assertTenantUser, generateTicketNumber } from './shared';
-import type { TenantActorContext } from '../tenantadmin/roles.service';
+import type { Request } from "express";
+import type { Prisma } from "@prisma/client";
+import { prisma } from "../../config/database";
+import { NotFoundError } from "../../shared/errors";
+import {
+  buildOrderBy,
+  buildPaginationMeta,
+  paginationArgs,
+  parseListQuery,
+} from "../../shared/pagination";
+import { recordAudit } from "../../shared/audit";
+import { publishEvent } from "../../shared/events";
+import {
+  USER_SUMMARY,
+  assertTenantCategory,
+  assertTenantTeam,
+  assertTenantUser,
+  generateTicketNumber,
+} from "./shared";
+import type { TenantActorContext } from "../tenantadmin/roles.service";
 import type {
   AssignProblemInput,
   CreateProblemCommentInput,
   CreateProblemInput,
   ResolveProblemInput,
   UpdateProblemInput,
-} from '../../validators/itsm/problems.validators';
+} from "../../validators/itsm/problems.validators";
 
 const PROBLEM_INCLUDE = {
   assignee: { select: USER_SUMMARY },
@@ -26,7 +37,7 @@ async function findProblemOrThrow(tenantId: string, problemId: string) {
     where: { id: problemId, tenantId, deletedAt: null },
     include: PROBLEM_INCLUDE,
   });
-  if (!problem) throw new NotFoundError('Problem');
+  if (!problem) throw new NotFoundError("Problem");
   return problem;
 }
 
@@ -34,29 +45,42 @@ export async function listProblems(tenantId: string, req: Request) {
   const query = parseListQuery(req, { maxLimit: 100 });
   const where: Prisma.ProblemWhereInput = { tenantId, deletedAt: null };
 
-  const statusKey = typeof query.status === 'string' && query.status ? query.status : undefined;
-  const priorityKey = typeof query.priorityKey === 'string' && query.priorityKey ? query.priorityKey : undefined;
-  const assigneeId = typeof query.assigneeId === 'string' && query.assigneeId ? query.assigneeId : undefined;
-  const teamId = typeof query.teamId === 'string' && query.teamId ? query.teamId : undefined;
+  const statusKey =
+    typeof query.status === "string" && query.status ? query.status : undefined;
+  const priorityKey =
+    typeof query.priorityKey === "string" && query.priorityKey
+      ? query.priorityKey
+      : undefined;
+  const assigneeId =
+    typeof query.assigneeId === "string" && query.assigneeId
+      ? query.assigneeId
+      : undefined;
+  const teamId =
+    typeof query.teamId === "string" && query.teamId ? query.teamId : undefined;
   if (statusKey) where.statusKey = statusKey;
   if (priorityKey) where.priorityKey = priorityKey;
   if (assigneeId) where.assigneeId = assigneeId;
   if (teamId) where.teamId = teamId;
   if (query.search) {
     where.OR = [
-      { number: { contains: query.search, mode: 'insensitive' } },
-      { title: { contains: query.search, mode: 'insensitive' } },
-      { description: { contains: query.search, mode: 'insensitive' } },
+      { number: { contains: query.search, mode: "insensitive" } },
+      { title: { contains: query.search, mode: "insensitive" } },
+      { description: { contains: query.search, mode: "insensitive" } },
     ];
   }
 
   const orderBy = buildOrderBy(
     query,
-    ['number', 'title', 'statusKey', 'priorityKey', 'createdAt', 'updatedAt'],
-    { createdAt: 'desc' } as Prisma.ProblemOrderByWithRelationInput,
+    ["number", "title", "statusKey", "priorityKey", "createdAt", "updatedAt"],
+    { createdAt: "desc" } as Prisma.ProblemOrderByWithRelationInput,
   );
   const [rows, total] = await Promise.all([
-    prisma.problem.findMany({ where, orderBy, ...paginationArgs(query), include: PROBLEM_INCLUDE }),
+    prisma.problem.findMany({
+      where,
+      orderBy,
+      ...paginationArgs(query),
+      include: PROBLEM_INCLUDE,
+    }),
     prisma.problem.count({ where }),
   ]);
 
@@ -67,16 +91,22 @@ export async function getProblem(tenantId: string, problemId: string) {
   return findProblemOrThrow(tenantId, problemId);
 }
 
-export async function createProblem(tenantId: string, input: CreateProblemInput, actor: TenantActorContext) {
+export async function createProblem(
+  tenantId: string,
+  input: CreateProblemInput,
+  actor: TenantActorContext,
+) {
   await assertTenantCategory(tenantId, input.categoryId);
-  await assertTenantUser(tenantId, input.assigneeId, 'assignee');
+  await assertTenantUser(tenantId, input.assigneeId, "assignee");
   await assertTenantTeam(tenantId, input.teamId);
 
   const count = await prisma.problem.count({ where: { tenantId } });
   const number = await generateTicketNumber(
-    'problems',
-    'PRB',
-    async (candidate) => (await prisma.problem.count({ where: { tenantId, number: candidate } })) > 0,
+    "problems",
+    "PRB",
+    async (candidate) =>
+      (await prisma.problem.count({ where: { tenantId, number: candidate } })) >
+      0,
     count + 1,
   );
 
@@ -86,9 +116,9 @@ export async function createProblem(tenantId: string, input: CreateProblemInput,
       number,
       title: input.title,
       description: input.description ?? null,
-      statusKey: input.statusKey ?? 'new',
-      priorityKey: input.priorityKey ?? 'medium',
-      impact: input.impact ?? 'MEDIUM',
+      statusKey: input.statusKey ?? "new",
+      priorityKey: input.priorityKey ?? "medium",
+      impact: input.impact ?? "MEDIUM",
       categoryId: input.categoryId ?? null,
       assigneeId: input.assigneeId ?? null,
       teamId: input.teamId ?? null,
@@ -101,17 +131,21 @@ export async function createProblem(tenantId: string, input: CreateProblemInput,
   });
 
   await recordAudit({
-    action: 'problem.created',
-    resourceType: 'problem',
+    action: "problem.created",
+    resourceType: "problem",
     resourceId: problem.id,
     tenantId,
     after: problem,
     actorId: actor.actorId ?? null,
     actorEmail: actor.actorEmail ?? null,
-    actorType: actor.actorType ?? 'TENANT_USER',
+    actorType: actor.actorType ?? "TENANT_USER",
     req: actor.req,
   });
-  void publishEvent({ eventKey: 'problem.created', tenantId, payload: { problemId: problem.id, number } });
+  void publishEvent({
+    eventKey: "problem.created",
+    tenantId,
+    payload: { problemId: problem.id, number },
+  });
 
   return problem;
 }
@@ -124,62 +158,82 @@ export async function updateProblem(
 ) {
   const before = await findProblemOrThrow(tenantId, problemId);
   await assertTenantCategory(tenantId, input.categoryId);
-  await assertTenantUser(tenantId, input.assigneeId, 'assignee');
+  await assertTenantUser(tenantId, input.assigneeId, "assignee");
   await assertTenantTeam(tenantId, input.teamId);
 
   const data: Prisma.ProblemUpdateInput = {};
   for (const key of [
-    'title',
-    'description',
-    'statusKey',
-    'priorityKey',
-    'impact',
-    'categoryId',
-    'assigneeId',
-    'teamId',
-    'rootCause',
-    'workaround',
-    'resolutionNotes',
-    'isKnownError',
+    "title",
+    "description",
+    "statusKey",
+    "priorityKey",
+    "impact",
+    "categoryId",
+    "assigneeId",
+    "teamId",
+    "rootCause",
+    "workaround",
+    "resolutionNotes",
+    "isKnownError",
   ] as const) {
-    if (input[key] !== undefined) (data as Record<string, unknown>)[key] = input[key];
+    if (input[key] !== undefined)
+      (data as Record<string, unknown>)[key] = input[key];
   }
 
-  const problem = await prisma.problem.update({ where: { id: problemId }, data, include: PROBLEM_INCLUDE });
+  const problem = await prisma.problem.update({
+    where: { id: problemId },
+    data,
+    include: PROBLEM_INCLUDE,
+  });
 
   await recordAudit({
-    action: 'problem.updated',
-    resourceType: 'problem',
+    action: "problem.updated",
+    resourceType: "problem",
     resourceId: problemId,
     tenantId,
     before,
     after: problem,
     actorId: actor.actorId ?? null,
     actorEmail: actor.actorEmail ?? null,
-    actorType: actor.actorType ?? 'TENANT_USER',
+    actorType: actor.actorType ?? "TENANT_USER",
     req: actor.req,
   });
-  void publishEvent({ eventKey: 'problem.updated', tenantId, payload: { problemId } });
+  void publishEvent({
+    eventKey: "problem.updated",
+    tenantId,
+    payload: { problemId },
+  });
 
   return problem;
 }
 
-export async function deleteProblem(tenantId: string, problemId: string, actor: TenantActorContext) {
+export async function deleteProblem(
+  tenantId: string,
+  problemId: string,
+  actor: TenantActorContext,
+) {
   const before = await findProblemOrThrow(tenantId, problemId);
-  await prisma.problem.update({ where: { id: problemId }, data: { deletedAt: new Date() } });
+  await prisma.problem.update({
+    where: { id: problemId },
+    data: { deletedAt: new Date() },
+  });
 
   await recordAudit({
-    action: 'problem.deleted',
-    resourceType: 'problem',
+    action: "problem.deleted",
+    resourceType: "problem",
     resourceId: problemId,
     tenantId,
     before,
     actorId: actor.actorId ?? null,
     actorEmail: actor.actorEmail ?? null,
-    actorType: actor.actorType ?? 'TENANT_USER',
+    actorType: actor.actorType ?? "TENANT_USER",
     req: actor.req,
   });
-  void publishEvent({ eventKey: 'problem.deleted', tenantId, payload: { problemId } });
+  void publishEvent({
+    eventKey: "problem.deleted",
+    tenantId,
+    payload: { problemId },
+  });
 }
 
 export async function assignProblem(
@@ -189,31 +243,37 @@ export async function assignProblem(
   actor: TenantActorContext,
 ) {
   const before = await findProblemOrThrow(tenantId, problemId);
-  await assertTenantUser(tenantId, input.assigneeId, 'assignee');
+  await assertTenantUser(tenantId, input.assigneeId, "assignee");
   await assertTenantTeam(tenantId, input.teamId);
 
   const problem = await prisma.problem.update({
     where: { id: problemId },
     data: {
-      ...(input.assigneeId !== undefined ? { assigneeId: input.assigneeId } : {}),
+      ...(input.assigneeId !== undefined
+        ? { assigneeId: input.assigneeId }
+        : {}),
       ...(input.teamId !== undefined ? { teamId: input.teamId } : {}),
     },
     include: PROBLEM_INCLUDE,
   });
 
   await recordAudit({
-    action: 'problem.assigned',
-    resourceType: 'problem',
+    action: "problem.assigned",
+    resourceType: "problem",
     resourceId: problemId,
     tenantId,
     before: { assigneeId: before.assigneeId, teamId: before.teamId },
     after: { assigneeId: problem.assigneeId, teamId: problem.teamId },
     actorId: actor.actorId ?? null,
     actorEmail: actor.actorEmail ?? null,
-    actorType: actor.actorType ?? 'TENANT_USER',
+    actorType: actor.actorType ?? "TENANT_USER",
     req: actor.req,
   });
-  void publishEvent({ eventKey: 'problem.assigned', tenantId, payload: { problemId } });
+  void publishEvent({
+    eventKey: "problem.assigned",
+    tenantId,
+    payload: { problemId },
+  });
 
   return problem;
 }
@@ -230,7 +290,7 @@ export async function resolveProblem(
   const problem = await prisma.problem.update({
     where: { id: problemId },
     data: {
-      statusKey: 'resolved',
+      statusKey: "resolved",
       resolutionNotes: input.resolutionNotes,
       rootCause: input.rootCause ?? before.rootCause,
       isKnownError: input.isKnownError ?? before.isKnownError,
@@ -240,23 +300,31 @@ export async function resolveProblem(
   });
 
   await recordAudit({
-    action: 'problem.resolved',
-    resourceType: 'problem',
+    action: "problem.resolved",
+    resourceType: "problem",
     resourceId: problemId,
     tenantId,
     before: { statusKey: before.statusKey },
     after: { statusKey: problem.statusKey },
     actorId: actor.actorId ?? null,
     actorEmail: actor.actorEmail ?? null,
-    actorType: actor.actorType ?? 'TENANT_USER',
+    actorType: actor.actorType ?? "TENANT_USER",
     req: actor.req,
   });
-  void publishEvent({ eventKey: 'problem.resolved', tenantId, payload: { problemId } });
+  void publishEvent({
+    eventKey: "problem.resolved",
+    tenantId,
+    payload: { problemId },
+  });
 
   return problem;
 }
 
-export async function listProblemComments(tenantId: string, problemId: string, req: Request) {
+export async function listProblemComments(
+  tenantId: string,
+  problemId: string,
+  req: Request,
+) {
   await findProblemOrThrow(tenantId, problemId);
   const query = parseListQuery(req, { maxLimit: 100 });
   const where = { problemId, tenantId };
@@ -264,7 +332,7 @@ export async function listProblemComments(tenantId: string, problemId: string, r
     prisma.problemComment.findMany({
       where,
       include: { author: { select: USER_SUMMARY } },
-      orderBy: { createdAt: 'asc' },
+      orderBy: { createdAt: "asc" },
       ...paginationArgs(query),
     }),
     prisma.problemComment.count({ where }),
@@ -291,17 +359,21 @@ export async function addProblemComment(
   });
 
   await recordAudit({
-    action: 'problem.comment.added',
-    resourceType: 'problem',
+    action: "problem.comment.added",
+    resourceType: "problem",
     resourceId: problemId,
     tenantId,
     after: { commentId: comment.id, isInternal: comment.isInternal },
     actorId: actor.actorId ?? null,
     actorEmail: actor.actorEmail ?? null,
-    actorType: actor.actorType ?? 'TENANT_USER',
+    actorType: actor.actorType ?? "TENANT_USER",
     req: actor.req,
   });
-  void publishEvent({ eventKey: 'problem.comment.added', tenantId, payload: { problemId, commentId: comment.id } });
+  void publishEvent({
+    eventKey: "problem.comment.added",
+    tenantId,
+    payload: { problemId, commentId: comment.id },
+  });
 
   return comment;
 }

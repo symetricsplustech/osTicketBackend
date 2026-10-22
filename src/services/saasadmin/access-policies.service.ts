@@ -1,16 +1,29 @@
-import type { Request } from 'express';
-import { Prisma, type AccessPolicy, type AccessPolicySubjectType } from '@prisma/client';
-import { prisma } from '../../config/database';
-import { ConflictError, NotFoundError, ValidationError, type ErrorDetail } from '../../shared/errors';
-import { createCrudService } from '../../shared/crud';
-import { buildPaginationMeta, paginationArgs, parseListQuery } from '../../shared/pagination';
-import { recordAudit } from '../../shared/audit';
+import type { Request } from "express";
+import {
+  Prisma,
+  type AccessPolicy,
+  type AccessPolicySubjectType,
+} from "@prisma/client";
+import { prisma } from "../../config/database";
+import {
+  ConflictError,
+  NotFoundError,
+  ValidationError,
+  type ErrorDetail,
+} from "../../shared/errors";
+import { createCrudService } from "../../shared/crud";
+import {
+  buildPaginationMeta,
+  paginationArgs,
+  parseListQuery,
+} from "../../shared/pagination";
+import { recordAudit } from "../../shared/audit";
 import {
   validateRulesForPolicyType,
   type CreateAccessPolicyAssignmentInput,
   type CreateAccessPolicyInput,
   type UpdateAccessPolicyInput,
-} from '../../validators/saasadmin/access-policies.validators';
+} from "../../validators/saasadmin/access-policies.validators";
 
 export interface ActorContext {
   actorId?: string | null;
@@ -27,28 +40,38 @@ export const ACCESS_POLICY_USER_SELECT = {
 
 export const accessPolicyCrud = createCrudService<AccessPolicy>({
   model: prisma.accessPolicy as never,
-  resourceType: 'access-policy',
-  searchFields: ['name', 'policyType'],
-  filterableFields: ['policyType'],
-  allowedSortFields: ['name', 'policyType', 'priority', 'createdAt', 'updatedAt'],
-  defaultOrderBy: { priority: 'asc' },
+  resourceType: "access-policy",
+  searchFields: ["name", "policyType"],
+  filterableFields: ["policyType"],
+  allowedSortFields: [
+    "name",
+    "policyType",
+    "priority",
+    "createdAt",
+    "updatedAt",
+  ],
+  defaultOrderBy: { priority: "asc" },
   softDelete: true,
 });
 
 function parseBooleanFilter(value: unknown): boolean | undefined {
-  if (value === undefined || value === null || value === '') return undefined;
-  if (typeof value === 'boolean') return value;
+  if (value === undefined || value === null || value === "") return undefined;
+  if (typeof value === "boolean") return value;
   const normalised = String(value).toLowerCase();
-  if (['true', '1', 'yes'].includes(normalised)) return true;
-  if (['false', '0', 'no'].includes(normalised)) return false;
+  if (["true", "1", "yes"].includes(normalised)) return true;
+  if (["false", "0", "no"].includes(normalised)) return false;
   return undefined;
 }
 
-async function hydrateAssignments<T extends { subjectType: AccessPolicySubjectType; subjectId: string }>(
-  assignments: T[],
-) {
+async function hydrateAssignments<
+  T extends { subjectType: AccessPolicySubjectType; subjectId: string },
+>(assignments: T[]) {
   const roleIds = Array.from(
-    new Set(assignments.filter((assignment) => assignment.subjectType === 'ROLE').map((assignment) => assignment.subjectId)),
+    new Set(
+      assignments
+        .filter((assignment) => assignment.subjectType === "ROLE")
+        .map((assignment) => assignment.subjectId),
+    ),
   );
   const roles = roleIds.length
     ? await prisma.platformRole.findMany({
@@ -60,19 +83,35 @@ async function hydrateAssignments<T extends { subjectType: AccessPolicySubjectTy
 
   return assignments.map((assignment) => ({
     ...assignment,
-    role: assignment.subjectType === 'ROLE' ? roleById.get(assignment.subjectId) ?? null : null,
+    role:
+      assignment.subjectType === "ROLE"
+        ? (roleById.get(assignment.subjectId) ?? null)
+        : null,
   }));
 }
 
-function assertRulesValid(policyType: string, rules: Record<string, unknown>): void {
+function assertRulesValid(
+  policyType: string,
+  rules: Record<string, unknown>,
+): void {
   const issues = validateRulesForPolicyType(policyType, rules);
   if (issues.length > 0) {
-    const details: ErrorDetail[] = issues.map((message) => ({ field: 'rules', message }));
-    throw new ValidationError(`The rules are not valid for a ${policyType} policy.`, details);
+    const details: ErrorDetail[] = issues.map((message) => ({
+      field: "rules",
+      message,
+    }));
+    throw new ValidationError(
+      `The rules are not valid for a ${policyType} policy.`,
+      details,
+    );
   }
 }
 
-async function assertNoEnabledConflict(policyType: string, priority: number, excludeId?: string): Promise<void> {
+async function assertNoEnabledConflict(
+  policyType: string,
+  priority: number,
+  excludeId?: string,
+): Promise<void> {
   const conflict = await prisma.accessPolicy.findFirst({
     where: {
       policyType,
@@ -92,11 +131,17 @@ async function assertNoEnabledConflict(policyType: string, priority: number, exc
 
 export async function listAccessPolicies(req: Request) {
   const query = parseListQuery(req);
-  const isEnabled = parseBooleanFilter(query['isEnabled']);
-  return accessPolicyCrud.list(req, isEnabled === undefined ? undefined : { isEnabled });
+  const isEnabled = parseBooleanFilter(query["isEnabled"]);
+  return accessPolicyCrud.list(
+    req,
+    isEnabled === undefined ? undefined : { isEnabled },
+  );
 }
 
-export async function createAccessPolicy(input: CreateAccessPolicyInput, actor: ActorContext): Promise<AccessPolicy> {
+export async function createAccessPolicy(
+  input: CreateAccessPolicyInput,
+  actor: ActorContext,
+): Promise<AccessPolicy> {
   assertRulesValid(input.policyType, input.rules);
   if (input.isEnabled) {
     await assertNoEnabledConflict(input.policyType, input.priority);
@@ -115,8 +160,8 @@ export async function createAccessPolicy(input: CreateAccessPolicyInput, actor: 
   });
 
   await recordAudit({
-    action: 'access-policy.created',
-    resourceType: 'access-policy',
+    action: "access-policy.created",
+    resourceType: "access-policy",
     resourceId: policy.id,
     after: policy,
     actorId: actor.actorId ?? null,
@@ -132,11 +177,11 @@ export async function getAccessPolicy(policyId: string) {
     include: {
       assignments: {
         include: { user: { select: ACCESS_POLICY_USER_SELECT } },
-        orderBy: { createdAt: 'desc' },
+        orderBy: { createdAt: "desc" },
       },
     },
   });
-  if (!policy) throw new NotFoundError('Access policy');
+  if (!policy) throw new NotFoundError("Access policy");
 
   const assignments = await hydrateAssignments(policy.assignments);
   return { ...policy, assignments, assignmentCount: assignments.length };
@@ -159,15 +204,22 @@ export async function updateAccessPolicy(
   if (input.priority !== undefined) {
     data.priority = input.priority;
     if (existing.isEnabled) {
-      await assertNoEnabledConflict(existing.policyType, input.priority, policyId);
+      await assertNoEnabledConflict(
+        existing.policyType,
+        input.priority,
+        policyId,
+      );
     }
   }
 
-  const updated = await prisma.accessPolicy.update({ where: { id: policyId }, data });
+  const updated = await prisma.accessPolicy.update({
+    where: { id: policyId },
+    data,
+  });
 
   await recordAudit({
-    action: 'access-policy.updated',
-    resourceType: 'access-policy',
+    action: "access-policy.updated",
+    resourceType: "access-policy",
     resourceId: policyId,
     before: existing,
     after: updated,
@@ -185,14 +237,21 @@ export async function setAccessPolicyEnabled(
 ): Promise<AccessPolicy> {
   const existing = await accessPolicyCrud.getById(policyId);
   if (isEnabled && !existing.isEnabled) {
-    await assertNoEnabledConflict(existing.policyType, existing.priority, policyId);
+    await assertNoEnabledConflict(
+      existing.policyType,
+      existing.priority,
+      policyId,
+    );
   }
 
-  const updated = await prisma.accessPolicy.update({ where: { id: policyId }, data: { isEnabled } });
+  const updated = await prisma.accessPolicy.update({
+    where: { id: policyId },
+    data: { isEnabled },
+  });
 
   await recordAudit({
-    action: isEnabled ? 'access-policy.enabled' : 'access-policy.disabled',
-    resourceType: 'access-policy',
+    action: isEnabled ? "access-policy.enabled" : "access-policy.disabled",
+    resourceType: "access-policy",
     resourceId: policyId,
     before: { isEnabled: existing.isEnabled },
     after: { isEnabled: updated.isEnabled },
@@ -203,12 +262,15 @@ export async function setAccessPolicyEnabled(
   return updated;
 }
 
-export async function listAccessPolicyAssignments(policyId: string, req: Request) {
+export async function listAccessPolicyAssignments(
+  policyId: string,
+  req: Request,
+) {
   const policy = await prisma.accessPolicy.findFirst({
     where: { id: policyId, deletedAt: null },
     select: { id: true },
   });
-  if (!policy) throw new NotFoundError('Access policy');
+  if (!policy) throw new NotFoundError("Access policy");
 
   const query = parseListQuery(req);
   const where = { policyId };
@@ -216,14 +278,17 @@ export async function listAccessPolicyAssignments(policyId: string, req: Request
     prisma.accessPolicyAssignment.findMany({
       where,
       include: { user: { select: ACCESS_POLICY_USER_SELECT } },
-      orderBy: { createdAt: 'desc' },
+      orderBy: { createdAt: "desc" },
       ...paginationArgs(query),
     }),
     prisma.accessPolicyAssignment.count({ where }),
   ]);
 
   const assignments = await hydrateAssignments(rows);
-  return { rows: assignments, meta: buildPaginationMeta(query.page, query.limit, total) };
+  return {
+    rows: assignments,
+    meta: buildPaginationMeta(query.page, query.limit, total),
+  };
 }
 
 export async function createAccessPolicyAssignment(
@@ -235,17 +300,20 @@ export async function createAccessPolicyAssignment(
     where: { id: policyId, deletedAt: null },
     select: { id: true },
   });
-  if (!policy) throw new NotFoundError('Access policy');
+  if (!policy) throw new NotFoundError("Access policy");
 
-  if (input.subjectType === 'USER') {
-    const user = await prisma.user.findFirst({ where: { id: input.subjectId }, select: { id: true } });
-    if (!user) throw new NotFoundError('User');
+  if (input.subjectType === "USER") {
+    const user = await prisma.user.findFirst({
+      where: { id: input.subjectId },
+      select: { id: true },
+    });
+    if (!user) throw new NotFoundError("User");
   } else {
     const role = await prisma.platformRole.findFirst({
       where: { id: input.subjectId, deletedAt: null },
       select: { id: true },
     });
-    if (!role) throw new NotFoundError('Platform role');
+    if (!role) throw new NotFoundError("Platform role");
   }
 
   const alreadyAssigned = await prisma.accessPolicyAssignment.findUnique({
@@ -257,16 +325,21 @@ export async function createAccessPolicyAssignment(
       },
     },
   });
-  if (alreadyAssigned) throw new ConflictError('This subject is already assigned to the policy.');
+  if (alreadyAssigned)
+    throw new ConflictError("This subject is already assigned to the policy.");
 
   const assignment = await prisma.accessPolicyAssignment.create({
-    data: { policyId, subjectType: input.subjectType, subjectId: input.subjectId },
+    data: {
+      policyId,
+      subjectType: input.subjectType,
+      subjectId: input.subjectId,
+    },
     include: { user: { select: ACCESS_POLICY_USER_SELECT } },
   });
 
   await recordAudit({
-    action: 'access-policy.assignment.created',
-    resourceType: 'access-policy',
+    action: "access-policy.assignment.created",
+    resourceType: "access-policy",
     resourceId: policyId,
     after: assignment,
     actorId: actor.actorId ?? null,
@@ -285,13 +358,13 @@ export async function deleteAccessPolicyAssignment(
   const assignment = await prisma.accessPolicyAssignment.findFirst({
     where: { id: assignmentId, policyId },
   });
-  if (!assignment) throw new NotFoundError('Policy assignment');
+  if (!assignment) throw new NotFoundError("Policy assignment");
 
   await prisma.accessPolicyAssignment.delete({ where: { id: assignmentId } });
 
   await recordAudit({
-    action: 'access-policy.assignment.removed',
-    resourceType: 'access-policy',
+    action: "access-policy.assignment.removed",
+    resourceType: "access-policy",
     resourceId: policyId,
     before: assignment,
     actorId: actor.actorId ?? null,

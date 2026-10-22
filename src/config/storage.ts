@@ -1,6 +1,6 @@
-import fs from 'fs';
-import path from 'path';
-import { env } from './env';
+import fs from "fs";
+import path from "path";
+import { env } from "./env";
 
 const baseDir = path.resolve(process.cwd(), env.STORAGE_LOCAL_DIR);
 
@@ -11,10 +11,10 @@ function ensureBaseDir(): void {
 }
 
 export function resolveStoragePath(relativeKey: string): string {
-  const normalised = path.normalize(relativeKey).replace(/^([/\\])+/, '');
+  const normalised = path.normalize(relativeKey).replace(/^([/\\])+/, "");
   const absolute = path.resolve(baseDir, normalised);
   if (!absolute.startsWith(baseDir + path.sep) && absolute !== baseDir) {
-    throw new Error('Invalid storage path: path traversal detected');
+    throw new Error("Invalid storage path: path traversal detected");
   }
   return absolute;
 }
@@ -26,7 +26,10 @@ export const storage = {
     ensureBaseDir();
   },
 
-  async writeFile(relativeKey: string, content: Buffer | string): Promise<string> {
+  async writeFile(
+    relativeKey: string,
+    content: Buffer | string,
+  ): Promise<string> {
     const absolute = resolveStoragePath(relativeKey);
     await fs.promises.mkdir(path.dirname(absolute), { recursive: true });
     await fs.promises.writeFile(absolute, content);
@@ -45,13 +48,16 @@ export const storage = {
     try {
       await fs.promises.unlink(resolveStoragePath(relativeKey));
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
     }
   },
 
   async exists(relativeKey: string): Promise<boolean> {
     try {
-      await fs.promises.access(resolveStoragePath(relativeKey), fs.constants.F_OK);
+      await fs.promises.access(
+        resolveStoragePath(relativeKey),
+        fs.constants.F_OK,
+      );
       return true;
     } catch {
       return false;

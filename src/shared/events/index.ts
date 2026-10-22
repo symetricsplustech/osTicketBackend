@@ -1,6 +1,6 @@
-import { prisma } from '../../config/database';
-import { logger } from '../../config/logger';
-import { dispatchDelivery, queueWebhookDelivery } from '../webhooks/dispatcher';
+import { prisma } from "../../config/database";
+import { logger } from "../../config/logger";
+import { dispatchDelivery, queueWebhookDelivery } from "../webhooks/dispatcher";
 
 export interface PlatformEvent {
   eventKey: string;
@@ -17,8 +17,11 @@ export async function publishEvent(event: PlatformEvent): Promise<void> {
 
     const deliveryIds: string[] = [];
     for (const webhook of webhooks) {
-      const subscribed = Array.isArray(webhook.eventKeys) ? (webhook.eventKeys as unknown[]).map(String) : [];
-      if (!subscribed.includes(event.eventKey) && !subscribed.includes('*')) continue;
+      const subscribed = Array.isArray(webhook.eventKeys)
+        ? (webhook.eventKeys as unknown[]).map(String)
+        : [];
+      if (!subscribed.includes(event.eventKey) && !subscribed.includes("*"))
+        continue;
       const id = await queueWebhookDelivery({
         webhookId: webhook.id,
         eventKey: event.eventKey,
@@ -32,10 +35,16 @@ export async function publishEvent(event: PlatformEvent): Promise<void> {
 
     for (const id of deliveryIds) {
       void dispatchDelivery(id).catch((error) => {
-        logger.warn({ error, deliveryId: id }, 'Immediate webhook dispatch failed; will retry');
+        logger.warn(
+          { error, deliveryId: id },
+          "Immediate webhook dispatch failed; will retry",
+        );
       });
     }
   } catch (error) {
-    logger.error({ error, eventKey: event.eventKey }, 'Failed to publish platform event');
+    logger.error(
+      { error, eventKey: event.eventKey },
+      "Failed to publish platform event",
+    );
   }
 }

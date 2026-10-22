@@ -1,10 +1,16 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import type { Request } from 'express';
-import { NotFoundError } from '../errors';
-import { buildOrderBy, buildPaginationMeta, paginationArgs, parseListQuery, type ListQuery } from '../pagination';
-import type { PaginationMeta } from '../response';
-import { recordAudit } from '../audit';
-import { publishEvent } from '../events';
+import type { Request } from "express";
+import { NotFoundError } from "../errors";
+import {
+  buildOrderBy,
+  buildPaginationMeta,
+  paginationArgs,
+  parseListQuery,
+  type ListQuery,
+} from "../pagination";
+import type { PaginationMeta } from "../response";
+import { recordAudit } from "../audit";
+import { publishEvent } from "../events";
 
 export interface CrudModelDelegate {
   findMany(args?: any): Promise<any[]>;
@@ -22,7 +28,7 @@ export interface CrudServiceOptions {
   searchFields?: string[];
   filterableFields?: string[];
   allowedSortFields: string[];
-  defaultOrderBy?: Record<string, 'asc' | 'desc'>;
+  defaultOrderBy?: Record<string, "asc" | "desc">;
   softDelete?: boolean;
   include?: any;
   events?: { created?: string; updated?: string; deleted?: string };
@@ -41,20 +47,20 @@ function buildWhere(
   extraWhere?: Record<string, unknown>,
 ): Record<string, unknown> {
   const where: Record<string, unknown> = { ...(extraWhere ?? {}) };
-  if (options.softDelete) where['deletedAt'] = null;
+  if (options.softDelete) where["deletedAt"] = null;
 
   if (query.search && options.searchFields && options.searchFields.length > 0) {
-    where['OR'] = options.searchFields.map((field) => ({
-      [field]: { contains: query.search, mode: 'insensitive' },
+    where["OR"] = options.searchFields.map((field) => ({
+      [field]: { contains: query.search, mode: "insensitive" },
     }));
   }
 
   if (options.filterableFields) {
     for (const field of options.filterableFields) {
       const value = query[field];
-      if (value === undefined || value === '' || value === null) continue;
-      if (typeof value === 'string' && value.includes(',')) {
-        where[field] = { in: value.split(',').map((entry) => entry.trim()) };
+      if (value === undefined || value === "" || value === null) continue;
+      if (typeof value === "string" && value.includes(",")) {
+        where[field] = { in: value.split(",").map((entry) => entry.trim()) };
       } else {
         where[field] = value;
       }
@@ -62,8 +68,8 @@ function buildWhere(
   }
 
   if (options.dateField) {
-    const from = query['from'];
-    const to = query['to'];
+    const from = query["from"];
+    const to = query["to"];
     if ((from || to) && !where[options.dateField]) {
       where[options.dateField] = {
         ...(from ? { gte: new Date(String(from)) } : {}),
@@ -81,31 +87,57 @@ export function createCrudService<T = any>(options: CrudServiceOptions) {
   return {
     options,
 
-    async list(req: Request, extraWhere?: Record<string, unknown>): Promise<CrudListResult<T>> {
+    async list(
+      req: Request,
+      extraWhere?: Record<string, unknown>,
+    ): Promise<CrudListResult<T>> {
       const query = parseListQuery(req, {
         defaultSortBy: undefined,
-        defaultSortOrder: 'desc',
+        defaultSortOrder: "desc",
       });
       const where = buildWhere(options, query, extraWhere);
-      const orderBy = buildOrderBy(query, options.allowedSortFields, options.defaultOrderBy ?? { createdAt: 'desc' });
+      const orderBy = buildOrderBy(
+        query,
+        options.allowedSortFields,
+        options.defaultOrderBy ?? { createdAt: "desc" },
+      );
 
       const [rows, total] = await Promise.all([
-        options.model.findMany({ where, orderBy, ...paginationArgs(query), ...(include ? { include } : {}) }),
+        options.model.findMany({
+          where,
+          orderBy,
+          ...paginationArgs(query),
+          ...(include ? { include } : {}),
+        }),
         options.model.count({ where }),
       ]);
 
-      return { rows: rows as T[], meta: buildPaginationMeta(query.page, query.limit, total), query };
+      return {
+        rows: rows as T[],
+        meta: buildPaginationMeta(query.page, query.limit, total),
+        query,
+      };
     },
 
-    async getById(id: string, extraWhere?: Record<string, unknown>): Promise<T> {
+    async getById(
+      id: string,
+      extraWhere?: Record<string, unknown>,
+    ): Promise<T> {
       const where: Record<string, unknown> = { id, ...(extraWhere ?? {}) };
-      if (options.softDelete) where['deletedAt'] = null;
-      const record = await options.model.findFirst({ where, ...(include ? { include } : {}) });
+      if (options.softDelete) where["deletedAt"] = null;
+      const record = await options.model.findFirst({
+        where,
+        ...(include ? { include } : {}),
+      });
       if (!record) throw new NotFoundError(resourceLabel(options.resourceType));
       return record as T;
     },
 
-    async create(data: Record<string, unknown>, req: Request, extra?: Record<string, unknown>): Promise<T> {
+    async create(
+      data: Record<string, unknown>,
+      req: Request,
+      extra?: Record<string, unknown>,
+    ): Promise<T> {
       const record = await options.model.create({
         data: { ...data, ...(extra ?? {}) },
         ...(include ? { include } : {}),
@@ -128,7 +160,12 @@ export function createCrudService<T = any>(options: CrudServiceOptions) {
       return record as T;
     },
 
-    async update(id: string, data: Record<string, unknown>, req: Request, extraWhere?: Record<string, unknown>): Promise<T> {
+    async update(
+      id: string,
+      data: Record<string, unknown>,
+      req: Request,
+      extraWhere?: Record<string, unknown>,
+    ): Promise<T> {
       const before = await this.getById(id, extraWhere);
       const record = await options.model.update({
         where: { id },
@@ -154,10 +191,17 @@ export function createCrudService<T = any>(options: CrudServiceOptions) {
       return record as T;
     },
 
-    async remove(id: string, req: Request, extraWhere?: Record<string, unknown>): Promise<void> {
+    async remove(
+      id: string,
+      req: Request,
+      extraWhere?: Record<string, unknown>,
+    ): Promise<void> {
       const before = await this.getById(id, extraWhere);
       if (options.softDelete) {
-        await options.model.update({ where: { id }, data: { deletedAt: new Date() } });
+        await options.model.update({
+          where: { id },
+          data: { deletedAt: new Date() },
+        });
       } else {
         await options.model.delete({ where: { id } });
       }
@@ -178,7 +222,10 @@ export function createCrudService<T = any>(options: CrudServiceOptions) {
       }
     },
 
-    buildWhere(query: ListQuery, extraWhere?: Record<string, unknown>): Record<string, unknown> {
+    buildWhere(
+      query: ListQuery,
+      extraWhere?: Record<string, unknown>,
+    ): Record<string, unknown> {
       return buildWhere(options, query, extraWhere);
     },
   };
@@ -190,5 +237,5 @@ export function resourceLabel(resourceType: string): string {
   return resourceType
     .split(/[.\-_]/)
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(' ');
+    .join(" ");
 }

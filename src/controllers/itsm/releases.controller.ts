@@ -1,4 +1,7 @@
-import { makeItsmCrudController } from './crud.controller';
-import { releaseService } from '../../services/itsm/releases.service';
+import { makeItsmCrudController } from "./crud.controller";
+import { releaseService } from "../../services/itsm/releases.service";
 
-export const releaseController = makeItsmCrudController(releaseService, 'releaseId');
+export const releaseController = makeItsmCrudController(
+  releaseService,
+  "releaseId",
+);

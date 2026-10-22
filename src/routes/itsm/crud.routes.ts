@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import type { Router } from 'express';
-import type { ZodType } from 'zod';
-import { requireTenantPermission, validateRequest } from '../../api/middleware';
+import type { Router } from "express";
+import type { ZodType } from "zod";
+import { requireTenantPermission, validateRequest } from "../../api/middleware";
 
 export interface ItsmTransitionSpec {
   path: string;
@@ -29,15 +29,25 @@ export function registerItsmCrudRoutes(
   controller: any,
   options: ItsmCrudRouteOptions,
 ): void {
-  const prefix = options.basePath ?? '';
-  const root = prefix || '/';
+  const prefix = options.basePath ?? "";
+  const root = prefix || "/";
   const base = `${prefix}/:${options.idParam}`;
 
   router.get(root, requireTenantPermission(options.read), controller.list);
   if (options.createSchema) {
-    router.post(root, requireTenantPermission(options.manage), validateRequest({ body: options.createSchema }), controller.create);
+    router.post(
+      root,
+      requireTenantPermission(options.manage),
+      validateRequest({ body: options.createSchema }),
+      controller.create,
+    );
   }
-  router.get(base, requireTenantPermission(options.read), validateRequest({ params: options.idSchema }), controller.get);
+  router.get(
+    base,
+    requireTenantPermission(options.read),
+    validateRequest({ params: options.idSchema }),
+    controller.get,
+  );
   if (options.updateSchema) {
     router.patch(
       base,
@@ -46,14 +56,26 @@ export function registerItsmCrudRoutes(
       controller.update,
     );
   }
-  router.delete(base, requireTenantPermission(options.manage), validateRequest({ params: options.idSchema }), controller.remove);
+  router.delete(
+    base,
+    requireTenantPermission(options.manage),
+    validateRequest({ params: options.idSchema }),
+    controller.remove,
+  );
 
   for (const transition of options.transitions ?? []) {
     router.post(
       `${base}${transition.path}`,
       requireTenantPermission(transition.code ?? options.manage),
-      validateRequest({ params: options.idSchema, ...(transition.bodySchema ? { body: transition.bodySchema } : {}) }),
-      controller.transition(transition.action, transition.status, transition.extraKeys ?? []),
+      validateRequest({
+        params: options.idSchema,
+        ...(transition.bodySchema ? { body: transition.bodySchema } : {}),
+      }),
+      controller.transition(
+        transition.action,
+        transition.status,
+        transition.extraKeys ?? [],
+      ),
     );
   }
 }

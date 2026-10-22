@@ -1,8 +1,8 @@
-import type { Request, Response } from 'express';
-import { created, ok, paginated } from '../../shared/response';
-import { asyncHandler } from '../../shared/utils/async-handler';
-import { tenantActor } from '../tenantadmin/actor';
-import { makeStructureController } from '../tenantadmin/structure.controller';
+import type { Request, Response } from "express";
+import { created, ok, paginated } from "../../shared/response";
+import { asyncHandler } from "../../shared/utils/async-handler";
+import { tenantActor } from "../tenantadmin/actor";
+import { makeStructureController } from "../tenantadmin/structure.controller";
 import {
   catalogCategoryService,
   createCatalogItem,
@@ -13,10 +13,16 @@ import {
   publishCatalogItem,
   retireCatalogItem,
   updateCatalogItem,
-} from '../../services/itsm/catalog.service';
-import type { CreateCatalogItemInput, UpdateCatalogItemInput } from '../../validators/itsm/catalog.validators';
+} from "../../services/itsm/catalog.service";
+import type {
+  CreateCatalogItemInput,
+  UpdateCatalogItemInput,
+} from "../../validators/itsm/catalog.validators";
 
-const categoryBase = makeStructureController(catalogCategoryService, 'categoryId');
+const categoryBase = makeStructureController(
+  catalogCategoryService,
+  "categoryId",
+);
 
 export const catalogController = {
   listCategories: categoryBase.list,
@@ -38,12 +44,27 @@ export const catalogController = {
 
   createItem: asyncHandler(async (req: Request, res: Response) => {
     const actor = tenantActor(req);
-    return created(res, await createCatalogItem(actor.tenantId, req.body as CreateCatalogItemInput, actor));
+    return created(
+      res,
+      await createCatalogItem(
+        actor.tenantId,
+        req.body as CreateCatalogItemInput,
+        actor,
+      ),
+    );
   }),
 
   updateItem: asyncHandler(async (req: Request, res: Response) => {
     const actor = tenantActor(req);
-    return ok(res, await updateCatalogItem(actor.tenantId, req.params.itemId!, req.body as UpdateCatalogItemInput, actor));
+    return ok(
+      res,
+      await updateCatalogItem(
+        actor.tenantId,
+        req.params.itemId!,
+        req.body as UpdateCatalogItemInput,
+        actor,
+      ),
+    );
   }),
 
   removeItem: asyncHandler(async (req: Request, res: Response) => {
@@ -54,17 +75,27 @@ export const catalogController = {
 
   publishItem: asyncHandler(async (req: Request, res: Response) => {
     const actor = tenantActor(req);
-    return ok(res, await publishCatalogItem(actor.tenantId, req.params.itemId!, actor));
+    return ok(
+      res,
+      await publishCatalogItem(actor.tenantId, req.params.itemId!, actor),
+    );
   }),
 
   retireItem: asyncHandler(async (req: Request, res: Response) => {
     const actor = tenantActor(req);
-    return ok(res, await retireCatalogItem(actor.tenantId, req.params.itemId!, actor));
+    return ok(
+      res,
+      await retireCatalogItem(actor.tenantId, req.params.itemId!, actor),
+    );
   }),
 
   listItemVersions: asyncHandler(async (req: Request, res: Response) => {
     const actor = tenantActor(req);
-    const { rows, meta } = await listCatalogItemVersions(actor.tenantId, req.params.itemId!, req);
+    const { rows, meta } = await listCatalogItemVersions(
+      actor.tenantId,
+      req.params.itemId!,
+      req,
+    );
     return paginated(res, rows, meta);
   }),
 };

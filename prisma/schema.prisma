@@ -288,6 +288,7 @@ model User {
   auditEvents                    AuditEvent[]
   loginEvents                    LoginEvent[]
   securityEvents                 SecurityEvent[]
+  slaClockEvents                 SlaClockEvent[]
   supportTicketsCreated          SupportTicket[]          @relation("SupportTicketCreator")
   supportTicketsAssigned         SupportTicket[]          @relation("SupportTicketAssignee")
   supportReplies                 SupportReply[]
@@ -576,6 +577,8 @@ model Tenant {
   slaPolicies                TenantSlaPolicy[]
   slaEscalationRules         TenantSlaEscalationRule[]
   businessCalendars          TenantBusinessCalendar[]
+  slaInstances               TicketSlaInstance[]
+  slaClockEvents             SlaClockEvent[]
   workflows                  TenantWorkflow[]
   workflowVersions           TenantWorkflowVersion[]
   workflowRuns               TenantWorkflowRun[]
@@ -584,6 +587,7 @@ model Tenant {
   notificationTemplates      TenantNotificationTemplate[]
   notificationRules          TenantNotificationRule[]
   notificationLogs           TenantNotificationLog[]
+  emailProviders             TenantEmailProvider[]
   operatingHours             TenantOperatingHours[]
   serviceDeskQueues          TenantServiceDeskQueue[]
   routingRules               TenantRoutingRule[]
@@ -1636,6 +1640,7 @@ model Incident {
   location   Location?               @relation(fields: [locationId], references: [id], onDelete: SetNull)
   customer   Customer?               @relation(fields: [customerId], references: [id], onDelete: SetNull)
   comments   IncidentComment[]
+  slaInstances TicketSlaInstance[]
 
   @@unique([tenantId, number])
   @@index([tenantId, statusKey])
@@ -2419,6 +2424,7 @@ model TenantSlaPolicy {
 
   tenant          Tenant                    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   escalationRules TenantSlaEscalationRule[]
+  ticketSlaInstances TicketSlaInstance[]
 
   @@unique([tenantId, name])
   @@index([tenantId, status])
@@ -2643,6 +2649,32 @@ model TenantNotificationLog {
 
   @@index([tenantId, status])
   @@map("tenant_notification_logs")
+}
+
+model TenantEmailProvider {
+  id             String    @id @default(cuid())
+  tenantId       String
+  key            String
+  name           String
+  providerType   String
+  fromName       String?
+  fromEmail      String
+  replyTo        String?
+  configEnc      String
+  status         String    @default("UNVERIFIED")
+  isDefault      Boolean   @default(false)
+  lastTestedAt   DateTime?
+  lastTestResult String?
+  createdById    String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  deletedAt      DateTime?
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, key])
+  @@index([tenantId, status])
+  @@map("tenant_email_providers")
 }
 
 // ===========================================================================
@@ -3684,4 +3716,81 @@ model BackgroundJob {
   @@index([status, scheduledFor])
   @@index([type])
   @@map("background_jobs")
+}
+
+// ===========================================================================
+// SLA engine — per-ticket SLA instances and clock events
+// ===========================================================================
+
+enum SlaClockEventType {
+  START
+  PAUSE
+  RESUME
+  COMPLETE
+  BREACH
+  RECALCULATE
+}
+
+enum SlaInstanceStatus {
+  RUNNING
+  PAUSED
+  MET
+  BREACHED
+  EXEMPT
+}
+
+model TicketSlaInstance {
+  id             String              @id @default(cuid())
+  tenantId       String
+  incidentId     String?
+  slaPolicyId    String?
+  milestone      String              // "response" | "resolution" | "fulfillment" | "restoration"
+  priorityKey    String
+  targetMinutes  Int
+  startedAt      DateTime?
+  deadlineAt     DateTime?
+  completedAt    DateTime?
+  pausedAt       DateTime?
+  pausedDuration Int               @default(0) // minutes excluded under permitted pauses
+  status         SlaInstanceStatus   @default(RUNNING)
+  breached       Boolean             @default(false)
+  breachedAt     DateTime?
+  policyKey      String?
+  metadata       Json?
+  createdById    String?
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+  deletedAt      DateTime?
+
+  tenant    Tenant                  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  incident  Incident?               @relation(fields: [incidentId], references: [id], onDelete: Cascade)
+  slaPolicy TenantSlaPolicy?        @relation(fields: [slaPolicyId], references: [id], onDelete: SetNull)
+  events    SlaClockEvent[]
+
+  @@index([tenantId, incidentId, milestone])
+  @@index([tenantId, status])
+  @@index([tenantId, deadlineAt])
+  @@index([deadlineAt])
+  @@map("ticket_sla_instances")
+}
+
+model SlaClockEvent {
+  id             String           @id @default(cuid())
+  tenantId       String
+  slaInstanceId  String
+  type           SlaClockEventType
+  occurredAt     DateTime         @default(now())
+  actorId        String?
+  reason         String?
+  pausedMinutes  Int?
+  metadata       Json?
+  createdAt      DateTime         @default(now())
+
+  tenant    Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  instance TicketSlaInstance @relation(fields: [slaInstanceId], references: [id], onDelete: Cascade)
+  actor   User?             @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, slaInstanceId])
+  @@index([tenantId, type, occurredAt])
+  @@map("sla_clock_events")
 }

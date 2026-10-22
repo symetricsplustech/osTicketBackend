@@ -1,7 +1,11 @@
-import { z } from 'zod';
+import { z } from "zod";
 
-export const problemCategoryIdParamSchema = z.object({ problemCategoryId: z.string().min(1) });
-export const rootCauseCategoryIdParamSchema = z.object({ rootCauseCategoryId: z.string().min(1) });
+export const problemCategoryIdParamSchema = z.object({
+  problemCategoryId: z.string().min(1),
+});
+export const rootCauseCategoryIdParamSchema = z.object({
+  rootCauseCategoryId: z.string().min(1),
+});
 
 export const createProblemCategorySchema = z
   .object({
@@ -11,7 +15,11 @@ export const createProblemCategorySchema = z
     isActive: z.boolean().optional(),
   })
   .strict();
-export const updateProblemCategorySchema = createProblemCategorySchema.partial().strict();
+export const updateProblemCategorySchema = createProblemCategorySchema
+  .partial()
+  .strict();
 
 export const createRootCauseCategorySchema = createProblemCategorySchema;
-export const updateRootCauseCategorySchema = createProblemCategorySchema.partial().strict();
+export const updateRootCauseCategorySchema = createProblemCategorySchema
+  .partial()
+  .strict();

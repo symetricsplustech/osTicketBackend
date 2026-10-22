@@ -1,7 +1,9 @@
-import { z } from 'zod';
+import { z } from "zod";
 
 export const webhookIdParamSchema = z.object({ webhookId: z.string().min(1) });
-export const webhookDeliveryIdParamSchema = z.object({ deliveryId: z.string().min(1) });
+export const webhookDeliveryIdParamSchema = z.object({
+  deliveryId: z.string().min(1),
+});
 
 export const createWebhookSchema = z
   .object({

@@ -1,4 +1,7 @@
-import { makeItsmCrudController } from './crud.controller';
-import { majorIncidentService } from '../../services/itsm/majorIncidents.service';
+import { makeItsmCrudController } from "./crud.controller";
+import { majorIncidentService } from "../../services/itsm/majorIncidents.service";
 
-export const majorIncidentController = makeItsmCrudController(majorIncidentService, 'majorIncidentId');
+export const majorIncidentController = makeItsmCrudController(
+  majorIncidentService,
+  "majorIncidentId",
+);

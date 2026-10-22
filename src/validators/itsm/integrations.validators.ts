@@ -1,6 +1,8 @@
-import { z } from 'zod';
+import { z } from "zod";
 
-export const integrationIdParamSchema = z.object({ integrationId: z.string().min(1) });
+export const integrationIdParamSchema = z.object({
+  integrationId: z.string().min(1),
+});
 
 export const createIntegrationSchema = z
   .object({

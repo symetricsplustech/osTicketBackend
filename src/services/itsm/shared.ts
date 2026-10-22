@@ -1,5 +1,5 @@
-import { prisma } from '../../config/database';
-import { NotFoundError, ValidationError } from '../../shared/errors';
+import { prisma } from "../../config/database";
+import { NotFoundError, ValidationError } from "../../shared/errors";
 
 export const USER_SUMMARY = {
   id: true,
@@ -28,12 +28,14 @@ export async function generateTicketNumber(
 
   let seq = Math.max(1, startAt);
   for (let attempt = 0; attempt < 5000; attempt += 1) {
-    const number = `${prefix}-${String(seq).padStart(padding, '0')}`;
+    const number = `${prefix}-${String(seq).padStart(padding, "0")}`;
     // eslint-disable-next-line no-await-in-loop
     if (!(await exists(number))) return number;
     seq += 1;
   }
-  throw new ValidationError('Unable to generate a unique reference number for this record.');
+  throw new ValidationError(
+    "Unable to generate a unique reference number for this record.",
+  );
 }
 
 /**
@@ -46,7 +48,10 @@ export function withGeneratedNumber(opts: {
   count: (tenantId: string) => Promise<number>;
   exists: (tenantId: string, number: string) => Promise<boolean>;
 }) {
-  return async (input: Record<string, unknown>, ctx: { tenantId: string; existing?: unknown }) => {
+  return async (
+    input: Record<string, unknown>,
+    ctx: { tenantId: string; existing?: unknown },
+  ) => {
     if (ctx.existing) return input;
     const count = await opts.count(ctx.tenantId);
     const number = await generateTicketNumber(
@@ -59,46 +64,71 @@ export function withGeneratedNumber(opts: {
   };
 }
 
-export async function assertTenantUser(tenantId: string, userId: string | null | undefined, label: string): Promise<void> {
+export async function assertTenantUser(
+  tenantId: string,
+  userId: string | null | undefined,
+  label: string,
+): Promise<void> {
   if (!userId) return;
   const membership = await prisma.tenantMembership.findFirst({
     where: { tenantId, userId },
     select: { id: true },
   });
-  if (!membership) throw new ValidationError(`The selected ${label} is not a member of this organization.`);
+  if (!membership)
+    throw new ValidationError(
+      `The selected ${label} is not a member of this organization.`,
+    );
 }
 
-export async function assertTenantTeam(tenantId: string, teamId: string | null | undefined): Promise<void> {
+export async function assertTenantTeam(
+  tenantId: string,
+  teamId: string | null | undefined,
+): Promise<void> {
   if (!teamId) return;
-  const team = await prisma.team.findFirst({ where: { id: teamId, tenantId, deletedAt: null }, select: { id: true } });
-  if (!team) throw new ValidationError('The selected team could not be found.');
+  const team = await prisma.team.findFirst({
+    where: { id: teamId, tenantId, deletedAt: null },
+    select: { id: true },
+  });
+  if (!team) throw new ValidationError("The selected team could not be found.");
 }
 
-export async function assertTenantDepartment(tenantId: string, departmentId: string | null | undefined): Promise<void> {
+export async function assertTenantDepartment(
+  tenantId: string,
+  departmentId: string | null | undefined,
+): Promise<void> {
   if (!departmentId) return;
   const department = await prisma.department.findFirst({
     where: { id: departmentId, tenantId, deletedAt: null },
     select: { id: true },
   });
-  if (!department) throw new ValidationError('The selected department could not be found.');
+  if (!department)
+    throw new ValidationError("The selected department could not be found.");
 }
 
-export async function assertTenantLocation(tenantId: string, locationId: string | null | undefined): Promise<void> {
+export async function assertTenantLocation(
+  tenantId: string,
+  locationId: string | null | undefined,
+): Promise<void> {
   if (!locationId) return;
   const location = await prisma.location.findFirst({
     where: { id: locationId, tenantId, deletedAt: null },
     select: { id: true },
   });
-  if (!location) throw new ValidationError('The selected location could not be found.');
+  if (!location)
+    throw new ValidationError("The selected location could not be found.");
 }
 
-export async function assertTenantCategory(tenantId: string, categoryId: string | null | undefined): Promise<void> {
+export async function assertTenantCategory(
+  tenantId: string,
+  categoryId: string | null | undefined,
+): Promise<void> {
   if (!categoryId) return;
   const category = await prisma.classificationCategory.findFirst({
     where: { id: categoryId },
     select: { id: true },
   });
-  if (!category) throw new ValidationError('The selected category could not be found.');
+  if (!category)
+    throw new ValidationError("The selected category could not be found.");
 }
 
 export class ItsmRecordNotFound extends NotFoundError {

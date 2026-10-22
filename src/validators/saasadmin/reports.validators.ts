@@ -1,4 +1,4 @@
-import { z } from 'zod';
+import { z } from "zod";
 
 export const runReportSchema = z.object({
   reportKey: z.string().trim().min(2).max(120),
@@ -8,7 +8,7 @@ export const runReportSchema = z.object({
 
 export const exportReportSchema = z.object({
   reportKey: z.string().trim().min(2).max(120),
-  format: z.enum(['CSV', 'JSON']).default('CSV'),
+  format: z.enum(["CSV", "JSON"]).default("CSV"),
   filters: z.record(z.unknown()).optional(),
   reason: z.string().trim().min(4).max(500),
 });

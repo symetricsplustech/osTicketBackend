@@ -1,8 +1,14 @@
-import { z } from 'zod';
+import { z } from "zod";
 
-export const incidentCategoryIdParamSchema = z.object({ categoryId: z.string().min(1) });
-export const incidentPriorityIdParamSchema = z.object({ priorityId: z.string().min(1) });
-export const resolutionCodeIdParamSchema = z.object({ resolutionCodeId: z.string().min(1) });
+export const incidentCategoryIdParamSchema = z.object({
+  categoryId: z.string().min(1),
+});
+export const incidentPriorityIdParamSchema = z.object({
+  priorityId: z.string().min(1),
+});
+export const resolutionCodeIdParamSchema = z.object({
+  resolutionCodeId: z.string().min(1),
+});
 
 export const createIncidentCategorySchema = z
   .object({
@@ -14,7 +20,9 @@ export const createIncidentCategorySchema = z
     sortOrder: z.number().int().min(0).optional(),
   })
   .strict();
-export const updateIncidentCategorySchema = createIncidentCategorySchema.partial().strict();
+export const updateIncidentCategorySchema = createIncidentCategorySchema
+  .partial()
+  .strict();
 
 export const createIncidentPrioritySchema = z
   .object({
@@ -28,7 +36,9 @@ export const createIncidentPrioritySchema = z
     isActive: z.boolean().optional(),
   })
   .strict();
-export const updateIncidentPrioritySchema = createIncidentPrioritySchema.partial().strict();
+export const updateIncidentPrioritySchema = createIncidentPrioritySchema
+  .partial()
+  .strict();
 
 export const createResolutionCodeSchema = z
   .object({
@@ -38,4 +48,6 @@ export const createResolutionCodeSchema = z
     isActive: z.boolean().optional(),
   })
   .strict();
-export const updateResolutionCodeSchema = createResolutionCodeSchema.partial().strict();
+export const updateResolutionCodeSchema = createResolutionCodeSchema
+  .partial()
+  .strict();

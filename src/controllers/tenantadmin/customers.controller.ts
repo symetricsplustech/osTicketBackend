@@ -1,6 +1,6 @@
-import type { Request, Response } from 'express';
-import { created, noContent, ok, paginated } from '../../shared/response';
-import { asyncHandler } from '../../shared/utils/async-handler';
+import type { Request, Response } from "express";
+import { created, noContent, ok, paginated } from "../../shared/response";
+import { asyncHandler } from "../../shared/utils/async-handler";
 import {
   createCustomerContact,
   createCustomerSite,
@@ -13,11 +13,11 @@ import {
   revokeCustomerContactPortal,
   updateCustomerContact,
   updateCustomerSite,
-} from '../../services/tenantadmin/customers.service';
-import { makeStructureController } from './structure.controller';
-import { tenantActor } from './actor';
+} from "../../services/tenantadmin/customers.service";
+import { makeStructureController } from "./structure.controller";
+import { tenantActor } from "./actor";
 
-const baseController = makeStructureController(customerService, 'customerId');
+const baseController = makeStructureController(customerService, "customerId");
 
 export const customerController = {
   ...baseController,
@@ -32,7 +32,12 @@ export const customerController = {
     const actor = tenantActor(req);
     return created(
       res,
-      await createCustomerContact(actor.tenantId, req.params.customerId!, req.body ?? {}, actor),
+      await createCustomerContact(
+        actor.tenantId,
+        req.params.customerId!,
+        req.body ?? {},
+        actor,
+      ),
     );
   }),
 
@@ -52,7 +57,12 @@ export const customerController = {
 
   removeContact: asyncHandler(async (req: Request, res: Response) => {
     const actor = tenantActor(req);
-    await removeCustomerContact(actor.tenantId, req.params.customerId!, req.params.contactId!, actor);
+    await removeCustomerContact(
+      actor.tenantId,
+      req.params.customerId!,
+      req.params.contactId!,
+      actor,
+    );
     return noContent(res);
   }),
 
@@ -92,7 +102,12 @@ export const customerController = {
     const actor = tenantActor(req);
     return created(
       res,
-      await createCustomerSite(actor.tenantId, req.params.customerId!, req.body ?? {}, actor),
+      await createCustomerSite(
+        actor.tenantId,
+        req.params.customerId!,
+        req.body ?? {},
+        actor,
+      ),
     );
   }),
 
@@ -112,7 +127,12 @@ export const customerController = {
 
   removeSite: asyncHandler(async (req: Request, res: Response) => {
     const actor = tenantActor(req);
-    await removeCustomerSite(actor.tenantId, req.params.customerId!, req.params.siteId!, actor);
+    await removeCustomerSite(
+      actor.tenantId,
+      req.params.customerId!,
+      req.params.siteId!,
+      actor,
+    );
     return noContent(res);
   }),
 };

@@ -1,9 +1,9 @@
-import { logger } from '../config/logger';
-import { runWebhookRetryJob } from './webhook-retry.job';
-import { runTenantMaintenanceJob } from './tenant-maintenance.job';
-import { runNotificationDeliveryJob } from './notification-delivery.job';
-import { runSlaMonitorJob } from './sla-monitor.job';
-import { runReportGenerationJob } from './report-generation.job';
+import { logger } from "../config/logger";
+import { runWebhookRetryJob } from "./webhook-retry.job";
+import { runTenantMaintenanceJob } from "./tenant-maintenance.job";
+import { runNotificationDeliveryJob } from "./notification-delivery.job";
+import { runSlaMonitorJob } from "./sla-monitor.job";
+import { runReportGenerationJob } from "./report-generation.job";
 
 interface JobDefinition {
   name: string;
@@ -19,11 +19,66 @@ interface JobDefinition {
 }
 
 const definitions: JobDefinition[] = [
-  { name: 'webhook-retry', intervalMs: 30_000, initialDelayMs: 10_000, run: runWebhookRetryJob, running: false, lastStartedAt: null, lastCompletedAt: null, lastDurationMs: null, lastError: null, runCount: 0 },
-  { name: 'report-generation', intervalMs: 15_000, initialDelayMs: 5_000, run: runReportGenerationJob, running: false, lastStartedAt: null, lastCompletedAt: null, lastDurationMs: null, lastError: null, runCount: 0 },
-  { name: 'notification-delivery', intervalMs: 120_000, initialDelayMs: 30_000, run: runNotificationDeliveryJob, running: false, lastStartedAt: null, lastCompletedAt: null, lastDurationMs: null, lastError: null, runCount: 0 },
-  { name: 'tenant-maintenance', intervalMs: 600_000, initialDelayMs: 60_000, run: runTenantMaintenanceJob, running: false, lastStartedAt: null, lastCompletedAt: null, lastDurationMs: null, lastError: null, runCount: 0 },
-  { name: 'sla-monitor', intervalMs: 900_000, initialDelayMs: 120_000, run: runSlaMonitorJob, running: false, lastStartedAt: null, lastCompletedAt: null, lastDurationMs: null, lastError: null, runCount: 0 },
+  {
+    name: "webhook-retry",
+    intervalMs: 30_000,
+    initialDelayMs: 10_000,
+    run: runWebhookRetryJob,
+    running: false,
+    lastStartedAt: null,
+    lastCompletedAt: null,
+    lastDurationMs: null,
+    lastError: null,
+    runCount: 0,
+  },
+  {
+    name: "report-generation",
+    intervalMs: 15_000,
+    initialDelayMs: 5_000,
+    run: runReportGenerationJob,
+    running: false,
+    lastStartedAt: null,
+    lastCompletedAt: null,
+    lastDurationMs: null,
+    lastError: null,
+    runCount: 0,
+  },
+  {
+    name: "notification-delivery",
+    intervalMs: 120_000,
+    initialDelayMs: 30_000,
+    run: runNotificationDeliveryJob,
+    running: false,
+    lastStartedAt: null,
+    lastCompletedAt: null,
+    lastDurationMs: null,
+    lastError: null,
+    runCount: 0,
+  },
+  {
+    name: "tenant-maintenance",
+    intervalMs: 600_000,
+    initialDelayMs: 60_000,
+    run: runTenantMaintenanceJob,
+    running: false,
+    lastStartedAt: null,
+    lastCompletedAt: null,
+    lastDurationMs: null,
+    lastError: null,
+    runCount: 0,
+  },
+  {
+    name: "sla-monitor",
+    intervalMs: 900_000,
+    initialDelayMs: 120_000,
+    run: runSlaMonitorJob,
+    running: false,
+    lastStartedAt: null,
+    lastCompletedAt: null,
+    lastDurationMs: null,
+    lastError: null,
+    runCount: 0,
+  },
 ];
 
 const timers: NodeJS.Timeout[] = [];
@@ -39,7 +94,10 @@ async function execute(job: JobDefinition): Promise<void> {
     job.lastError = null;
   } catch (error) {
     job.lastError = error instanceof Error ? error.message : String(error);
-    logger.error({ job: job.name, error: job.lastError }, 'Background job failed');
+    logger.error(
+      { job: job.name, error: job.lastError },
+      "Background job failed",
+    );
   } finally {
     job.running = false;
     job.lastCompletedAt = new Date();
@@ -59,7 +117,10 @@ export function startJobs(): void {
     }, job.initialDelayMs);
     timers.push(initial);
   }
-  logger.info({ jobs: definitions.map((job) => job.name) }, 'Job scheduler started');
+  logger.info(
+    { jobs: definitions.map((job) => job.name) },
+    "Job scheduler started",
+  );
 }
 
 export function stopJobs(): void {
@@ -84,4 +145,10 @@ export function getJobSchedulerState() {
   };
 }
 
-export { runWebhookRetryJob, runTenantMaintenanceJob, runNotificationDeliveryJob, runSlaMonitorJob, runReportGenerationJob };
+export {
+  runWebhookRetryJob,
+  runTenantMaintenanceJob,
+  runNotificationDeliveryJob,
+  runSlaMonitorJob,
+  runReportGenerationJob,
+};

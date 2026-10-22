@@ -1,6 +1,8 @@
-import { z } from 'zod';
+import { z } from "zod";
 
-export const attachmentIdParamSchema = z.object({ attachmentId: z.string().min(1) });
+export const attachmentIdParamSchema = z.object({
+  attachmentId: z.string().min(1),
+});
 
 export const createAttachmentSchema = z
   .object({

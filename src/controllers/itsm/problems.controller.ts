@@ -1,8 +1,8 @@
-import type { Request, Response } from 'express';
-import { ok } from '../../shared/response';
-import { asyncHandler } from '../../shared/utils/async-handler';
-import { tenantActor } from '../tenantadmin/actor';
-import { makeTicketController } from './ticket.controller';
+import type { Request, Response } from "express";
+import { ok } from "../../shared/response";
+import { asyncHandler } from "../../shared/utils/async-handler";
+import { tenantActor } from "../tenantadmin/actor";
+import { makeTicketController } from "./ticket.controller";
 import {
   addProblemComment,
   assignProblem,
@@ -13,8 +13,11 @@ import {
   listProblems,
   resolveProblem,
   updateProblem,
-} from '../../services/itsm/problems.service';
-import type { AssignProblemInput, ResolveProblemInput } from '../../validators/itsm/problems.validators';
+} from "../../services/itsm/problems.service";
+import type {
+  AssignProblemInput,
+  ResolveProblemInput,
+} from "../../validators/itsm/problems.validators";
 
 const base = makeTicketController(
   {
@@ -26,7 +29,7 @@ const base = makeTicketController(
     listComments: listProblemComments,
     addComment: addProblemComment,
   },
-  'problemId',
+  "problemId",
 );
 
 export const problemController = {
@@ -34,11 +37,27 @@ export const problemController = {
 
   assign: asyncHandler(async (req: Request, res: Response) => {
     const actor = tenantActor(req);
-    return ok(res, await assignProblem(actor.tenantId, req.params.problemId!, req.body as AssignProblemInput, actor));
+    return ok(
+      res,
+      await assignProblem(
+        actor.tenantId,
+        req.params.problemId!,
+        req.body as AssignProblemInput,
+        actor,
+      ),
+    );
   }),
 
   resolve: asyncHandler(async (req: Request, res: Response) => {
     const actor = tenantActor(req);
-    return ok(res, await resolveProblem(actor.tenantId, req.params.problemId!, req.body as ResolveProblemInput, actor));
+    return ok(
+      res,
+      await resolveProblem(
+        actor.tenantId,
+        req.params.problemId!,
+        req.body as ResolveProblemInput,
+        actor,
+      ),
+    );
   }),
 };

@@ -1,16 +1,16 @@
-import { Prisma } from '@prisma/client';
-import { prisma } from '../../config/database';
-import { recordAudit } from '../../shared/audit';
-import { publishEvent } from '../../shared/events';
-import type { TenantActorContext } from './roles.service';
-import type { UpdateOrganizationStructureInput } from '../../validators/tenantadmin/organizationStructure.validators';
+import { Prisma } from "@prisma/client";
+import { prisma } from "../../config/database";
+import { recordAudit } from "../../shared/audit";
+import { publishEvent } from "../../shared/events";
+import type { TenantActorContext } from "./roles.service";
+import type { UpdateOrganizationStructureInput } from "../../validators/tenantadmin/organizationStructure.validators";
 
-export const ORGANIZATION_STRUCTURE_KEY = 'organization.structure';
+export const ORGANIZATION_STRUCTURE_KEY = "organization.structure";
 
 type StructureValue = Record<string, unknown>;
 
 const DEFAULT_STRUCTURE: StructureValue = {
-  reportingMode: 'DEPARTMENT',
+  reportingMode: "DEPARTMENT",
   rootNodeId: null,
   nodes: [],
 };
@@ -20,7 +20,7 @@ async function readStructure(tenantId: string): Promise<StructureValue> {
     where: { tenantId_key: { tenantId, key: ORGANIZATION_STRUCTURE_KEY } },
   });
   const value = setting?.value;
-  if (value && typeof value === 'object' && !Array.isArray(value)) {
+  if (value && typeof value === "object" && !Array.isArray(value)) {
     return { ...DEFAULT_STRUCTURE, ...(value as StructureValue) };
   }
   return { ...DEFAULT_STRUCTURE };
@@ -32,12 +32,18 @@ export async function getOrganizationStructure(tenantId: string) {
     prisma.department.findMany({
       where: { tenantId, deletedAt: null },
       select: { id: true, name: true, code: true, parentId: true },
-      orderBy: { name: 'asc' },
+      orderBy: { name: "asc" },
     }),
     prisma.team.findMany({
       where: { tenantId, deletedAt: null },
-      select: { id: true, name: true, code: true, departmentId: true, leadId: true },
-      orderBy: { name: 'asc' },
+      select: {
+        id: true,
+        name: true,
+        code: true,
+        departmentId: true,
+        leadId: true,
+      },
+      orderBy: { name: "asc" },
     }),
   ]);
 
@@ -48,7 +54,9 @@ export async function getOrganizationStructure(tenantId: string) {
     summary: {
       departmentCount: departments.length,
       teamCount: teams.length,
-      nodeCount: Array.isArray(structure.nodes) ? (structure.nodes as unknown[]).length : 0,
+      nodeCount: Array.isArray(structure.nodes)
+        ? (structure.nodes as unknown[]).length
+        : 0,
     },
   };
 }
@@ -59,36 +67,55 @@ export async function updateOrganizationStructure(
 ) {
   const before = await readStructure(actor.tenantId);
   const next: StructureValue = {
-    reportingMode: input.reportingMode ?? (before.reportingMode as string) ?? 'DEPARTMENT',
-    rootNodeId: input.rootNodeId !== undefined ? input.rootNodeId : ((before.rootNodeId as string | null) ?? null),
-    nodes: input.nodes !== undefined ? input.nodes : ((before.nodes as unknown[]) ?? []),
+    reportingMode:
+      input.reportingMode ?? (before.reportingMode as string) ?? "DEPARTMENT",
+    rootNodeId:
+      input.rootNodeId !== undefined
+        ? input.rootNodeId
+        : ((before.rootNodeId as string | null) ?? null),
+    nodes:
+      input.nodes !== undefined
+        ? input.nodes
+        : ((before.nodes as unknown[]) ?? []),
     ...(input.metadata !== undefined ? { metadata: input.metadata } : {}),
   };
 
   const setting = await prisma.tenantSetting.upsert({
-    where: { tenantId_key: { tenantId: actor.tenantId, key: ORGANIZATION_STRUCTURE_KEY } },
+    where: {
+      tenantId_key: {
+        tenantId: actor.tenantId,
+        key: ORGANIZATION_STRUCTURE_KEY,
+      },
+    },
     create: {
       tenantId: actor.tenantId,
       key: ORGANIZATION_STRUCTURE_KEY,
       value: next as Prisma.InputJsonValue,
       updatedById: actor.actorId ?? null,
     },
-    update: { value: next as Prisma.InputJsonValue, updatedById: actor.actorId ?? null },
+    update: {
+      value: next as Prisma.InputJsonValue,
+      updatedById: actor.actorId ?? null,
+    },
   });
 
   await recordAudit({
-    action: 'organization.structure.updated',
-    resourceType: 'organization-structure',
+    action: "organization.structure.updated",
+    resourceType: "organization-structure",
     resourceId: setting.id,
     tenantId: actor.tenantId,
     before,
     after: next,
     actorId: actor.actorId ?? null,
     actorEmail: actor.actorEmail ?? null,
-    actorType: actor.actorType ?? 'TENANT_USER',
+    actorType: actor.actorType ?? "TENANT_USER",
     req: actor.req,
   });
-  void publishEvent({ eventKey: 'organization.structure.updated', tenantId: actor.tenantId, payload: { id: setting.id } });
+  void publishEvent({
+    eventKey: "organization.structure.updated",
+    tenantId: actor.tenantId,
+    payload: { id: setting.id },
+  });
 
   return getOrganizationStructure(actor.tenantId);
 }

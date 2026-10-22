@@ -1,7 +1,7 @@
-import type { Request, Response } from 'express';
-import { created, noContent, ok, paginated } from '../../shared/response';
-import { asyncHandler } from '../../shared/utils/async-handler';
-import { tenantActor } from '../tenantadmin/actor';
+import type { Request, Response } from "express";
+import { created, noContent, ok, paginated } from "../../shared/response";
+import { asyncHandler } from "../../shared/utils/async-handler";
+import { tenantActor } from "../tenantadmin/actor";
 import {
   addIncidentComment,
   assignIncident,
@@ -14,7 +14,7 @@ import {
   reopenIncident,
   resolveIncident,
   updateIncident,
-} from '../../services/itsm/incidents.service';
+} from "../../services/itsm/incidents.service";
 import type {
   AssignIncidentInput,
   CreateIncidentCommentInput,
@@ -23,7 +23,7 @@ import type {
   ReopenIncidentInput,
   ResolveIncidentInput,
   UpdateIncidentInput,
-} from '../../validators/itsm/incidents.validators';
+} from "../../validators/itsm/incidents.validators";
 
 export const incidentController = {
   list: asyncHandler(async (req: Request, res: Response) => {
@@ -39,14 +39,26 @@ export const incidentController = {
 
   create: asyncHandler(async (req: Request, res: Response) => {
     const actor = tenantActor(req);
-    return created(res, await createIncident(actor.tenantId, req.body as CreateIncidentInput, actor));
+    return created(
+      res,
+      await createIncident(
+        actor.tenantId,
+        req.body as CreateIncidentInput,
+        actor,
+      ),
+    );
   }),
 
   update: asyncHandler(async (req: Request, res: Response) => {
     const actor = tenantActor(req);
     return ok(
       res,
-      await updateIncident(actor.tenantId, req.params.incidentId!, req.body as UpdateIncidentInput, actor),
+      await updateIncident(
+        actor.tenantId,
+        req.params.incidentId!,
+        req.body as UpdateIncidentInput,
+        actor,
+      ),
     );
   }),
 
@@ -60,7 +72,12 @@ export const incidentController = {
     const actor = tenantActor(req);
     return ok(
       res,
-      await assignIncident(actor.tenantId, req.params.incidentId!, req.body as AssignIncidentInput, actor),
+      await assignIncident(
+        actor.tenantId,
+        req.params.incidentId!,
+        req.body as AssignIncidentInput,
+        actor,
+      ),
     );
   }),
 
@@ -68,7 +85,12 @@ export const incidentController = {
     const actor = tenantActor(req);
     return ok(
       res,
-      await escalateIncident(actor.tenantId, req.params.incidentId!, req.body as EscalateIncidentInput, actor),
+      await escalateIncident(
+        actor.tenantId,
+        req.params.incidentId!,
+        req.body as EscalateIncidentInput,
+        actor,
+      ),
     );
   }),
 
@@ -76,7 +98,12 @@ export const incidentController = {
     const actor = tenantActor(req);
     return ok(
       res,
-      await resolveIncident(actor.tenantId, req.params.incidentId!, req.body as ResolveIncidentInput, actor),
+      await resolveIncident(
+        actor.tenantId,
+        req.params.incidentId!,
+        req.body as ResolveIncidentInput,
+        actor,
+      ),
     );
   }),
 
@@ -84,13 +111,22 @@ export const incidentController = {
     const actor = tenantActor(req);
     return ok(
       res,
-      await reopenIncident(actor.tenantId, req.params.incidentId!, req.body as ReopenIncidentInput, actor),
+      await reopenIncident(
+        actor.tenantId,
+        req.params.incidentId!,
+        req.body as ReopenIncidentInput,
+        actor,
+      ),
     );
   }),
 
   listComments: asyncHandler(async (req: Request, res: Response) => {
     const actor = tenantActor(req);
-    const { rows, meta } = await listIncidentComments(actor.tenantId, req.params.incidentId!, req);
+    const { rows, meta } = await listIncidentComments(
+      actor.tenantId,
+      req.params.incidentId!,
+      req,
+    );
     return paginated(res, rows, meta);
   }),
 
@@ -98,7 +134,12 @@ export const incidentController = {
     const actor = tenantActor(req);
     return created(
       res,
-      await addIncidentComment(actor.tenantId, req.params.incidentId!, req.body as CreateIncidentCommentInput, actor),
+      await addIncidentComment(
+        actor.tenantId,
+        req.params.incidentId!,
+        req.body as CreateIncidentCommentInput,
+        actor,
+      ),
     );
   }),
 };

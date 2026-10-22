@@ -1,10 +1,20 @@
-import { z } from 'zod';
+import { z } from "zod";
 
-export const accessPolicyIdParamSchema = z.object({ policyId: z.string().min(1) });
-export const accessPolicyAssignmentIdParamSchema = z.object({ assignmentId: z.string().min(1) });
-export const delegationIdParamSchema = z.object({ delegationId: z.string().min(1) });
-export const accessReviewIdParamSchema = z.object({ reviewId: z.string().min(1) });
-export const accessReviewItemIdParamSchema = z.object({ itemId: z.string().min(1) });
+export const accessPolicyIdParamSchema = z.object({
+  policyId: z.string().min(1),
+});
+export const accessPolicyAssignmentIdParamSchema = z.object({
+  assignmentId: z.string().min(1),
+});
+export const delegationIdParamSchema = z.object({
+  delegationId: z.string().min(1),
+});
+export const accessReviewIdParamSchema = z.object({
+  reviewId: z.string().min(1),
+});
+export const accessReviewItemIdParamSchema = z.object({
+  itemId: z.string().min(1),
+});
 
 export const createAccessPolicySchema = z
   .object({
@@ -16,7 +26,9 @@ export const createAccessPolicySchema = z
     isEnabled: z.boolean().optional(),
   })
   .strict();
-export const updateAccessPolicySchema = createAccessPolicySchema.partial().strict();
+export const updateAccessPolicySchema = createAccessPolicySchema
+  .partial()
+  .strict();
 
 export const createAccessPolicyAssignmentSchema = z
   .object({
@@ -45,7 +57,9 @@ export const createAccessReviewSchema = z
     dueAt: z.coerce.date().nullable().optional(),
   })
   .strict();
-export const updateAccessReviewSchema = createAccessReviewSchema.partial().strict();
+export const updateAccessReviewSchema = createAccessReviewSchema
+  .partial()
+  .strict();
 
 export const createAccessReviewItemSchema = z
   .object({
@@ -56,7 +70,7 @@ export const createAccessReviewItemSchema = z
 
 export const decideAccessReviewItemSchema = z
   .object({
-    decision: z.enum(['APPROVED', 'REVOKED']),
+    decision: z.enum(["APPROVED", "REVOKED"]),
     notes: z.string().max(2000).optional(),
   })
   .strict();

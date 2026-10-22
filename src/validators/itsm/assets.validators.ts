@@ -1,10 +1,19 @@
-import { z } from 'zod';
+import { z } from "zod";
 
 export const assetIdParamSchema = z.object({ assetId: z.string().min(1) });
-export const assetMaintenanceIdParamSchema = z.object({ maintenanceId: z.string().min(1) });
+export const assetMaintenanceIdParamSchema = z.object({
+  maintenanceId: z.string().min(1),
+});
 
 const optionalId = z.string().min(1).nullable().optional();
-const assetStatus = z.enum(['IN_STOCK', 'ASSIGNED', 'IN_REPAIR', 'RETIRED', 'LOST', 'DISPOSED']);
+const assetStatus = z.enum([
+  "IN_STOCK",
+  "ASSIGNED",
+  "IN_REPAIR",
+  "RETIRED",
+  "LOST",
+  "DISPOSED",
+]);
 
 export const createAssetSchema = z
   .object({
@@ -42,4 +51,6 @@ export const createAssetMaintenanceSchema = z
     performedById: optionalId,
   })
   .strict();
-export const updateAssetMaintenanceSchema = createAssetMaintenanceSchema.partial().strict();
+export const updateAssetMaintenanceSchema = createAssetMaintenanceSchema
+  .partial()
+  .strict();

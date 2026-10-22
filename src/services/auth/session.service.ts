@@ -1,11 +1,11 @@
-import type { Session, User } from '@prisma/client';
-import type { Request } from 'express';
-import { prisma } from '../../config/database';
-import { env } from '../../config/env';
-import { UnauthorizedError } from '../../shared/errors';
-import { randomToken, sha256 } from '../../shared/utils/crypto';
-import { clientIp, userAgent } from '../../shared/utils/sanitize-request';
-import { signAccessToken } from '../../api/middleware/authenticate';
+import type { Session, User } from "@prisma/client";
+import type { Request } from "express";
+import { prisma } from "../../config/database";
+import { env } from "../../config/env";
+import { UnauthorizedError } from "../../shared/errors";
+import { randomToken, sha256 } from "../../shared/utils/crypto";
+import { clientIp, userAgent } from "../../shared/utils/sanitize-request";
+import { signAccessToken } from "../../api/middleware/authenticate";
 
 export interface IssuedSession {
   session: Session;
@@ -31,8 +31,10 @@ export async function issueSession(
   authenticationMethods: string[],
   activeTenantId?: string | null,
 ): Promise<IssuedSession> {
-  if (user.mfaEnabled && !authenticationMethods.includes('mfa')) {
-    throw new UnauthorizedError('Multi-factor authentication is required before a session can be issued.');
+  if (user.mfaEnabled && !authenticationMethods.includes("mfa")) {
+    throw new UnauthorizedError(
+      "Multi-factor authentication is required before a session can be issued.",
+    );
   }
   const refreshToken = randomToken(48);
   const metadata = metadataFromRequest(req);
@@ -45,7 +47,7 @@ export async function issueSession(
       userAgent: metadata.userAgent,
       ipAddress: metadata.ipAddress,
       activeTenantId: activeTenantId ?? null,
-      mfaVerifiedAt: authenticationMethods.includes('mfa') ? new Date() : null,
+      mfaVerifiedAt: authenticationMethods.includes("mfa") ? new Date() : null,
       expiresAt,
     },
   });
@@ -70,46 +72,69 @@ export async function issueSession(
   };
 }
 
-export async function rotateRefreshToken(refreshToken: string, req: Request): Promise<IssuedSession & { user: User }> {
+export async function rotateRefreshToken(
+  refreshToken: string,
+  req: Request,
+): Promise<IssuedSession & { user: User }> {
   const session = await prisma.session.findFirst({
     where: { refreshTokenHash: sha256(refreshToken) },
     include: { user: true },
   });
 
-  if (!session || session.revokedAt || session.expiresAt.getTime() < Date.now()) {
-    throw new UnauthorizedError('Refresh token is invalid or has expired.');
+  if (
+    !session ||
+    session.revokedAt ||
+    session.expiresAt.getTime() < Date.now()
+  ) {
+    throw new UnauthorizedError("Refresh token is invalid or has expired.");
   }
   const user = session.user;
-  if (user.deletedAt || user.status === 'SUSPENDED' || user.status === 'DEACTIVATED') {
-    throw new UnauthorizedError('Account is not active.');
+  if (
+    user.deletedAt ||
+    user.status === "SUSPENDED" ||
+    user.status === "DEACTIVATED"
+  ) {
+    throw new UnauthorizedError("Account is not active.");
   }
 
-  const amr = session.mfaVerifiedAt ? ['pwd', 'mfa'] : ['pwd'];
+  const amr = session.mfaVerifiedAt ? ["pwd", "mfa"] : ["pwd"];
   await prisma.session.update({
     where: { id: session.id },
-    data: { revokedAt: new Date(), revokedReason: 'ROTATED' },
+    data: { revokedAt: new Date(), revokedReason: "ROTATED" },
   });
 
   const issued = await issueSession(user, req, amr, session.activeTenantId);
   return { ...issued, user };
 }
 
-export async function revokeSession(sessionId: string, options?: { userId?: string; reason?: string }): Promise<void> {
+export async function revokeSession(
+  sessionId: string,
+  options?: { userId?: string; reason?: string },
+): Promise<void> {
   const session = await prisma.session.findUnique({ where: { id: sessionId } });
   if (!session) return;
   if (options?.userId && session.userId !== options.userId) {
-    throw new UnauthorizedError('Session does not belong to this account.');
+    throw new UnauthorizedError("Session does not belong to this account.");
   }
   if (!session.revokedAt) {
     await prisma.session.update({
       where: { id: sessionId },
-      data: { revokedAt: new Date(), revokedReason: options?.reason ?? 'USER_REVOKED' },
+      data: {
+        revokedAt: new Date(),
+        revokedReason: options?.reason ?? "USER_REVOKED",
+      },
     });
   }
 }
 
-export async function setSessionActiveTenant(sessionId: string, tenantId: string): Promise<void> {
-  await prisma.session.update({ where: { id: sessionId }, data: { activeTenantId: tenantId } });
+export async function setSessionActiveTenant(
+  sessionId: string,
+  tenantId: string,
+): Promise<void> {
+  await prisma.session.update({
+    where: { id: sessionId },
+    data: { activeTenantId: tenantId },
+  });
 }
 
 export async function revokeAllUserSessions(
@@ -120,17 +145,25 @@ export async function revokeAllUserSessions(
     where: {
       userId,
       revokedAt: null,
-      ...(options?.exceptSessionId ? { id: { not: options.exceptSessionId } } : {}),
+      ...(options?.exceptSessionId
+        ? { id: { not: options.exceptSessionId } }
+        : {}),
     },
-    data: { revokedAt: new Date(), revokedReason: options?.reason ?? 'ALL_REVOKED' },
+    data: {
+      revokedAt: new Date(),
+      revokedReason: options?.reason ?? "ALL_REVOKED",
+    },
   });
   return result.count;
 }
 
-export async function listUserSessions(userId: string, req?: Request): Promise<(Session & { isCurrent: boolean; isActive: boolean })[]> {
+export async function listUserSessions(
+  userId: string,
+  req?: Request,
+): Promise<(Session & { isCurrent: boolean; isActive: boolean })[]> {
   const sessions = await prisma.session.findMany({
     where: { userId },
-    orderBy: { lastUsedAt: 'desc' },
+    orderBy: { lastUsedAt: "desc" },
     take: 100,
   });
   const currentId = req?.auth?.sessionId;

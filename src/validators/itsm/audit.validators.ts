@@ -1,7 +1,10 @@
-import { z } from 'zod';
+import { z } from "zod";
 
 export const auditEventIdParamSchema = z.object({ eventId: z.string().min(1) });
-export const auditResourceParamSchema = z.object({ resourceType: z.string().min(1), resourceId: z.string().min(1) });
+export const auditResourceParamSchema = z.object({
+  resourceType: z.string().min(1),
+  resourceId: z.string().min(1),
+});
 
 export const auditExportSchema = z
   .object({

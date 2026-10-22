@@ -1,6 +1,8 @@
-import { z } from 'zod';
+import { z } from "zod";
 
-export const knownErrorIdParamSchema = z.object({ knownErrorId: z.string().min(1) });
+export const knownErrorIdParamSchema = z.object({
+  knownErrorId: z.string().min(1),
+});
 
 const optionalId = z.string().min(1).nullable().optional();
 
@@ -8,7 +10,9 @@ export const createKnownErrorSchema = z
   .object({
     title: z.string().trim().min(1).max(300),
     description: z.string().max(50000).optional(),
-    status: z.enum(['OPEN', 'INVESTIGATING', 'RESOLVED', 'ARCHIVED']).optional(),
+    status: z
+      .enum(["OPEN", "INVESTIGATING", "RESOLVED", "ARCHIVED"])
+      .optional(),
     problemId: optionalId,
     workaround: z.string().max(20000).optional(),
     rootCause: z.string().max(20000).optional(),

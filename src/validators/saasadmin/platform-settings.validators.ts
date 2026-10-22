@@ -1,4 +1,4 @@
-import { z } from 'zod';
+import { z } from "zod";
 
 export const settingKeyParamSchema = z.object({
   key: z.string().min(3).max(120),
@@ -15,14 +15,17 @@ export const updateBrandingSchema = z.object({
   primaryColor: z
     .string()
     .trim()
-    .regex(/^#[0-9a-fA-F]{6}$/, 'Primary colour must be a hex value like #2563eb.')
+    .regex(
+      /^#[0-9a-fA-F]{6}$/,
+      "Primary colour must be a hex value like #2563eb.",
+    )
     .optional(),
 });
 
 export const updateLocalizationSchema = z.object({
   defaultTimezone: z.string().trim().max(60).optional(),
   defaultLocale: z.string().trim().max(20).optional(),
-  dateFormat: z.enum(['ISO', 'US', 'EU', 'LONG']).optional(),
+  dateFormat: z.enum(["ISO", "US", "EU", "LONG"]).optional(),
 });
 
 const passwordPolicySchema = z.object({
@@ -43,7 +46,10 @@ export const updateSecuritySchema = z.object({
       z
         .string()
         .trim()
-        .regex(/^(\d{1,3}\.){3}\d{1,3}(\/\d{1,2})?$|^[0-9a-fA-F:]+(\/\d{1,3})?$/, 'Entries must be IPv4/IPv6 addresses or CIDR ranges.'),
+        .regex(
+          /^(\d{1,3}\.){3}\d{1,3}(\/\d{1,2})?$|^[0-9a-fA-F:]+(\/\d{1,3})?$/,
+          "Entries must be IPv4/IPv6 addresses or CIDR ranges.",
+        ),
     )
     .max(200)
     .optional(),
@@ -55,7 +61,7 @@ export const updateRetentionSchema = z.object({
       z.object({
         resourceKey: z.string().trim().min(2).max(120),
         retentionDays: z.number().int().min(1).max(36500),
-        action: z.enum(['DELETE', 'ARCHIVE']),
+        action: z.enum(["DELETE", "ARCHIVE"]),
         isEnabled: z.boolean().optional().default(true),
       }),
     )

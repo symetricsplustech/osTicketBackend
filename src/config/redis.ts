@@ -1,6 +1,6 @@
-import Redis from 'ioredis';
-import { env } from './env';
-import { logger } from './logger';
+import Redis from "ioredis";
+import { env } from "./env";
+import { logger } from "./logger";
 
 let client: Redis | null = null;
 let initialised = false;
@@ -15,12 +15,18 @@ export function getRedis(): Redis | null {
       lazyConnect: false,
       enableOfflineQueue: false,
     });
-    client.on('error', (error) => {
-      logger.warn({ error: error.message }, 'Redis connection error — falling back to in-memory cache');
+    client.on("error", (error) => {
+      logger.warn(
+        { error: error.message },
+        "Redis connection error — falling back to in-memory cache",
+      );
     });
     return client;
   } catch (error) {
-    logger.warn({ error }, 'Failed to initialise Redis — falling back to in-memory cache');
+    logger.warn(
+      { error },
+      "Failed to initialise Redis — falling back to in-memory cache",
+    );
     client = null;
     return null;
   }
@@ -56,7 +62,7 @@ export const cache = {
     const redis = getRedis();
     if (redis) {
       try {
-        if (ttlSeconds) await redis.set(key, value, 'EX', ttlSeconds);
+        if (ttlSeconds) await redis.set(key, value, "EX", ttlSeconds);
         else await redis.set(key, value);
         return;
       } catch {
@@ -91,7 +97,11 @@ export const cache = {
     }
   },
 
-  async setJson(key: string, value: unknown, ttlSeconds?: number): Promise<void> {
+  async setJson(
+    key: string,
+    value: unknown,
+    ttlSeconds?: number,
+  ): Promise<void> {
     await this.set(key, JSON.stringify(value), ttlSeconds);
   },
 
@@ -109,7 +119,7 @@ export const cache = {
     const entry = memoryStore.get(key);
     const now = Date.now();
     if (!entry || (entry.expiresAt !== null && entry.expiresAt <= now)) {
-      memoryStore.set(key, { value: '1', expiresAt: now + ttlSeconds * 1000 });
+      memoryStore.set(key, { value: "1", expiresAt: now + ttlSeconds * 1000 });
       return 1;
     }
     const next = Number.parseInt(entry.value, 10) + 1;
@@ -129,6 +139,6 @@ export function redisHealth(): { configured: boolean; connected: boolean } {
   const redis = getRedis();
   return {
     configured: Boolean(env.REDIS_URL),
-    connected: Boolean(redis && redis.status === 'ready'),
+    connected: Boolean(redis && redis.status === "ready"),
   };
 }

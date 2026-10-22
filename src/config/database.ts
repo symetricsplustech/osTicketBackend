@@ -1,12 +1,12 @@
-import { PrismaClient } from '@prisma/client';
-import { env, isProd } from './env';
-import { logger } from './logger';
+import { PrismaClient } from "@prisma/client";
+import { env, isProd } from "./env";
+import { logger } from "./logger";
 
 const prismaLogConfig = isProd
-  ? [{ emit: 'event' as const, level: 'error' as const }]
+  ? [{ emit: "event" as const, level: "error" as const }]
   : [
-      { emit: 'event' as const, level: 'error' as const },
-      { emit: 'event' as const, level: 'warn' as const },
+      { emit: "event" as const, level: "error" as const },
+      { emit: "event" as const, level: "warn" as const },
     ];
 
 export const prisma = new PrismaClient({
@@ -16,13 +16,13 @@ export const prisma = new PrismaClient({
   },
 });
 
-prisma.$on('error' as never, (event: { message: string }) => {
-  logger.error({ prisma: true, message: event.message }, 'Prisma error');
+prisma.$on("error" as never, (event: { message: string }) => {
+  logger.error({ prisma: true, message: event.message }, "Prisma error");
 });
 
 if (!isProd) {
-  prisma.$on('warn' as never, (event: { message: string }) => {
-    logger.warn({ prisma: true, message: event.message }, 'Prisma warning');
+  prisma.$on("warn" as never, (event: { message: string }) => {
+    logger.warn({ prisma: true, message: event.message }, "Prisma warning");
   });
 }
 

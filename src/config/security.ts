@@ -1,5 +1,5 @@
-import type { HelmetOptions } from 'helmet';
-import { isProd } from './env';
+import type { HelmetOptions } from "helmet";
+import { isProd } from "./env";
 
 export const helmetOptions: HelmetOptions = {
   contentSecurityPolicy: isProd
@@ -8,15 +8,15 @@ export const helmetOptions: HelmetOptions = {
           defaultSrc: ["'self'"],
           scriptSrc: ["'self'"],
           styleSrc: ["'self'", "'unsafe-inline'"],
-          imgSrc: ["'self'", 'data:'],
+          imgSrc: ["'self'", "data:"],
           connectSrc: ["'self'"],
           objectSrc: ["'none'"],
           frameAncestors: ["'none'"],
         },
       }
     : false,
-  crossOriginResourcePolicy: { policy: 'same-site' },
-  referrerPolicy: { policy: 'no-referrer' },
+  crossOriginResourcePolicy: { policy: "same-site" },
+  referrerPolicy: { policy: "no-referrer" },
   hsts: isProd ? { maxAge: 15552000, includeSubDomains: true } : false,
 };
 

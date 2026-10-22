@@ -1,8 +1,12 @@
-import { z } from 'zod';
+import { z } from "zod";
 
 export const queueIdParamSchema = z.object({ queueId: z.string().min(1) });
-export const operatingHoursIdParamSchema = z.object({ operatingHoursId: z.string().min(1) });
-export const routingRuleIdParamSchema = z.object({ routingRuleId: z.string().min(1) });
+export const operatingHoursIdParamSchema = z.object({
+  operatingHoursId: z.string().min(1),
+});
+export const routingRuleIdParamSchema = z.object({
+  routingRuleId: z.string().min(1),
+});
 
 export const createQueueSchema = z
   .object({
@@ -11,7 +15,7 @@ export const createQueueSchema = z
     description: z.string().max(5000).optional(),
     operatingHoursId: z.string().min(1).nullable().optional(),
     isDefault: z.boolean().optional(),
-    status: z.enum(['ACTIVE', 'INACTIVE']).optional(),
+    status: z.enum(["ACTIVE", "INACTIVE"]).optional(),
     settings: z.record(z.string(), z.unknown()).optional(),
     metadata: z.record(z.string(), z.unknown()).optional(),
   })
@@ -27,7 +31,9 @@ export const createOperatingHoursSchema = z
     isDefault: z.boolean().optional(),
   })
   .strict();
-export const updateOperatingHoursSchema = createOperatingHoursSchema.partial().strict();
+export const updateOperatingHoursSchema = createOperatingHoursSchema
+  .partial()
+  .strict();
 
 export const createRoutingRuleSchema = z
   .object({
@@ -40,4 +46,6 @@ export const createRoutingRuleSchema = z
     sortOrder: z.number().int().min(0).optional(),
   })
   .strict();
-export const updateRoutingRuleSchema = createRoutingRuleSchema.partial().strict();
+export const updateRoutingRuleSchema = createRoutingRuleSchema
+  .partial()
+  .strict();

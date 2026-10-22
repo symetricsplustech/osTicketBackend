@@ -1,21 +1,21 @@
-import { Prisma } from '@prisma/client';
-import { prisma } from '../../config/database';
-import { NotFoundError } from '../../shared/errors';
-import { recordAudit } from '../../shared/audit';
-import { publishEvent } from '../../shared/events';
+import { Prisma } from "@prisma/client";
+import { prisma } from "../../config/database";
+import { NotFoundError } from "../../shared/errors";
+import { recordAudit } from "../../shared/audit";
+import { publishEvent } from "../../shared/events";
 import type {
   UpdateOrganizationBrandingInput,
   UpdateOrganizationBusinessHoursInput,
   UpdateOrganizationInput,
   UpdateOrganizationLocalizationInput,
-} from '../../validators/tenantadmin/organization.validators';
+} from "../../validators/tenantadmin/organization.validators";
 
 export interface OrganizationActor {
   tenantId: string;
   actorId?: string | null;
   actorEmail?: string | null;
   actorType?: string;
-  req?: import('express').Request;
+  req?: import("express").Request;
 }
 
 const ORGANIZATION_SELECT = {
@@ -35,26 +35,30 @@ const ORGANIZATION_SELECT = {
   updatedAt: true,
 } satisfies Prisma.TenantSelect;
 
-export type OrganizationProfile = Prisma.TenantGetPayload<{ select: typeof ORGANIZATION_SELECT }>;
+export type OrganizationProfile = Prisma.TenantGetPayload<{
+  select: typeof ORGANIZATION_SELECT;
+}>;
 
-export async function getOrganization(tenantId: string): Promise<OrganizationProfile> {
+export async function getOrganization(
+  tenantId: string,
+): Promise<OrganizationProfile> {
   const tenant = await prisma.tenant.findFirst({
     where: { id: tenantId, deletedAt: null },
     select: ORGANIZATION_SELECT,
   });
-  if (!tenant) throw new NotFoundError('Organization');
+  if (!tenant) throw new NotFoundError("Organization");
   return tenant;
 }
 
 const EDITABLE_FIELDS = [
-  'name',
-  'primaryContactName',
-  'primaryContactEmail',
-  'timezone',
-  'locale',
-  'industry',
-  'website',
-  'notes',
+  "name",
+  "primaryContactName",
+  "primaryContactEmail",
+  "timezone",
+  "locale",
+  "industry",
+  "website",
+  "notes",
 ] as const;
 
 export async function updateOrganization(
@@ -65,7 +69,7 @@ export async function updateOrganization(
     where: { id: actor.tenantId, deletedAt: null },
     select: { id: true },
   });
-  if (!existing) throw new NotFoundError('Organization');
+  if (!existing) throw new NotFoundError("Organization");
 
   const data: Prisma.TenantUpdateInput = {};
   for (const field of EDITABLE_FIELDS) {
@@ -75,7 +79,10 @@ export async function updateOrganization(
     }
   }
   if (input.metadata !== undefined) {
-    data.metadata = input.metadata === null ? Prisma.JsonNull : (input.metadata as Prisma.InputJsonValue);
+    data.metadata =
+      input.metadata === null
+        ? Prisma.JsonNull
+        : (input.metadata as Prisma.InputJsonValue);
   }
 
   const before = await getOrganization(actor.tenantId);
@@ -86,20 +93,20 @@ export async function updateOrganization(
   });
 
   await recordAudit({
-    action: 'organization.updated',
-    resourceType: 'organization',
+    action: "organization.updated",
+    resourceType: "organization",
     resourceId: updated.id,
     tenantId: actor.tenantId,
     before,
     after: updated,
     actorId: actor.actorId ?? null,
     actorEmail: actor.actorEmail ?? null,
-    actorType: actor.actorType ?? 'TENANT_USER',
+    actorType: actor.actorType ?? "TENANT_USER",
     req: actor.req,
   });
 
   void publishEvent({
-    eventKey: 'organization.updated',
+    eventKey: "organization.updated",
     tenantId: actor.tenantId,
     payload: { id: updated.id },
   });
@@ -111,16 +118,23 @@ export async function updateOrganization(
 // Organization sub-resources stored as tenant settings
 // ---------------------------------------------------------------------------
 
-export const ORGANIZATION_BRANDING_KEY = 'organization.branding';
-export const ORGANIZATION_LOCALIZATION_KEY = 'organization.localization';
-export const ORGANIZATION_BUSINESS_HOURS_KEY = 'organization.business_hours';
+export const ORGANIZATION_BRANDING_KEY = "organization.branding";
+export const ORGANIZATION_LOCALIZATION_KEY = "organization.localization";
+export const ORGANIZATION_BUSINESS_HOURS_KEY = "organization.business_hours";
 
 type SettingValue = Record<string, unknown>;
 
-async function readSetting(tenantId: string, key: string): Promise<SettingValue> {
-  const setting = await prisma.tenantSetting.findUnique({ where: { tenantId_key: { tenantId, key } } });
+async function readSetting(
+  tenantId: string,
+  key: string,
+): Promise<SettingValue> {
+  const setting = await prisma.tenantSetting.findUnique({
+    where: { tenantId_key: { tenantId, key } },
+  });
   const value = setting?.value;
-  return value && typeof value === 'object' && !Array.isArray(value) ? (value as SettingValue) : {};
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as SettingValue)
+    : {};
 }
 
 async function writeSetting(
@@ -133,8 +147,16 @@ async function writeSetting(
   const before = await readSetting(actor.tenantId, key);
   const setting = await prisma.tenantSetting.upsert({
     where: { tenantId_key: { tenantId: actor.tenantId, key } },
-    create: { tenantId: actor.tenantId, key, value: value as Prisma.InputJsonValue, updatedById: actor.actorId ?? null },
-    update: { value: value as Prisma.InputJsonValue, updatedById: actor.actorId ?? null },
+    create: {
+      tenantId: actor.tenantId,
+      key,
+      value: value as Prisma.InputJsonValue,
+      updatedById: actor.actorId ?? null,
+    },
+    update: {
+      value: value as Prisma.InputJsonValue,
+      updatedById: actor.actorId ?? null,
+    },
   });
 
   await recordAudit({
@@ -146,10 +168,14 @@ async function writeSetting(
     after: value,
     actorId: actor.actorId ?? null,
     actorEmail: actor.actorEmail ?? null,
-    actorType: actor.actorType ?? 'TENANT_USER',
+    actorType: actor.actorType ?? "TENANT_USER",
     req: actor.req,
   });
-  void publishEvent({ eventKey: action, tenantId: actor.tenantId, payload: { key } });
+  void publishEvent({
+    eventKey: action,
+    tenantId: actor.tenantId,
+    payload: { key },
+  });
 
   return value;
 }
@@ -158,13 +184,16 @@ export function getOrganizationBranding(tenantId: string) {
   return readSetting(tenantId, ORGANIZATION_BRANDING_KEY);
 }
 
-export function updateOrganizationBranding(actor: OrganizationActor, input: UpdateOrganizationBrandingInput) {
+export function updateOrganizationBranding(
+  actor: OrganizationActor,
+  input: UpdateOrganizationBrandingInput,
+) {
   return writeSetting(
     actor,
     ORGANIZATION_BRANDING_KEY,
     input as SettingValue,
-    'organization.branding.updated',
-    'organization-branding',
+    "organization.branding.updated",
+    "organization-branding",
   );
 }
 
@@ -172,13 +201,16 @@ export function getOrganizationLocalization(tenantId: string) {
   return readSetting(tenantId, ORGANIZATION_LOCALIZATION_KEY);
 }
 
-export function updateOrganizationLocalization(actor: OrganizationActor, input: UpdateOrganizationLocalizationInput) {
+export function updateOrganizationLocalization(
+  actor: OrganizationActor,
+  input: UpdateOrganizationLocalizationInput,
+) {
   return writeSetting(
     actor,
     ORGANIZATION_LOCALIZATION_KEY,
     input as SettingValue,
-    'organization.localization.updated',
-    'organization-localization',
+    "organization.localization.updated",
+    "organization-localization",
   );
 }
 
@@ -194,7 +226,7 @@ export function updateOrganizationBusinessHours(
     actor,
     ORGANIZATION_BUSINESS_HOURS_KEY,
     input as SettingValue,
-    'organization.business_hours.updated',
-    'organization-business-hours',
+    "organization.business_hours.updated",
+    "organization-business-hours",
   );
 }

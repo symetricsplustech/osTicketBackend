@@ -1,7 +1,11 @@
-import { z } from 'zod';
+import { z } from "zod";
 
-export const assetModelIdParamSchema = z.object({ assetModelId: z.string().min(1) });
-export const assetLicenseIdParamSchema = z.object({ assetLicenseId: z.string().min(1) });
+export const assetModelIdParamSchema = z.object({
+  assetModelId: z.string().min(1),
+});
+export const assetLicenseIdParamSchema = z.object({
+  assetLicenseId: z.string().min(1),
+});
 
 export const createAssetModelSchema = z
   .object({
@@ -22,7 +26,9 @@ export const createAssetLicenseSchema = z
     seats: z.number().int().min(0).optional(),
     usedSeats: z.number().int().min(0).optional(),
     expiresAt: z.coerce.date().nullable().optional(),
-    status: z.enum(['ACTIVE', 'EXPIRED', 'REVOKED']).optional(),
+    status: z.enum(["ACTIVE", "EXPIRED", "REVOKED"]).optional(),
   })
   .strict();
-export const updateAssetLicenseSchema = createAssetLicenseSchema.partial().strict();
+export const updateAssetLicenseSchema = createAssetLicenseSchema
+  .partial()
+  .strict();

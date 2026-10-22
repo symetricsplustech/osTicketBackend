@@ -1,5 +1,5 @@
-import type { Response } from 'express';
-import type { ErrorDetail } from '../errors';
+import type { Response } from "express";
+import type { ErrorDetail } from "../errors";
 
 export interface PaginationMeta {
   page: number;
@@ -26,20 +26,33 @@ export interface ApiErrorBody {
   };
 }
 
-export function ok<T>(res: Response, data: T, meta?: Record<string, unknown> | PaginationMeta, status = 200): Response {
+export function ok<T>(
+  res: Response,
+  data: T,
+  meta?: Record<string, unknown> | PaginationMeta,
+  status = 200,
+): Response {
   const requestId = res.req?.requestId;
   const mergedMeta = { ...(meta ?? {}), ...(requestId ? { requestId } : {}) };
   const body: ApiSuccessBody<T> = { success: true, data };
   if (meta || requestId) body.meta = mergedMeta;
-  res.locals['responseBody'] = body;
+  res.locals["responseBody"] = body;
   return res.status(status).json(body);
 }
 
-export function created<T>(res: Response, data: T, meta?: Record<string, unknown>): Response {
+export function created<T>(
+  res: Response,
+  data: T,
+  meta?: Record<string, unknown>,
+): Response {
   return ok(res, data, meta, 201);
 }
 
-export function accepted<T>(res: Response, data: T, meta?: Record<string, unknown>): Response {
+export function accepted<T>(
+  res: Response,
+  data: T,
+  meta?: Record<string, unknown>,
+): Response {
   return ok(res, data, meta, 202);
 }
 
@@ -47,7 +60,11 @@ export function noContent(res: Response): Response {
   return res.status(204).send();
 }
 
-export function paginated<T>(res: Response, data: T[], meta: PaginationMeta): Response {
+export function paginated<T>(
+  res: Response,
+  data: T[],
+  meta: PaginationMeta,
+): Response {
   return ok(res, data, meta);
 }
 

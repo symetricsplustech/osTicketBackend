@@ -1,10 +1,14 @@
-export function renderTemplate(template: string, variables: Record<string, unknown>): string {
+export function renderTemplate(
+  template: string,
+  variables: Record<string, unknown>,
+): string {
   return template.replace(/{{\s*([\w.]+)\s*}}/g, (_match, key: string) => {
-    const value = key.split('.').reduce<unknown>((acc, part) => {
-      if (acc && typeof acc === 'object') return (acc as Record<string, unknown>)[part];
+    const value = key.split(".").reduce<unknown>((acc, part) => {
+      if (acc && typeof acc === "object")
+        return (acc as Record<string, unknown>)[part];
       return undefined;
     }, variables);
-    if (value === undefined || value === null) return '';
+    if (value === undefined || value === null) return "";
     return String(value);
   });
 }
@@ -38,13 +42,17 @@ function button(url: string, label: string): string {
 }
 
 export const emailTemplates = {
-  passwordReset(input: { name: string; resetUrl: string; expiresMinutes: number }): { subject: string; html: string; text: string } {
-    const subject = 'Reset your ITSM platform password';
+  passwordReset(input: {
+    name: string;
+    resetUrl: string;
+    expiresMinutes: number;
+  }): { subject: string; html: string; text: string } {
+    const subject = "Reset your ITSM platform password";
     const html = layout(
       subject,
       `<p>Hello ${input.name},</p>
        <p>We received a request to reset your platform password. This link expires in ${input.expiresMinutes} minutes.</p>
-       ${button(input.resetUrl, 'Reset password')}
+       ${button(input.resetUrl, "Reset password")}
        <p>If you did not request this change, you can safely ignore this email and your password will remain unchanged.</p>`,
     );
     return {
@@ -54,13 +62,17 @@ export const emailTemplates = {
     };
   },
 
-  invitation(input: { name: string; invitedBy: string; acceptUrl: string }): { subject: string; html: string; text: string } {
-    const subject = 'You have been invited to the ITSM platform';
+  invitation(input: { name: string; invitedBy: string; acceptUrl: string }): {
+    subject: string;
+    html: string;
+    text: string;
+  } {
+    const subject = "You have been invited to the ITSM platform";
     const html = layout(
       subject,
       `<p>Hello ${input.name},</p>
        <p>${input.invitedBy} invited you to join the platform as an internal staff member.</p>
-       ${button(input.acceptUrl, 'Accept invitation')}
+       ${button(input.acceptUrl, "Accept invitation")}
        <p>If you were not expecting this invitation, you can ignore this email.</p>`,
     );
     return {
@@ -70,13 +82,17 @@ export const emailTemplates = {
     };
   },
 
-  emailChange(input: { name: string; newEmail: string; confirmUrl: string }): { subject: string; html: string; text: string } {
-    const subject = 'Confirm your new email address';
+  emailChange(input: { name: string; newEmail: string; confirmUrl: string }): {
+    subject: string;
+    html: string;
+    text: string;
+  } {
+    const subject = "Confirm your new email address";
     const html = layout(
       subject,
       `<p>Hello ${input.name},</p>
        <p>Confirm that you want to change your platform email address to <strong>${input.newEmail}</strong>.</p>
-       ${button(input.confirmUrl, 'Confirm email change')}
+       ${button(input.confirmUrl, "Confirm email change")}
        <p>If you did not request this change, please contact your platform administrator immediately.</p>`,
     );
     return {
@@ -86,20 +102,37 @@ export const emailTemplates = {
     };
   },
 
-  mfaChanged(input: { name: string; enabled: boolean }): { subject: string; html: string; text: string } {
-    const subject = input.enabled ? 'Multi-factor authentication enabled' : 'Multi-factor authentication disabled';
+  mfaChanged(input: { name: string; enabled: boolean }): {
+    subject: string;
+    html: string;
+    text: string;
+  } {
+    const subject = input.enabled
+      ? "Multi-factor authentication enabled"
+      : "Multi-factor authentication disabled";
     const html = layout(
       subject,
       `<p>Hello ${input.name},</p>
-       <p>Multi-factor authentication was <strong>${input.enabled ? 'enabled' : 'disabled'}</strong> on your account.</p>
+       <p>Multi-factor authentication was <strong>${input.enabled ? "enabled" : "disabled"}</strong> on your account.</p>
        <p>If you did not make this change, contact your platform administrator immediately.</p>`,
     );
-    return { subject, html, text: `MFA was ${input.enabled ? 'enabled' : 'disabled'} on your account.` };
+    return {
+      subject,
+      html,
+      text: `MFA was ${input.enabled ? "enabled" : "disabled"} on your account.`,
+    };
   },
 
-  testMessage(input: { providerName: string }): { subject: string; html: string; text: string } {
+  testMessage(input: { providerName: string }): {
+    subject: string;
+    html: string;
+    text: string;
+  } {
     const subject = `Test email from ${input.providerName}`;
-    const html = layout(subject, `<p>This is a test message confirming that the <strong>${input.providerName}</strong> email provider is configured correctly.</p>`);
+    const html = layout(
+      subject,
+      `<p>This is a test message confirming that the <strong>${input.providerName}</strong> email provider is configured correctly.</p>`,
+    );
     return { subject, html, text: `Test email from ${input.providerName}.` };
   },
 };

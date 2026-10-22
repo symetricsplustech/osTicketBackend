@@ -1,17 +1,21 @@
-import { z } from 'zod';
+import { z } from "zod";
 
 export const tenantUserIdParamSchema = z.object({
-  userId: z.string().min(1, 'User identifier is required.'),
+  userId: z.string().min(1, "User identifier is required."),
 });
 
 export const tenantInvitationIdParamSchema = z.object({
-  invitationId: z.string().min(1, 'Invitation identifier is required.'),
+  invitationId: z.string().min(1, "Invitation identifier is required."),
 });
 
 export const inviteTenantUserSchema = z.object({
-  email: z.string().trim().toLowerCase().email('A valid email address is required.'),
-  firstName: z.string().trim().min(1, 'First name is required.').max(120),
-  lastName: z.string().trim().min(1, 'Last name is required.').max(120),
+  email: z
+    .string()
+    .trim()
+    .toLowerCase()
+    .email("A valid email address is required."),
+  firstName: z.string().trim().min(1, "First name is required.").max(120),
+  lastName: z.string().trim().min(1, "Last name is required.").max(120),
   jobTitle: z.string().trim().max(160).optional(),
   phone: z.string().trim().max(40).optional(),
   roleIds: z.array(z.string().min(1)).optional().default([]),
@@ -37,9 +41,13 @@ export const tenantUserStatusReasonSchema = z.object({
 });
 
 export const importUserRowSchema = z.object({
-  email: z.string().trim().toLowerCase().email('A valid email address is required.'),
-  firstName: z.string().trim().min(1, 'First name is required.').max(120),
-  lastName: z.string().trim().min(1, 'Last name is required.').max(120),
+  email: z
+    .string()
+    .trim()
+    .toLowerCase()
+    .email("A valid email address is required."),
+  firstName: z.string().trim().min(1, "First name is required.").max(120),
+  lastName: z.string().trim().min(1, "Last name is required.").max(120),
   jobTitle: z.string().trim().max(160).optional(),
   phone: z.string().trim().max(40).optional(),
   roleIds: z.array(z.string().min(1)).max(50).optional(),
@@ -47,7 +55,10 @@ export const importUserRowSchema = z.object({
 
 export const importTenantUsersSchema = z
   .object({
-    users: z.array(importUserRowSchema).min(1, 'At least one user is required.').max(1000),
+    users: z
+      .array(importUserRowSchema)
+      .min(1, "At least one user is required.")
+      .max(1000),
     defaultRoleIds: z.array(z.string().min(1)).max(50).optional(),
     sendInvitations: z.boolean().optional(),
   })
@@ -56,6 +67,8 @@ export const importTenantUsersSchema = z
 export type InviteTenantUserInput = z.infer<typeof inviteTenantUserSchema>;
 export type UpdateTenantUserInput = z.infer<typeof updateTenantUserSchema>;
 export type SetTenantUserRolesInput = z.infer<typeof setTenantUserRolesSchema>;
-export type TenantUserStatusReasonInput = z.infer<typeof tenantUserStatusReasonSchema>;
+export type TenantUserStatusReasonInput = z.infer<
+  typeof tenantUserStatusReasonSchema
+>;
 export type ImportUserRowInput = z.infer<typeof importUserRowSchema>;
 export type ImportTenantUsersInput = z.infer<typeof importTenantUsersSchema>;

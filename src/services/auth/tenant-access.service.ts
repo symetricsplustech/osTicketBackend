@@ -1,7 +1,11 @@
-import type { TenantStatus, UserType } from '@prisma/client';
-import { prisma } from '../../config/database';
-import { cache } from '../../config/redis';
-import { ForbiddenError, NotFoundError, PreconditionFailedError } from '../../shared/errors';
+import type { TenantStatus, UserType } from "@prisma/client";
+import { prisma } from "../../config/database";
+import { cache } from "../../config/redis";
+import {
+  ForbiddenError,
+  NotFoundError,
+  PreconditionFailedError,
+} from "../../shared/errors";
 
 export interface TenantMembershipSummary {
   membershipId: string;
@@ -25,7 +29,13 @@ interface MembershipRecord {
   id: string;
   tenantId: string;
   status: string;
-  tenant: { id: string; slug: string; name: string; status: TenantStatus; deletedAt: Date | null };
+  tenant: {
+    id: string;
+    slug: string;
+    name: string;
+    status: TenantStatus;
+    deletedAt: Date | null;
+  };
   roleAssignments: {
     role: {
       key: string;
@@ -38,18 +48,28 @@ interface MembershipRecord {
 
 function isUsableMembership(membership: MembershipRecord): boolean {
   return (
-    membership.status === 'ACTIVE' &&
+    membership.status === "ACTIVE" &&
     membership.tenant.deletedAt === null &&
-    membership.tenant.status !== 'ARCHIVED' &&
-    membership.tenant.status !== 'FAILED'
+    membership.tenant.status !== "ARCHIVED" &&
+    membership.tenant.status !== "FAILED"
   );
 }
 
-export async function listTenantMemberships(userId: string): Promise<TenantMembershipSummary[]> {
+export async function listTenantMemberships(
+  userId: string,
+): Promise<TenantMembershipSummary[]> {
   const memberships = (await prisma.tenantMembership.findMany({
-    where: { userId, status: 'ACTIVE', tenant: { deletedAt: null } },
+    where: { userId, status: "ACTIVE", tenant: { deletedAt: null } },
     include: {
-      tenant: { select: { id: true, slug: true, name: true, status: true, deletedAt: true } },
+      tenant: {
+        select: {
+          id: true,
+          slug: true,
+          name: true,
+          status: true,
+          deletedAt: true,
+        },
+      },
       roleAssignments: {
         include: {
           role: {
@@ -57,13 +77,17 @@ export async function listTenantMemberships(userId: string): Promise<TenantMembe
               key: true,
               status: true,
               deletedAt: true,
-              permissions: { include: { permission: { select: { code: true, scope: true } } } },
+              permissions: {
+                include: {
+                  permission: { select: { code: true, scope: true } },
+                },
+              },
             },
           },
         },
       },
     },
-    orderBy: { createdAt: 'asc' },
+    orderBy: { createdAt: "asc" },
   })) as unknown as MembershipRecord[];
 
   return memberships.map((membership) => ({
@@ -73,7 +97,11 @@ export async function listTenantMemberships(userId: string): Promise<TenantMembe
     tenantName: membership.tenant.name,
     tenantStatus: membership.tenant.status,
     roleKeys: membership.roleAssignments
-      .filter((assignment) => assignment.role.status === 'ACTIVE' && assignment.role.deletedAt === null)
+      .filter(
+        (assignment) =>
+          assignment.role.status === "ACTIVE" &&
+          assignment.role.deletedAt === null,
+      )
       .map((assignment) => assignment.role.key),
   }));
 }
@@ -89,33 +117,57 @@ export interface ResolvedTenantAccess {
  * Never trusts caller-supplied tenant identity on its own — the membership
  * relationship is the proof of access.
  */
-export async function resolveTenantAccess(userId: string, tenantId: string): Promise<ResolvedTenantAccess> {
+export async function resolveTenantAccess(
+  userId: string,
+  tenantId: string,
+): Promise<ResolvedTenantAccess> {
   const membership = (await prisma.tenantMembership.findFirst({
     where: { userId, tenantId },
     include: { tenant: { select: { status: true, deletedAt: true } } },
-  })) as unknown as
-    | { id: string; status: string; tenant: { status: TenantStatus; deletedAt: Date | null } }
-    | null;
+  })) as unknown as {
+    id: string;
+    status: string;
+    tenant: { status: TenantStatus; deletedAt: Date | null };
+  } | null;
 
-  if (!membership || membership.tenant.deletedAt) throw new NotFoundError('Organization');
-  if (membership.status !== 'ACTIVE') throw new ForbiddenError('Your membership in this organization is not active.');
-  if (membership.tenant.status === 'ARCHIVED') throw new PreconditionFailedError('This organization is archived.');
-  if (membership.tenant.status === 'SUSPENDED') throw new ForbiddenError('This organization is suspended.');
-  if (membership.tenant.status === 'FAILED') throw new PreconditionFailedError('This organization is not available.');
+  if (!membership || membership.tenant.deletedAt)
+    throw new NotFoundError("Organization");
+  if (membership.status !== "ACTIVE")
+    throw new ForbiddenError(
+      "Your membership in this organization is not active.",
+    );
+  if (membership.tenant.status === "ARCHIVED")
+    throw new PreconditionFailedError("This organization is archived.");
+  if (membership.tenant.status === "SUSPENDED")
+    throw new ForbiddenError("This organization is suspended.");
+  if (membership.tenant.status === "FAILED")
+    throw new PreconditionFailedError("This organization is not available.");
 
-  return { activeTenantId: tenantId, membershipId: membership.id, tenantStatus: membership.tenant.status };
+  return {
+    activeTenantId: tenantId,
+    membershipId: membership.id,
+    tenantStatus: membership.tenant.status,
+  };
 }
 
 export async function loadTenantRolesAndPermissions(
   userId: string,
   tenantId: string,
-): Promise<{ roles: string[]; permissions: string[]; membershipId: string | null }> {
+): Promise<{
+  roles: string[];
+  permissions: string[];
+  membershipId: string | null;
+}> {
   const cacheKey = `auth:tenant-perms:${userId}:${tenantId}`;
-  const cached = await cache.getJson<{ roles: string[]; permissions: string[]; membershipId: string | null }>(cacheKey);
+  const cached = await cache.getJson<{
+    roles: string[];
+    permissions: string[];
+    membershipId: string | null;
+  }>(cacheKey);
   if (cached) return cached;
 
   const memberships = (await prisma.tenantMembership.findMany({
-    where: { userId, tenantId, status: 'ACTIVE' },
+    where: { userId, tenantId, status: "ACTIVE" },
     include: {
       roleAssignments: {
         include: {
@@ -132,20 +184,32 @@ export async function loadTenantRolesAndPermissions(
   const permissions = new Set<string>();
   if (membership) {
     for (const assignment of membership.roleAssignments) {
-      if (assignment.role.status !== 'ACTIVE' || assignment.role.deletedAt !== null) continue;
+      if (
+        assignment.role.status !== "ACTIVE" ||
+        assignment.role.deletedAt !== null
+      )
+        continue;
       roles.add(assignment.role.key);
       for (const rolePermission of assignment.role.permissions) {
-        if (rolePermission.permission.scope === 'TENANT') permissions.add(rolePermission.permission.code);
+        if (rolePermission.permission.scope === "TENANT")
+          permissions.add(rolePermission.permission.code);
       }
     }
   }
 
-  const result = { roles: Array.from(roles), permissions: Array.from(permissions), membershipId: membership?.id ?? null };
+  const result = {
+    roles: Array.from(roles),
+    permissions: Array.from(permissions),
+    membershipId: membership?.id ?? null,
+  };
   await cache.setJson(cacheKey, result, PERMISSIONS_CACHE_TTL);
   return result;
 }
 
-export async function invalidateTenantAuthorizationCache(userId: string, tenantId?: string): Promise<void> {
+export async function invalidateTenantAuthorizationCache(
+  userId: string,
+  tenantId?: string,
+): Promise<void> {
   if (tenantId) {
     await cache.del(`auth:tenant-perms:${userId}:${tenantId}`);
     return;
@@ -165,13 +229,17 @@ export async function resolveLoginTenant(
   userId: string,
   userType: UserType,
 ): Promise<{ activeTenantId: string | null }> {
-  if (userType !== 'TENANT_USER') return { activeTenantId: null };
+  if (userType !== "TENANT_USER") return { activeTenantId: null };
   const memberships = await listTenantMemberships(userId);
   const usable = memberships.filter(
-    (membership) => membership.tenantStatus !== 'ARCHIVED' && membership.tenantStatus !== 'FAILED',
+    (membership) =>
+      membership.tenantStatus !== "ARCHIVED" &&
+      membership.tenantStatus !== "FAILED",
   );
   if (usable.length === 0) {
-    throw new ForbiddenError('Your account is not a member of any active organization.');
+    throw new ForbiddenError(
+      "Your account is not a member of any active organization.",
+    );
   }
   return { activeTenantId: usable[0]!.tenantId };
 }

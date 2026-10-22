@@ -1,10 +1,13 @@
-import type { Request, Response } from 'express';
-import { created, ok, paginated } from '../../shared/response';
-import { asyncHandler } from '../../shared/utils/async-handler';
-import { tenantActor } from '../tenantadmin/actor';
-import { makeItsmCrudController } from './crud.controller';
-import { portalService, settingService } from '../../services/itsm/settings.service';
-import { customFieldService } from '../../services/itsm/customfields.service';
+import type { Request, Response } from "express";
+import { created, ok, paginated } from "../../shared/response";
+import { asyncHandler } from "../../shared/utils/async-handler";
+import { tenantActor } from "../tenantadmin/actor";
+import { makeItsmCrudController } from "./crud.controller";
+import {
+  portalService,
+  settingService,
+} from "../../services/itsm/settings.service";
+import { customFieldService } from "../../services/itsm/customfields.service";
 
 export const settingController = {
   list: asyncHandler(async (req: Request, res: Response) => {
@@ -18,8 +21,17 @@ export const settingController = {
   }),
   upsert: asyncHandler(async (req: Request, res: Response) => {
     const actor = tenantActor(req);
-    const value = req.body?.value !== undefined ? req.body.value : req.body ?? {};
-    return created(res, await settingService.upsert(actor.tenantId, req.params.key!, value, actor));
+    const value =
+      req.body?.value !== undefined ? req.body.value : (req.body ?? {});
+    return created(
+      res,
+      await settingService.upsert(
+        actor.tenantId,
+        req.params.key!,
+        value,
+        actor,
+      ),
+    );
   }),
   remove: asyncHandler(async (req: Request, res: Response) => {
     const actor = tenantActor(req);
@@ -29,17 +41,34 @@ export const settingController = {
 };
 
 export const portalController = {
-  getConfig: asyncHandler(async (req: Request, res: Response) => ok(res, await portalService.getConfig(tenantActor(req).tenantId))),
+  getConfig: asyncHandler(async (req: Request, res: Response) =>
+    ok(res, await portalService.getConfig(tenantActor(req).tenantId)),
+  ),
   updateConfig: asyncHandler(async (req: Request, res: Response) => {
     const actor = tenantActor(req);
-    const value = req.body?.config !== undefined ? req.body.config : req.body ?? {};
-    return ok(res, await portalService.updateConfig(actor.tenantId, value, actor));
+    const value =
+      req.body?.config !== undefined ? req.body.config : (req.body ?? {});
+    return ok(
+      res,
+      await portalService.updateConfig(actor.tenantId, value, actor),
+    );
   }),
-  listForms: asyncHandler(async (req: Request, res: Response) => ok(res, await portalService.listForms(tenantActor(req).tenantId))),
+  listForms: asyncHandler(async (req: Request, res: Response) =>
+    ok(res, await portalService.listForms(tenantActor(req).tenantId)),
+  ),
   upsertForm: asyncHandler(async (req: Request, res: Response) => {
     const actor = tenantActor(req);
-    const value = req.body?.form !== undefined ? req.body.form : req.body ?? {};
-    return created(res, await portalService.upsertForm(actor.tenantId, req.params.formKey!, value, actor));
+    const value =
+      req.body?.form !== undefined ? req.body.form : (req.body ?? {});
+    return created(
+      res,
+      await portalService.upsertForm(
+        actor.tenantId,
+        req.params.formKey!,
+        value,
+        actor,
+      ),
+    );
   }),
   removeForm: asyncHandler(async (req: Request, res: Response) => {
     const actor = tenantActor(req);
@@ -48,4 +77,7 @@ export const portalController = {
   }),
 };
 
-export const customFieldController = makeItsmCrudController(customFieldService, 'fieldId');
+export const customFieldController = makeItsmCrudController(
+  customFieldService,
+  "fieldId",
+);

@@ -1,8 +1,15 @@
-import type { Request } from 'express';
-import { prisma } from '../../config/database';
-import { NotFoundError } from '../../shared/errors';
-import { buildPaginationMeta, paginationArgs, parseListQuery } from '../../shared/pagination';
-import { TENANT_PERMISSION_CATALOG, tenantPermissionsByModule } from '../../shared/permissions/tenant-catalog';
+import type { Request } from "express";
+import { prisma } from "../../config/database";
+import { NotFoundError } from "../../shared/errors";
+import {
+  buildPaginationMeta,
+  paginationArgs,
+  parseListQuery,
+} from "../../shared/pagination";
+import {
+  TENANT_PERMISSION_CATALOG,
+  tenantPermissionsByModule,
+} from "../../shared/permissions/tenant-catalog";
 
 export interface TenantPermissionView {
   id: string;
@@ -15,7 +22,12 @@ export interface TenantPermissionView {
   updatedAt: Date | null;
 }
 
-function fromCatalog(permission: { code: string; name: string; module: string; description: string }): TenantPermissionView {
+function fromCatalog(permission: {
+  code: string;
+  name: string;
+  module: string;
+  description: string;
+}): TenantPermissionView {
   return {
     id: permission.code,
     code: permission.code,
@@ -43,7 +55,7 @@ function fromDatabase(permission: {
     code: permission.code,
     name: permission.name,
     module: permission.module,
-    description: permission.description ?? '',
+    description: permission.description ?? "",
     isSystem: permission.isSystem,
     createdAt: permission.createdAt,
     updatedAt: permission.updatedAt,
@@ -52,9 +64,10 @@ function fromDatabase(permission: {
 
 export async function listPermissions(req: Request) {
   const query = parseListQuery(req, { maxLimit: 200 });
-  const module = typeof query.module === 'string' && query.module ? query.module : undefined;
+  const module =
+    typeof query.module === "string" && query.module ? query.module : undefined;
 
-  const total = await prisma.permission.count({ where: { scope: 'TENANT' } });
+  const total = await prisma.permission.count({ where: { scope: "TENANT" } });
   if (total === 0) {
     const filtered = TENANT_PERMISSION_CATALOG.filter(
       (permission) =>
@@ -66,34 +79,51 @@ export async function listPermissions(req: Request) {
     ).map(fromCatalog);
     const start = (query.page - 1) * query.limit;
     const rows = filtered.slice(start, start + query.limit);
-    return { rows, meta: buildPaginationMeta(query.page, query.limit, filtered.length) };
+    return {
+      rows,
+      meta: buildPaginationMeta(query.page, query.limit, filtered.length),
+    };
   }
 
   const where = {
-    scope: 'TENANT' as const,
+    scope: "TENANT" as const,
     ...(module ? { module } : {}),
     ...(query.search
       ? {
           OR: [
-            { code: { contains: query.search, mode: 'insensitive' as const } },
-            { name: { contains: query.search, mode: 'insensitive' as const } },
-            { module: { contains: query.search, mode: 'insensitive' as const } },
-            { description: { contains: query.search, mode: 'insensitive' as const } },
+            { code: { contains: query.search, mode: "insensitive" as const } },
+            { name: { contains: query.search, mode: "insensitive" as const } },
+            {
+              module: { contains: query.search, mode: "insensitive" as const },
+            },
+            {
+              description: {
+                contains: query.search,
+                mode: "insensitive" as const,
+              },
+            },
           ],
         }
       : {}),
   };
 
   const [rows, filteredTotal] = await Promise.all([
-    prisma.permission.findMany({ where, orderBy: [{ module: 'asc' }, { code: 'asc' }], ...paginationArgs(query) }),
+    prisma.permission.findMany({
+      where,
+      orderBy: [{ module: "asc" }, { code: "asc" }],
+      ...paginationArgs(query),
+    }),
     prisma.permission.count({ where }),
   ]);
 
-  return { rows: rows.map(fromDatabase), meta: buildPaginationMeta(query.page, query.limit, filteredTotal) };
+  return {
+    rows: rows.map(fromDatabase),
+    meta: buildPaginationMeta(query.page, query.limit, filteredTotal),
+  };
 }
 
 export async function getPermissionGroups() {
-  const total = await prisma.permission.count({ where: { scope: 'TENANT' } });
+  const total = await prisma.permission.count({ where: { scope: "TENANT" } });
   if (total === 0) {
     const grouped = tenantPermissionsByModule();
     return Object.entries(grouped).map(([module, items]) => ({
@@ -103,8 +133,8 @@ export async function getPermissionGroups() {
     }));
   }
   const rows = await prisma.permission.findMany({
-    where: { scope: 'TENANT' },
-    orderBy: [{ module: 'asc' }, { code: 'asc' }],
+    where: { scope: "TENANT" },
+    orderBy: [{ module: "asc" }, { code: "asc" }],
   });
   const groups = new Map<string, TenantPermissionView[]>();
   for (const permission of rows.map(fromDatabase)) {
@@ -121,12 +151,17 @@ export async function getPermissionGroups() {
 
 export async function getPermission(permissionIdOrCode: string) {
   const permission = await prisma.permission.findFirst({
-    where: { scope: 'TENANT', OR: [{ id: permissionIdOrCode }, { code: permissionIdOrCode }] },
+    where: {
+      scope: "TENANT",
+      OR: [{ id: permissionIdOrCode }, { code: permissionIdOrCode }],
+    },
   });
   if (permission) return fromDatabase(permission);
 
-  const catalogEntry = TENANT_PERMISSION_CATALOG.find((entry) => entry.code === permissionIdOrCode);
+  const catalogEntry = TENANT_PERMISSION_CATALOG.find(
+    (entry) => entry.code === permissionIdOrCode,
+  );
   if (catalogEntry) return fromCatalog(catalogEntry);
 
-  throw new NotFoundError('Permission');
+  throw new NotFoundError("Permission");
 }

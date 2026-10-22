@@ -1,22 +1,36 @@
-import type { Request, Response } from 'express';
-import { created, noContent, ok, paginated } from '../../shared/response';
-import { asyncHandler } from '../../shared/utils/async-handler';
-import { tenantActor } from './actor';
+import type { Request, Response } from "express";
+import { created, noContent, ok, paginated } from "../../shared/response";
+import { asyncHandler } from "../../shared/utils/async-handler";
+import { tenantActor } from "./actor";
 
 interface StructureService {
-  list(tenantId: string, req: Request): Promise<{ rows: unknown[]; meta: unknown }>;
+  list(
+    tenantId: string,
+    req: Request,
+  ): Promise<{ rows: unknown[]; meta: unknown }>;
   get(tenantId: string, id: string): Promise<unknown>;
-  create(tenantId: string, input: Record<string, unknown>, actor: ReturnType<typeof tenantActor>): Promise<unknown>;
+  create(
+    tenantId: string,
+    input: Record<string, unknown>,
+    actor: ReturnType<typeof tenantActor>,
+  ): Promise<unknown>;
   update(
     tenantId: string,
     id: string,
     input: Record<string, unknown>,
     actor: ReturnType<typeof tenantActor>,
   ): Promise<unknown>;
-  remove(tenantId: string, id: string, actor: ReturnType<typeof tenantActor>): Promise<void>;
+  remove(
+    tenantId: string,
+    id: string,
+    actor: ReturnType<typeof tenantActor>,
+  ): Promise<void>;
 }
 
-export function makeStructureController(service: StructureService, idParam: string) {
+export function makeStructureController(
+  service: StructureService,
+  idParam: string,
+) {
   return {
     list: asyncHandler(async (req: Request, res: Response) => {
       const actor = tenantActor(req);
@@ -31,12 +45,23 @@ export function makeStructureController(service: StructureService, idParam: stri
 
     create: asyncHandler(async (req: Request, res: Response) => {
       const actor = tenantActor(req);
-      return created(res, await service.create(actor.tenantId, req.body ?? {}, actor));
+      return created(
+        res,
+        await service.create(actor.tenantId, req.body ?? {}, actor),
+      );
     }),
 
     update: asyncHandler(async (req: Request, res: Response) => {
       const actor = tenantActor(req);
-      return ok(res, await service.update(actor.tenantId, req.params[idParam]!, req.body ?? {}, actor));
+      return ok(
+        res,
+        await service.update(
+          actor.tenantId,
+          req.params[idParam]!,
+          req.body ?? {},
+          actor,
+        ),
+      );
     }),
 
     remove: asyncHandler(async (req: Request, res: Response) => {

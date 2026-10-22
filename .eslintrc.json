@@ -11,7 +11,12 @@
     "ecmaVersion": 2022,
     "sourceType": "module"
   },
-  "ignorePatterns": ["dist/**", "node_modules/**", "prisma/migrations/**", "storage/**"],
+  "ignorePatterns": [
+    "dist/**",
+    "node_modules/**",
+    "prisma/migrations/**",
+    "storage/**"
+  ],
   "rules": {
     "no-console": "warn",
     "no-empty": "off",

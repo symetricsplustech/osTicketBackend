@@ -1,7 +1,11 @@
-import { z } from 'zod';
+import { z } from "zod";
 
-export const approvalPolicyIdParamSchema = z.object({ policyId: z.string().min(1) });
-export const approvalRequestIdParamSchema = z.object({ requestId: z.string().min(1) });
+export const approvalPolicyIdParamSchema = z.object({
+  policyId: z.string().min(1),
+});
+export const approvalRequestIdParamSchema = z.object({
+  requestId: z.string().min(1),
+});
 
 export const createApprovalPolicySchema = z
   .object({
@@ -14,7 +18,9 @@ export const createApprovalPolicySchema = z
     isEnabled: z.boolean().optional(),
   })
   .strict();
-export const updateApprovalPolicySchema = createApprovalPolicySchema.partial().strict();
+export const updateApprovalPolicySchema = createApprovalPolicySchema
+  .partial()
+  .strict();
 
 export const createApprovalRequestSchema = z
   .object({
@@ -27,11 +33,13 @@ export const createApprovalRequestSchema = z
     expiresAt: z.coerce.date().nullable().optional(),
   })
   .strict();
-export const updateApprovalRequestSchema = createApprovalRequestSchema.partial().strict();
+export const updateApprovalRequestSchema = createApprovalRequestSchema
+  .partial()
+  .strict();
 
 export const decideApprovalSchema = z
   .object({
-    decision: z.enum(['APPROVED', 'REJECTED']),
+    decision: z.enum(["APPROVED", "REJECTED"]),
     reason: z.string().max(5000).optional(),
   })
   .strict();

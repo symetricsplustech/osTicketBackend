@@ -1,6 +1,6 @@
-import type { NextFunction, Request, RequestHandler, Response } from 'express';
-import { ZodError, type ZodTypeAny, z } from 'zod';
-import { ValidationError } from '../../shared/errors';
+import type { NextFunction, Request, RequestHandler, Response } from "express";
+import { ZodError, type ZodTypeAny, z } from "zod";
+import { ValidationError } from "../../shared/errors";
 
 export interface RequestSchemas {
   body?: ZodTypeAny;
@@ -8,9 +8,11 @@ export interface RequestSchemas {
   params?: ZodTypeAny;
 }
 
-function formatZodError(error: ZodError): { field: string; message: string; code: string }[] {
+function formatZodError(
+  error: ZodError,
+): { field: string; message: string; code: string }[] {
   return error.issues.map((issue) => ({
-    field: issue.path.join('.') || '(root)',
+    field: issue.path.join(".") || "(root)",
     message: issue.message,
     code: issue.code,
   }));
@@ -21,10 +23,10 @@ export function validateRequest(schemas: RequestSchemas): RequestHandler {
     try {
       if (schemas.params) {
         const parsed = schemas.params.parse(req.params);
-        req.params = parsed as Request['params'];
+        req.params = parsed as Request["params"];
       }
       if (schemas.query) {
-        Object.defineProperty(req, 'query', {
+        Object.defineProperty(req, "query", {
           value: schemas.query.parse(req.query),
           writable: true,
           configurable: true,
@@ -36,7 +38,12 @@ export function validateRequest(schemas: RequestSchemas): RequestHandler {
       next();
     } catch (error) {
       if (error instanceof ZodError) {
-        next(new ValidationError('Request validation failed.', formatZodError(error)));
+        next(
+          new ValidationError(
+            "Request validation failed.",
+            formatZodError(error),
+          ),
+        );
         return;
       }
       next(error);
@@ -45,5 +52,5 @@ export function validateRequest(schemas: RequestSchemas): RequestHandler {
 }
 
 export const idParamSchema = z.object({
-  id: z.string().min(1, 'Identifier is required'),
+  id: z.string().min(1, "Identifier is required"),
 });

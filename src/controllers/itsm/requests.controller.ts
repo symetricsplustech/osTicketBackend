@@ -1,8 +1,8 @@
-import type { Request, Response } from 'express';
-import { ok } from '../../shared/response';
-import { asyncHandler } from '../../shared/utils/async-handler';
-import { tenantActor } from '../tenantadmin/actor';
-import { makeTicketController } from './ticket.controller';
+import type { Request, Response } from "express";
+import { ok } from "../../shared/response";
+import { asyncHandler } from "../../shared/utils/async-handler";
+import { tenantActor } from "../tenantadmin/actor";
+import { makeTicketController } from "./ticket.controller";
 import {
   addServiceRequestComment,
   assignServiceRequest,
@@ -15,13 +15,13 @@ import {
   listServiceRequestComments,
   listServiceRequests,
   updateServiceRequest,
-} from '../../services/itsm/requests.service';
+} from "../../services/itsm/requests.service";
 import type {
   AssignServiceRequestInput,
   CancelServiceRequestInput,
   DecideServiceRequestInput,
   FulfillServiceRequestInput,
-} from '../../validators/itsm/requests.validators';
+} from "../../validators/itsm/requests.validators";
 
 const base = makeTicketController(
   {
@@ -33,7 +33,7 @@ const base = makeTicketController(
     listComments: listServiceRequestComments,
     addComment: addServiceRequestComment,
   },
-  'requestId',
+  "requestId",
 );
 
 export const serviceRequestController = {
@@ -43,7 +43,12 @@ export const serviceRequestController = {
     const actor = tenantActor(req);
     return ok(
       res,
-      await assignServiceRequest(actor.tenantId, req.params.requestId!, req.body as AssignServiceRequestInput, actor),
+      await assignServiceRequest(
+        actor.tenantId,
+        req.params.requestId!,
+        req.body as AssignServiceRequestInput,
+        actor,
+      ),
     );
   }),
 
@@ -51,7 +56,12 @@ export const serviceRequestController = {
     const actor = tenantActor(req);
     return ok(
       res,
-      await decideServiceRequest(actor.tenantId, req.params.requestId!, req.body as DecideServiceRequestInput, actor),
+      await decideServiceRequest(
+        actor.tenantId,
+        req.params.requestId!,
+        req.body as DecideServiceRequestInput,
+        actor,
+      ),
     );
   }),
 
@@ -59,7 +69,12 @@ export const serviceRequestController = {
     const actor = tenantActor(req);
     return ok(
       res,
-      await fulfillServiceRequest(actor.tenantId, req.params.requestId!, req.body as FulfillServiceRequestInput, actor),
+      await fulfillServiceRequest(
+        actor.tenantId,
+        req.params.requestId!,
+        req.body as FulfillServiceRequestInput,
+        actor,
+      ),
     );
   }),
 
@@ -67,7 +82,12 @@ export const serviceRequestController = {
     const actor = tenantActor(req);
     return ok(
       res,
-      await cancelServiceRequest(actor.tenantId, req.params.requestId!, req.body as CancelServiceRequestInput, actor),
+      await cancelServiceRequest(
+        actor.tenantId,
+        req.params.requestId!,
+        req.body as CancelServiceRequestInput,
+        actor,
+      ),
     );
   }),
 };

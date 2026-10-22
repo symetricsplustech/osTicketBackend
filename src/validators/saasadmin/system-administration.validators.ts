@@ -1,4 +1,4 @@
-import { z } from 'zod';
+import { z } from "zod";
 
 export const jobIdParamSchema = z.object({
   jobId: z.string().min(1),
@@ -16,7 +16,10 @@ export const updateMaintenanceSchema = z.object({
       z
         .string()
         .trim()
-        .regex(/^(\d{1,3}\.){3}\d{1,3}(\/\d{1,2})?$|^[0-9a-fA-F:]+(\/\d{1,3})?$/, 'Entries must be IPv4/IPv6 addresses or CIDR ranges.'),
+        .regex(
+          /^(\d{1,3}\.){3}\d{1,3}(\/\d{1,2})?$|^[0-9a-fA-F:]+(\/\d{1,3})?$/,
+          "Entries must be IPv4/IPv6 addresses or CIDR ranges.",
+        ),
     )
     .max(200)
     .optional(),

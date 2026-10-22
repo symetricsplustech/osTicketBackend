@@ -1,5 +1,5 @@
-import type { Request } from 'express';
-import { UnauthorizedError } from '../../shared/errors';
+import type { Request } from "express";
+import { UnauthorizedError } from "../../shared/errors";
 
 export interface TenantActor {
   tenantId: string;
@@ -11,7 +11,9 @@ export interface TenantActor {
 
 export function tenantActor(req: Request): TenantActor {
   if (!req.auth?.activeTenantId) {
-    throw new UnauthorizedError('No active organization is selected for this session.');
+    throw new UnauthorizedError(
+      "No active organization is selected for this session.",
+    );
   }
   return {
     tenantId: req.auth.activeTenantId,

@@ -1,4 +1,4 @@
-import { z } from 'zod';
+import { z } from "zod";
 
 export const auditEventIdParamSchema = z.object({
   eventId: z.string().min(1),
@@ -12,7 +12,7 @@ export const resourceHistoryQuerySchema = z.object({
 });
 
 export const auditExportSchema = z.object({
-  format: z.enum(['CSV', 'JSON']).default('CSV'),
+  format: z.enum(["CSV", "JSON"]).default("CSV"),
   filters: z
     .object({
       action: z.string().optional(),

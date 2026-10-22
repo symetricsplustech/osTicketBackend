@@ -1,4 +1,4 @@
-import { z } from 'zod';
+import { z } from "zod";
 
 const structureNodeSchema: z.ZodType<{
   id?: string;
@@ -26,12 +26,14 @@ const structureNodeSchema: z.ZodType<{
 
 export const updateOrganizationStructureSchema = z
   .object({
-    reportingMode: z.enum(['DEPARTMENT', 'TEAM', 'HYBRID']).optional(),
+    reportingMode: z.enum(["DEPARTMENT", "TEAM", "HYBRID"]).optional(),
     rootNodeId: z.string().min(1).nullable().optional(),
     nodes: z.array(structureNodeSchema).max(2000).optional(),
     metadata: z.record(z.unknown()).nullable().optional(),
   })
   .strict();
 
-export type UpdateOrganizationStructureInput = z.infer<typeof updateOrganizationStructureSchema>;
+export type UpdateOrganizationStructureInput = z.infer<
+  typeof updateOrganizationStructureSchema
+>;
 export type OrganizationStructureNode = z.infer<typeof structureNodeSchema>;

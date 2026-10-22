@@ -1,4 +1,4 @@
-import { z } from 'zod';
+import { z } from "zod";
 
 export const updateProfileSchema = z.object({
   firstName: z.string().trim().min(1).max(80).optional(),
@@ -12,9 +12,9 @@ export const updateProfileSchema = z.object({
 export const updatePreferencesSchema = z.object({
   timezone: z.string().trim().max(60).optional(),
   locale: z.string().trim().max(20).optional(),
-  theme: z.enum(['light', 'dark', 'system']).optional(),
+  theme: z.enum(["light", "dark", "system"]).optional(),
   emailNotifications: z.boolean().optional(),
-  density: z.enum(['comfortable', 'compact']).optional(),
+  density: z.enum(["comfortable", "compact"]).optional(),
   landingPage: z.string().trim().max(120).optional(),
 });
 

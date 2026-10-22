@@ -1,16 +1,16 @@
-import { z } from 'zod';
+import { z } from "zod";
 
 export const changeIdParamSchema = z.object({
-  changeId: z.string().min(1, 'Change identifier is required.'),
+  changeId: z.string().min(1, "Change identifier is required."),
 });
 
 const nullableId = z.string().min(1).nullable().optional();
-const IMPACT_VALUES = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'] as const;
+const IMPACT_VALUES = ["LOW", "MEDIUM", "HIGH", "CRITICAL"] as const;
 const impactSchema = z.enum(IMPACT_VALUES);
 
 export const createChangeSchema = z
   .object({
-    title: z.string().trim().min(1, 'Change title is required.').max(240),
+    title: z.string().trim().min(1, "Change title is required.").max(240),
     description: z.string().trim().max(20000).optional(),
     statusKey: z.string().trim().max(60).optional(),
     priorityKey: z.string().trim().max(60).optional(),
@@ -40,7 +40,7 @@ export const assignChangeSchema = z
 
 export const decideChangeSchema = z
   .object({
-    decision: z.enum(['APPROVED', 'REJECTED']),
+    decision: z.enum(["APPROVED", "REJECTED"]),
     note: z.string().trim().max(2000).optional(),
   })
   .strict();
@@ -62,13 +62,17 @@ export const completeChangeSchema = z
 
 export const rollbackChangeSchema = z
   .object({
-    reason: z.string().trim().min(1, 'A rollback reason is required.').max(2000),
+    reason: z
+      .string()
+      .trim()
+      .min(1, "A rollback reason is required.")
+      .max(2000),
   })
   .strict();
 
 export const createChangeCommentSchema = z
   .object({
-    body: z.string().trim().min(1, 'Comment body is required.').max(20000),
+    body: z.string().trim().min(1, "Comment body is required.").max(20000),
     isInternal: z.boolean().optional(),
   })
   .strict();
@@ -80,4 +84,6 @@ export type DecideChangeInput = z.infer<typeof decideChangeSchema>;
 export type ImplementChangeInput = z.infer<typeof implementChangeSchema>;
 export type CompleteChangeInput = z.infer<typeof completeChangeSchema>;
 export type RollbackChangeInput = z.infer<typeof rollbackChangeSchema>;
-export type CreateChangeCommentInput = z.infer<typeof createChangeCommentSchema>;
+export type CreateChangeCommentInput = z.infer<
+  typeof createChangeCommentSchema
+>;

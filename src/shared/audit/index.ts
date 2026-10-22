@@ -1,9 +1,14 @@
-import type { AuditOutcome, LoginOutcome, Prisma, SecuritySeverity } from '@prisma/client';
-import type { Request } from 'express';
-import { prisma } from '../../config/database';
-import { logger } from '../../config/logger';
-import { clientIp, userAgent } from '../utils/sanitize-request';
-import { redactObject, truncate } from '../utils/sanitize';
+import type {
+  AuditOutcome,
+  LoginOutcome,
+  Prisma,
+  SecuritySeverity,
+} from "@prisma/client";
+import type { Request } from "express";
+import { prisma } from "../../config/database";
+import { logger } from "../../config/logger";
+import { clientIp, userAgent } from "../utils/sanitize-request";
+import { redactObject, truncate } from "../utils/sanitize";
 
 export interface AuditInput {
   action: string;
@@ -32,22 +37,27 @@ export async function recordAudit(input: AuditInput): Promise<void> {
       data: {
         actorId: input.actorId ?? req?.auth?.userId ?? null,
         actorEmail: input.actorEmail ?? req?.auth?.email ?? null,
-        actorType: input.actorType ?? 'PLATFORM_STAFF',
+        actorType: input.actorType ?? "PLATFORM_STAFF",
         action: input.action,
         resourceType: input.resourceType,
         resourceId: input.resourceId ?? null,
         tenantId: input.tenantId ?? null,
-        outcome: input.outcome ?? 'SUCCESS',
+        outcome: input.outcome ?? "SUCCESS",
         before: jsonValue(input.before),
         after: jsonValue(input.after),
-        metadata: input.metadata ? (redactObject(input.metadata) as Prisma.InputJsonValue) : undefined,
+        metadata: input.metadata
+          ? (redactObject(input.metadata) as Prisma.InputJsonValue)
+          : undefined,
         ipAddress: req ? clientIp(req) : null,
         userAgent: req ? userAgent(req) : null,
         requestId: req?.requestId ?? null,
       },
     });
   } catch (error) {
-    logger.error({ error, action: input.action }, 'Failed to record audit event');
+    logger.error(
+      { error, action: input.action },
+      "Failed to record audit event",
+    );
   }
 }
 
@@ -62,22 +72,29 @@ export interface SecurityEventInput {
   userAgent?: string | null;
 }
 
-export async function recordSecurityEvent(input: SecurityEventInput): Promise<void> {
+export async function recordSecurityEvent(
+  input: SecurityEventInput,
+): Promise<void> {
   try {
     const req = input.req;
     await prisma.securityEvent.create({
       data: {
         eventType: input.eventType,
-        severity: input.severity ?? 'INFO',
+        severity: input.severity ?? "INFO",
         userId: input.userId ?? req?.auth?.userId ?? null,
         tenantId: input.tenantId ?? null,
         ipAddress: input.ipAddress ?? (req ? clientIp(req) : null),
         userAgent: input.userAgent ?? (req ? userAgent(req) : null),
-        details: input.details ? (redactObject(input.details) as Prisma.InputJsonValue) : undefined,
+        details: input.details
+          ? (redactObject(input.details) as Prisma.InputJsonValue)
+          : undefined,
       },
     });
   } catch (error) {
-    logger.error({ error, eventType: input.eventType }, 'Failed to record security event');
+    logger.error(
+      { error, eventType: input.eventType },
+      "Failed to record security event",
+    );
   }
 }
 
@@ -102,7 +119,7 @@ export async function recordLoginEvent(input: LoginEventInput): Promise<void> {
       },
     });
   } catch (error) {
-    logger.error({ error, email: input.email }, 'Failed to record login event');
+    logger.error({ error, email: input.email }, "Failed to record login event");
   }
 }
 
@@ -124,7 +141,7 @@ export async function getResourceHistory(
 ): Promise<ResourceHistoryEntry[]> {
   const events = await prisma.auditEvent.findMany({
     where: { resourceType, resourceId },
-    orderBy: { createdAt: 'desc' },
+    orderBy: { createdAt: "desc" },
     take: limit,
   });
   return events.map((event) => ({
@@ -144,7 +161,10 @@ export function summarizeDiff(
   after: Record<string, unknown> | null | undefined,
 ): Record<string, { from: unknown; to: unknown }> {
   const diff: Record<string, { from: unknown; to: unknown }> = {};
-  const keys = new Set([...Object.keys(before ?? {}), ...Object.keys(after ?? {})]);
+  const keys = new Set([
+    ...Object.keys(before ?? {}),
+    ...Object.keys(after ?? {}),
+  ]);
   for (const key of keys) {
     const from = before?.[key];
     const to = after?.[key];

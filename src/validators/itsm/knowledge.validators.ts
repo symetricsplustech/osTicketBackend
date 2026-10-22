@@ -1,7 +1,11 @@
-import { z } from 'zod';
+import { z } from "zod";
 
-export const knowledgeCategoryIdParamSchema = z.object({ categoryId: z.string().min(1) });
-export const knowledgeArticleIdParamSchema = z.object({ articleId: z.string().min(1) });
+export const knowledgeCategoryIdParamSchema = z.object({
+  categoryId: z.string().min(1),
+});
+export const knowledgeArticleIdParamSchema = z.object({
+  articleId: z.string().min(1),
+});
 
 const optionalId = z.string().min(1).nullable().optional();
 
@@ -14,7 +18,9 @@ export const createKnowledgeCategorySchema = z
     status: z.string().trim().max(40).optional(),
   })
   .strict();
-export const updateKnowledgeCategorySchema = createKnowledgeCategorySchema.partial().strict();
+export const updateKnowledgeCategorySchema = createKnowledgeCategorySchema
+  .partial()
+  .strict();
 
 export const createKnowledgeArticleSchema = z
   .object({
@@ -23,13 +29,15 @@ export const createKnowledgeArticleSchema = z
     body: z.string().max(100000).optional(),
     categoryId: optionalId,
     status: z.string().trim().max(40).optional(),
-    visibility: z.enum(['INTERNAL', 'PORTAL']).optional(),
+    visibility: z.enum(["INTERNAL", "PORTAL"]).optional(),
     tags: z.array(z.string().trim().min(1).max(60)).max(50).optional(),
     authorId: optionalId,
     metadata: z.record(z.string(), z.unknown()).optional(),
   })
   .strict();
-export const updateKnowledgeArticleSchema = createKnowledgeArticleSchema.partial().strict();
+export const updateKnowledgeArticleSchema = createKnowledgeArticleSchema
+  .partial()
+  .strict();
 
 export const createKnowledgeCommentSchema = z
   .object({
@@ -40,7 +48,7 @@ export const createKnowledgeCommentSchema = z
 
 export const updateKnowledgeSettingsSchema = z
   .object({
-    defaultVisibility: z.enum(['INTERNAL', 'PORTAL']).optional(),
+    defaultVisibility: z.enum(["INTERNAL", "PORTAL"]).optional(),
     requireReviewBeforePublish: z.boolean().optional(),
     allowInternalComments: z.boolean().optional(),
     enableFeedback: z.boolean().optional(),
@@ -50,4 +58,6 @@ export const updateKnowledgeSettingsSchema = z
   })
   .strict();
 
-export type UpdateKnowledgeSettingsInput = z.infer<typeof updateKnowledgeSettingsSchema>;
+export type UpdateKnowledgeSettingsInput = z.infer<
+  typeof updateKnowledgeSettingsSchema
+>;

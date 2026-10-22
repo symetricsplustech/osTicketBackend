@@ -1,5 +1,8 @@
-import type { NextFunction, Request, RequestHandler, Response } from 'express';
-import { assertAnyPermission, assertPermission } from '../../shared/permissions/guard';
+import type { NextFunction, Request, RequestHandler, Response } from "express";
+import {
+  assertAnyPermission,
+  assertPermission,
+} from "../../shared/permissions/guard";
 
 export function authorize(...codes: string[]): RequestHandler {
   return (req: Request, _res: Response, next: NextFunction) => {
@@ -16,7 +19,8 @@ export function authorize(...codes: string[]): RequestHandler {
 export function authorizeAll(...codes: string[]): RequestHandler {
   return (req: Request, _res: Response, next: NextFunction) => {
     try {
-      if (codes.length === 0) throw new Error('authorizeAll requires at least one permission code');
+      if (codes.length === 0)
+        throw new Error("authorizeAll requires at least one permission code");
       for (const code of codes) assertPermission(req.auth, code);
       next();
     } catch (error) {
