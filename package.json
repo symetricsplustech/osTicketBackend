@@ -1,8 +1,8 @@
 {
-  "name": "itsm-saas-backend",
+  "name": "ticketx-backend",
   "version": "1.0.0",
   "private": true,
-  "description": "ServiceNow-style ITSM SaaS platform backend (SaaS Admin control plane + ITSM APIs)",
+  "description": "TicketX ITSM SaaS platform backend (SaaS Admin control plane + ITSM APIs)",
   "main": "dist/server.js",
   "scripts": {
     "dev": "tsx watch src/server.ts",
