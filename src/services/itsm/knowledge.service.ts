@@ -38,14 +38,14 @@ export const knowledgeCategoryService = createItsmCrudService({
   },
   beforeDelete: async (tenantId, record) => {
     const articles = await prisma.knowledgeArticle.count({
-      where: { categoryId: record.id, tenantId, deletedAt: null },
+      where: { categoryId: record.id as string, tenantId, deletedAt: null },
     });
     if (articles > 0)
       throw new PreconditionFailedError(
         "Reassign knowledge articles before deleting this category.",
       );
     const children = await prisma.knowledgeArticleCategory.count({
-      where: { parentId: record.id, tenantId, deletedAt: null },
+      where: { parentId: record.id as string, tenantId, deletedAt: null },
     });
     if (children > 0)
       throw new PreconditionFailedError(

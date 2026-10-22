@@ -23,7 +23,7 @@ export const assetModelService = createItsmCrudService({
   },
 });
 
-function maskLicense<T extends { licenseKeyEnc: string | null }>(record: T) {
+function maskLicense(record: Record<string, unknown>) {
   const { licenseKeyEnc, ...rest } = record;
   return { ...rest, hasLicenseKey: Boolean(licenseKeyEnc) };
 }
@@ -72,17 +72,19 @@ export const assetLicenseService = {
     req: Parameters<typeof assetLicenseBase.list>[1],
   ) {
     const { rows, meta } = await assetLicenseBase.list(tenantId, req);
-    return { rows: rows.map(maskLicense), meta };
+    return { rows: rows.map((record) => maskLicense(record as Record<string, unknown>)), meta };
   },
   async get(tenantId: string, id: string) {
-    return maskLicense(await assetLicenseBase.get(tenantId, id));
+    return maskLicense(await assetLicenseBase.get(tenantId, id) as Record<string, unknown>);
   },
   async create(
     tenantId: string,
     input: Record<string, unknown>,
     actor: Parameters<typeof assetLicenseBase.create>[2],
   ) {
-    return maskLicense(await assetLicenseBase.create(tenantId, input, actor));
+    return maskLicense(
+      (await assetLicenseBase.create(tenantId, input, actor)) as Record<string, unknown>,
+    );
   },
   async update(
     tenantId: string,
@@ -91,7 +93,7 @@ export const assetLicenseService = {
     actor: Parameters<typeof assetLicenseBase.update>[3],
   ) {
     return maskLicense(
-      await assetLicenseBase.update(tenantId, id, input, actor),
+      (await assetLicenseBase.update(tenantId, id, input, actor)) as Record<string, unknown>,
     );
   },
 };

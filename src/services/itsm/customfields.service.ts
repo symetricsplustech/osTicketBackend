@@ -30,7 +30,7 @@ export const customFieldService = createItsmCrudService({
           tenantId,
           resourceType: input.resourceType,
           key: input.key,
-          ...(existing ? { id: { not: existing.id } } : {}),
+          ...(existing ? { id: { not: existing.id as string } } : {}),
         },
         select: { id: true },
       });

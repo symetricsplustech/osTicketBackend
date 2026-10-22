@@ -47,7 +47,7 @@ async function resolveSlaForTicket(
       name: assignment.slaPolicy.name,
       serviceLevels,
     },
-    calendarId: settings.calendarId ?? null,
+    calendarId: (settings.calendarId as string | null) ?? null,
     level,
   };
 }

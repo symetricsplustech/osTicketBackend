@@ -39,7 +39,7 @@ export const catalogCategoryService = createTenantCrudService({
         tenantId,
         name,
         deletedAt: null,
-        ...(existing ? { id: { not: existing.id } } : {}),
+        ...(existing ? { id: { not: existing.id as string } } : {}),
       };
       const dup = await prisma.catalogCategory.findFirst({
         where,
@@ -64,14 +64,14 @@ export const catalogCategoryService = createTenantCrudService({
   },
   async beforeDelete(tenantId, record) {
     const items = await prisma.catalogItem.count({
-      where: { categoryId: record.id, tenantId, deletedAt: null },
+      where: { categoryId: record.id as string, tenantId, deletedAt: null },
     });
     if (items > 0)
       throw new PreconditionFailedError(
         "Remove or reassign catalog items before deleting this category.",
       );
     const children = await prisma.catalogCategory.count({
-      where: { parentId: record.id, tenantId, deletedAt: null },
+      where: { parentId: record.id as string, tenantId, deletedAt: null },
     });
     if (children > 0)
       throw new PreconditionFailedError(

@@ -107,7 +107,7 @@ export const assetMaintenanceService = createItsmCrudService({
   validate: async (tenantId, input, existing) => {
     const assetId = (input.assetId as string | undefined) ?? existing?.assetId;
     const asset = await prisma.asset.findFirst({
-      where: { id: assetId, tenantId, deletedAt: null },
+      where: { id: assetId as string, tenantId, deletedAt: null },
       select: { id: true },
     });
     if (!asset) throw new NotFoundError("Asset");

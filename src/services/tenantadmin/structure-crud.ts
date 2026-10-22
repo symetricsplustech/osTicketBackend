@@ -135,7 +135,7 @@ export function createTenantCrudService(config: TenantCrudConfig) {
       await recordAudit({
         action: `${config.resourceType}.created`,
         resourceType: config.resourceType,
-        resourceId: (record as Record<string, unknown>).id,
+        resourceId: String((record as Record<string, unknown>).id),
         tenantId,
         after: record,
         actorId: actor.actorId ?? null,

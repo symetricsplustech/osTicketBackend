@@ -54,10 +54,10 @@ export const departmentService = createTenantCrudService({
   async beforeDelete(tenantId, record) {
     const [children, teams] = await Promise.all([
       prisma.department.count({
-        where: { tenantId, parentId: record.id, deletedAt: null },
+        where: { tenantId, parentId: record.id as string, deletedAt: null },
       }),
       prisma.team.count({
-        where: { tenantId, departmentId: record.id, deletedAt: null },
+        where: { tenantId, departmentId: record.id as string, deletedAt: null },
       }),
     ]);
     if (children > 0)

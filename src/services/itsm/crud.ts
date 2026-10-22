@@ -262,11 +262,11 @@ export async function assertUnique(
   field: string,
   value: unknown,
   label: string,
-  exceptId?: string,
+  exceptId?: unknown,
 ): Promise<void> {
   if (value === undefined || value === null || value === "") return;
   const where: Record<string, unknown> = { tenantId, [field]: value };
-  if (exceptId) where.id = { not: exceptId };
+  if (exceptId) where.id = { not: String(exceptId) };
   const existing = await model.findFirst({ where, select: { id: true } });
   if (existing)
     throw new ConflictError(

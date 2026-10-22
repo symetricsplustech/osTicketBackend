@@ -70,7 +70,8 @@ export const onCallShiftService = createItsmCrudService({
   filterFields: ["scheduleId", "userId", "kind", "status"],
   validate: async (tenantId, input, existing) => {
     const scheduleId =
-      (input.scheduleId as string | undefined) ?? existing?.scheduleId;
+      (input.scheduleId as string | undefined) ??
+      (existing?.scheduleId as string);
     const schedule = await prisma.onCallSchedule.findFirst({
       where: { id: scheduleId, tenantId, deletedAt: null },
       select: { id: true },

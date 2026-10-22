@@ -74,7 +74,8 @@ export const discoveryResultService = createItsmCrudService({
   allowedSortFields: ["name", "status", "action", "createdAt", "updatedAt"],
   filterFields: ["runId", "status", "action", "ciTypeKey"],
   validate: async (tenantId, input, existing) => {
-    const runId = (input.runId as string | undefined) ?? existing?.runId;
+    const runId =
+      (input.runId as string | undefined) ?? (existing?.runId as string);
     const run = await prisma.discoveryRun.findFirst({
       where: { id: runId, tenantId, deletedAt: null },
       select: { id: true },

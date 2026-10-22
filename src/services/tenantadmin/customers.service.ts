@@ -61,12 +61,12 @@ export const customerService = createTenantCrudService({
   },
   async beforeDelete(tenantId, record) {
     const openIncidents = await prisma.incident.count({
-      where: {
-        tenantId,
-        customerId: record.id,
-        deletedAt: null,
-        closedAt: null,
-      },
+        where: {
+          tenantId,
+          customerId: record.id as string,
+          deletedAt: null,
+          closedAt: null,
+        },
     });
     if (openIncidents > 0) {
       throw new ConflictError(
